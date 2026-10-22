@@ -1,0 +1,20 @@
+#!/usr/bin/env sh
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+BARE_VAL="$(git -C "$REPO_ROOT" config --get core.bare || echo "false")"
+
+if [ "$BARE_VAL" != "false" ]; then
+  echo "ERRO FATAL [Secao 5]: core.bare=$BARE_VAL no repositorio ($REPO_ROOT). Pare e reporte sem consertar sozinho." >&2
+  exit 1
+fi
+
+env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
+  node --test "$REPO_ROOT/tests/01-portao-gdd.test.mjs" "$REPO_ROOT/tests/02-hook-ambiente.test.mjs"
+
+BARE_AFTER="$(git -C "$REPO_ROOT" config --get core.bare || echo "false")"
+if [ "$BARE_AFTER" != "false" ]; then
+  echo "ERRO FATAL POS-TESTE [Secao 5]: core.bare=$BARE_AFTER apos rodar testes." >&2
+  exit 1
+fi
