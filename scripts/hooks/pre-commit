@@ -1,18 +1,58 @@
 #!/usr/bin/env sh
+# Captura o índice que o git preparou para ESTE commit ANTES do unset (em `git commit <arquivo>` / `-a` é um índice
+# temporário `next-index-*.lock` — medido em 2026-10-22). Não é usado por nenhum teste; serve só para exportar o conteúdo.
+INDICE_DO_COMMIT="${GIT_INDEX_FILE:-}"
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+# B16: herdado de um `node --test` pai, faz o `node --test` do hook sair 0 mesmo com falha (medido em 2026-10-22)
+unset NODE_TEST_CONTEXT
 set -eu
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 MAIN_GIT_DIR="$(git rev-parse --git-common-dir)"
-BARE_VAL="$(git --git-dir="$MAIN_GIT_DIR" config --get core.bare || echo "false")"
+case "$MAIN_GIT_DIR" in /*) ;; *) MAIN_GIT_DIR="$REPO_ROOT/$MAIN_GIT_DIR" ;; esac
 
+BARE_VAL="$(git --git-dir="$MAIN_GIT_DIR" config --get core.bare || echo "false")"
 if [ "$BARE_VAL" != "false" ]; then
   echo "ERRO FATAL [Secao 5]: core.bare=$BARE_VAL no repositorio principal ($MAIN_GIT_DIR). Pare e reporte sem consertar sozinho." >&2
   exit 1
 fi
 
+# Lei N5: nunca commitar direto na main (merge --ff-only nao dispara este hook)
+RAMO_ATUAL="$(git symbolic-ref --short HEAD 2>/dev/null || echo "")"
+if [ "$RAMO_ATUAL" = "main" ]; then
+  echo "ERRO FATAL [Lei N5]: commit direto na main bloqueado. Use worktree irma + merge --ff-only." >&2
+  exit 1
+fi
+
+# B4: os testes rodam sobre o CONTEUDO DO COMMIT (indice exportado), nunca sobre a arvore de trabalho
+EXPORT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ftl-pre-commit.XXXXXX")"
+trap 'rm -rf "$EXPORT_DIR"' EXIT
+if [ -n "$INDICE_DO_COMMIT" ]; then
+  case "$INDICE_DO_COMMIT" in /*) ;; *) INDICE_DO_COMMIT="$REPO_ROOT/$INDICE_DO_COMMIT" ;; esac
+  GIT_INDEX_FILE="$INDICE_DO_COMMIT" git checkout-index -a -f --prefix="$EXPORT_DIR/"
+else
+  git checkout-index -a -f --prefix="$EXPORT_DIR/"
+fi
+RAIZ_TESTE="$EXPORT_DIR"
+
+# Lei N3: so os portoes OBRIGATORIO travam o commit
+PORTOES="$RAIZ_TESTE/padrao/protocolo/PORTOES.md"
+if [ ! -f "$PORTOES" ]; then
+  echo "ERRO FATAL [Lei N3]: padrao/protocolo/PORTOES.md ausente no conteudo do commit." >&2
+  exit 1
+fi
+ARQUIVOS="$(grep -E '^\| `tests/[^`]+\.test\.mjs` \| OBRIGATORIO \|' "$PORTOES" | sed -E 's/^\| `([^`]+)`.*/\1/' || true)"
+QTD="$(printf '%s\n' "$ARQUIVOS" | grep -c . || true)"
+echo "[N4] Portoes obrigatorios examinados no pre-commit: $QTD"
+if [ "$QTD" -eq 0 ]; then
+  echo "ERRO FATAL [Lei N4]: zero portoes obrigatorios examinados." >&2
+  exit 1
+fi
+
+cd "$RAIZ_TESTE"
+# shellcheck disable=SC2086
 env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \
-  node --test "$REPO_ROOT"/tests/*.test.mjs
+  node --test $ARQUIVOS
 
 BARE_AFTER="$(git --git-dir="$MAIN_GIT_DIR" config --get core.bare || echo "false")"
 if [ "$BARE_AFTER" != "false" ]; then

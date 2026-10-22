@@ -92,7 +92,7 @@ $$\text{Transição}(\text{EstadoAnterior Congelado}, \text{Ação/Comando}, \De
     "tripulacao": [
       { "id": "trip-polvo-1", "especie": "POLVO", "hpAtual": 80, "hpMax": 80, "camaraAtualId": 2, "camaraDestinoId": null, "progressoNadoSeg": 0.0, "acopladoBulbo": true, "inflado": false, "atordoadoSeg": 0.0, "localizacao": "NAVE_JOGADOR" },
       { "id": "trip-arraia-1", "especie": "ARRAIA", "hpAtual": 70, "hpMax": 70, "camaraAtualId": 4, "camaraDestinoId": null, "progressoNadoSeg": 0.0, "acopladoBulbo": true, "inflado": false, "atordoadoSeg": 0.0, "localizacao": "NAVE_JOGADOR" },
-      { "id": "trip-baiacu-1", "especie": "BAIACU", "hpAtual": 100, "hpMax": 100, "camaraAtualId": 5, "camaraDestinoId": null, "progressoNadoSeg": 0.0, "acopladoBulbo": true, "inflado": false, "atordoadoSeg": 0.0, "localizacao": "NAVE_JOGADOR" }
+      { "id": "trip-baiacu-1", "especie": "BAIACU", "hpAtual": 150, "hpMax": 150, "camaraAtualId": 5, "camaraDestinoId": null, "progressoNadoSeg": 0.0, "acopladoBulbo": true, "inflado": false, "atordoadoSeg": 0.0, "localizacao": "NAVE_JOGADOR" }
     ]
   },
   "alvoCombate": {
@@ -154,12 +154,18 @@ Para cumprir a **Lei N5 ("Um dono por arquivo compartilhado")** e a **Lei N6 ("O
 ```text
 /Users/dudujarra/Documents/ftl/
 ├── 01..08_*.md                          # [Onda 0] 8 Volumes Canônicos do GDD (Congelados)
+├── package.json                         # [Onda 0] Fixa Node >=22.22 <23 (engines) — sem dependências
 ├── padrao/protocolo/
 │   ├── LEIS-DE-TESTE.md                 # [Onda 0] As 14 Leis + Seção 5
-│   └── MUTACOES.md                      # [Ondas 0..6] Registro apêndice de mutações medidas
-├── scripts/hooks/
-│   ├── pre-commit                       # [Onda 0] Hook blindado (unset 7 vars + core.bare=false)
-│   └── pre-push                         # [Onda 0] Hook blindado de push
+│   ├── PORTOES.md                       # [Onda 0] Lei N3: portão DECLARADO vs OBRIGATORIO (o hook só roda OBRIGATORIO)
+│   ├── mutacoes.json                    # [Ondas 0..6] Fonte EXECUTÁVEL das mutações (B6)
+│   └── MUTACOES.md                      # [Ondas 0..6] Bloco gerado pelo executor real (nunca editar à mão)
+├── scripts/
+│   ├── auditar-frente.sh                # [Onda 0] Pré-voo/fechamento: carga, core.bare, hooksPath, N7, 3 corridas
+│   ├── rodar-mutacoes.mjs               # [Onda 0] Executor real de mutações numa cópia descartável
+│   └── hooks/
+│       ├── pre-commit                   # [Onda 0] unset 7 vars + índice do commit + bloqueio N5 + portões OBRIGATORIO
+│       └── pre-push                     # [Onda 0] unset 7 vars + testa HEAD exportado
 ├── src/
 │   ├── gdd-parser.mjs                   # [Onda 0] Parser SSOT/Matriz e equações base do GDD
 │   ├── onda1-fisica/
@@ -180,14 +186,15 @@ Para cumprir a **Lei N5 ("Um dono por arquivo compartilhado")** e a **Lei N6 ("O
 │   └── onda6-ui/
 │       └── presenter-wireframe.mjs      # [Onda 6] Seletor/Presenter 16:9 puro acoplado ao GameState
 └── tests/
-    ├── 01-portao-gdd.test.mjs           # [Onda 0] Portão L5 dos 8 volumes GDD + SSOT + Matriz 5x8
-    ├── 02-hook-ambiente.test.mjs        # [Onda 0] Prova real Seção 5 (GIT_DIR worktree e core.bare)
+    ├── 01-portao-gdd.test.mjs           # [Onda 0] Portão L5 dos 8 volumes GDD + SSOT + Matriz 5x8 + tripulação + linha do tempo
+    ├── 02-hook-ambiente.test.mjs        # [Onda 0] Hooks REAIS disparados pelo git (Seção 5, B4, N5, pre-push) + tripwires
     ├── 03-onda1-fisica.test.mjs         # [Onda 1] Portão Hidráulica <-> Foil (MUT-O1-01..04)
     ├── 04-onda2-combate.test.mjs        # [Onda 2] Portão Simulação 0s..32.75s (MUT-O2-01..04)
     ├── 05-onda3-inimigos.test.mjs       # [Onda 3] Portão IA + Abordagem + Saque (MUT-O3-01..03)
     ├── 06-onda4-mapa.test.mjs           # [Onda 4] Portão 100 Seeds + Relógio/Deriva (MUT-O4-01..04)
     ├── 07-onda5-catalogo-chefe.test.mjs # [Onda 5] Portão 5 Naves + Chefe 3 Fases (MUT-O5-01..04)
-    └── 08-onda6-ui-juncao.test.mjs      # [Onda 6] Portão Ponta a Ponta UI <-> Motor
+    ├── 08-onda6-ui-juncao.test.mjs      # [Onda 6] Portão Ponta a Ponta UI <-> Motor
+    └── 09-mutacoes-reais.test.mjs       # [Onda 0] Re-executa todas as mutações de mutacoes.json (B6)
 ```
 
 ---

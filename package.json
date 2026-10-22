@@ -1,0 +1,14 @@
+{
+  "name": "ftl-biofoil",
+  "private": true,
+  "type": "module",
+  "description": "Bio-Foil: GDD canônico + portões de teste sob as 14 Leis (sem dependências externas).",
+  "engines": {
+    "node": ">=22.22.0 <23.0.0"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "auditar": "sh scripts/auditar-frente.sh",
+    "mutacoes": "node scripts/rodar-mutacoes.mjs"
+  }
+}

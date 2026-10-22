@@ -17,6 +17,8 @@ import {
   extrairBaralhoVolume04,
   extrairSimulacaoVolume03,
   extrairContratoEstadoVolume08,
+  extrairTripulacaoVolume01,
+  normalizarTexto,
 } from '../src/gdd-parser.mjs';
 
 const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -145,16 +147,15 @@ test('Lei L2 + L3: isolamento de leitura sem estado compartilhado (L2) e canal e
     '[L3] "Não existe" e "Não posso ver" nunca podem devolver o mesmo marcador'
   );
   assert.equal(chaveValida.status, 'OK');
-  assert.equal(chaveValida.valor.valorBruto, '$30\\text{ HP}$');
+  assert.equal(normalizarTexto(chaveValida.valor.valorBruto).trim(), '30 HP');
 });
 
 test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 células) do Vol. 06 com Vols. 01..05', () => {
   const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
-  const vol01 = cadeia.volumes[0].conteudo;
+  const vol01 = normalizarTexto(cadeia.volumes[0].conteudo);
   const vol02 = cadeia.volumes[1].conteudo;
-  const vol03 = cadeia.volumes[2].conteudo;
-  const vol04 = cadeia.volumes[3].conteudo;
-  const vol05 = cadeia.volumes[4].conteudo;
+  const vol03 = normalizarTexto(cadeia.volumes[2].conteudo);
+  const vol04 = normalizarTexto(cadeia.volumes[3].conteudo);
   const vol06 = cadeia.volumes[5].conteudo;
 
   const {
@@ -175,40 +176,40 @@ test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 
   assert.equal(limitesExtremos.length, 4, 'A Seção 6.3 deve conter exatamente 4 Provas de Limite Extremo');
   assert.equal(niveisPrecedencia.length, 4, 'A Seção 6.4 deve conter exatamente 4 Níveis de Precedência');
 
-  // L4: Asserções contra os valores literais reais de TODAS as 26 constantes da SSOT (0 falsos verdes!)
+  // L4 + L6: valor literal real de TODAS as 26 constantes, comparado pelo SIGNIFICADO (texto normalizado, sem LaTeX)
   const gabaritoLiteralSsot = {
-    HP_CASCO_BASE: '$30\\text{ HP}$',
-    PESO_CHASSI_BASE: '$100\\text{ kg}$',
-    NUM_CAMARAS_NAVE: '$8\\text{ câmaras}$',
-    CAP_AGUA_CAMARA: '$12.5\\text{ kg}$',
-    RESERVA_MIN_SIFAO: '$62.5\\text{ kg}$',
-    PENALIDADE_CAVITACAO: '$-2.0\\text{ kg}$',
-    SLOTS_ARMAS_ATIVAS: '$4\\text{ slots}$',
-    SLOTS_PORAO_CARGA: '$4\\text{ slots}$',
-    PESO_ORGAO_ENXERTO: '$+5.0\\text{ kg}$',
-    PESO_SUBSISTEMA: '$0.0\\text{ kg}$',
-    PESO_BLINDAGEM_NV: '$+15.0\\text{ kg}$',
-    MASTRO_FOIL_CURVA: '$200 / 240 / 280 / 330\\text{ kg}$',
-    SIFAO_EMP_POR_BARRA: '$+30.0\\text{ kg}$',
-    SUSTENTACAO_MAX_ABS: '$480.0\\text{ kg}$',
-    TEMPO_SPOOL_UP: '$3.0\\text{ s}$',
-    TAXA_FURO_AR: '$-1.0\\text{ kg/s}$',
-    TAXA_VALVULA_AR: '$-2.5\\text{ kg/s}$',
-    TAXA_FURO_MAR: '$+5.0\\text{ kg/s}$',
-    TAXA_RECARGA_MAR: '$+5.0\\text{ kg/s}$',
-    TAXA_CAPILAR_AR: '$+1.25\\text{ kg/s}$',
-    TAXA_DRENO_PESADO: '$-4.0\\text{ kg/s}$',
-    TEMPO_NADO_SALA: '$1.5\\text{ s}$',
-    TEMPO_REPARO_SIST: '$12.0\\text{ s}$',
-    TEMPO_REPARO_FURO: '$8.0\\text{ s}$',
-    DANO_ANTIPESSOAL: '$15\\text{ HP}$',
-    REATOR_TETO_COMPRA: '$18\\text{ barras}$',
+    HP_CASCO_BASE: '30 HP',
+    PESO_CHASSI_BASE: '100 kg',
+    NUM_CAMARAS_NAVE: '8 câmaras',
+    CAP_AGUA_CAMARA: '12.5 kg',
+    RESERVA_MIN_SIFAO: '62.5 kg',
+    PENALIDADE_CAVITACAO: '-2.0 kg',
+    SLOTS_ARMAS_ATIVAS: '4 slots',
+    SLOTS_PORAO_CARGA: '4 slots',
+    PESO_ORGAO_ENXERTO: '+5.0 kg',
+    PESO_SUBSISTEMA: '0.0 kg',
+    PESO_BLINDAGEM_NV: '+15.0 kg',
+    MASTRO_FOIL_CURVA: '200 / 240 / 280 / 330 kg',
+    SIFAO_EMP_POR_BARRA: '+30.0 kg',
+    SUSTENTACAO_MAX_ABS: '480.0 kg',
+    TEMPO_SPOOL_UP: '3.0 s',
+    TAXA_FURO_AR: '-1.0 kg/s',
+    TAXA_VALVULA_AR: '-2.5 kg/s',
+    TAXA_FURO_MAR: '+5.0 kg/s',
+    TAXA_RECARGA_MAR: '+5.0 kg/s',
+    TAXA_CAPILAR_AR: '+1.25 kg/s',
+    TAXA_DRENO_PESADO: '-4.0 kg/s',
+    TEMPO_NADO_SALA: '1.5 s',
+    TEMPO_REPARO_SIST: '12.0 s',
+    TEMPO_REPARO_FURO: '8.0 s',
+    DANO_ANTIPESSOAL: '15 HP',
+    REATOR_TETO_COMPRA: '18 barras',
   };
   let constantesVerificadasLiteralmente = 0;
   for (const [idConstante, valorLiteralEsperado] of Object.entries(gabaritoLiteralSsot)) {
     assert.ok(constantesSsot[idConstante], `Constante ${idConstante} ausente da SSOT`);
     assert.equal(
-      constantesSsot[idConstante].valorBruto,
+      normalizarTexto(constantesSsot[idConstante].valorBruto).trim(),
       valorLiteralEsperado,
       `Valor de ${idConstante} divergiu do literal canônico`
     );
@@ -216,9 +217,9 @@ test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 
   }
   assert.equal(constantesVerificadasLiteralmente, 26, 'Todas as 26 constantes da SSOT devem ter asserção literal');
 
-  // Cruzamento N1 com Volume 01, 02, 03 e 04
-  assert.match(vol01, /4\\text\{ Slots de Armas Ativas\}/, 'Vol. 01 deve declarar 4 Slots de Armas Ativas');
-  assert.match(vol01, /8 \\times 12\.5\\text\{ kg\} = \\mathbf\{100\\text\{ kg\}\}/, 'Vol. 01 deve manter 8 x 12.5 kg = 100 kg');
+  // Cruzamento N1 com Volume 01, 02, 03 e 04 (por significado)
+  assert.ok(vol01.includes('4 Slots de Armas Ativas'), 'Vol. 01 deve declarar 4 Slots de Armas Ativas');
+  assert.ok(vol01.includes('8 x 12.5 kg = 100 kg'), 'Vol. 01 deve manter 8 x 12.5 kg = 100 kg');
   assert.match(vol02, /\[ARMAS: 4 SLOTS \(3 BARRAS\)\]/, 'Vol. 02 Wireframe deve exibir 4 SLOTS de armas');
   assert.match(vol02, /\[3: VAZIO\]\s+\[4: VAZIO\]/, 'Vol. 02 Wireframe deve listar os slots 3 e 4 vazios na nave inicial');
 
@@ -230,22 +231,22 @@ test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 
   assert.match(partesLinhaDaguaVol02[1], /\[MOTOR SUB\]/, '[MOTOR SUB] deve estar abaixo da linha d\'água no Vol. 02');
   assert.match(partesLinhaDaguaVol02[1], /\[TORP\. SUB\]/, '[TORP. SUB] deve estar abaixo da linha d\'água no Vol. 02');
 
-  assert.match(vol03, /4 Slots de Armas Ativas/, 'Vol. 03 deve declarar 4 Slots de Armas Ativas na ficha da Carcaça Alfa');
-  assert.match(vol04, /\\min\\left\(15\.0,\\; V_\{\\text\{base\}\} \\times \\left\(\\frac\{S_\{\\text\{máx\}\}\}\{P_\{\\text\{total\}\}\}\\right\)\\right\)/, 'Vol. 04 deve conter a equação de velocidade com teto 15.0 MN/h');
+  assert.ok(vol03.includes('4 Slots de Armas Ativas'), 'Vol. 03 deve declarar 4 Slots de Armas Ativas na ficha da Carcaça Alfa');
+  assert.match(vol04, /\\min\\left\(15\.0, V_\{base\} x /, 'Vol. 04 deve aplicar o teto de 15.0 MN/h sobre V_base');
 
   // Verifica célula crítica 5A (Touchdown + Tinta Furtiva) e 3H (Spool-up + Fervura Oceânica)
   const celula5A = celulasMatriz.find(
     (c) => c.evento.startsWith('A. Esquiva') && c.estado === '5_FURTIVO_AGUA'
   );
   assert.ok(celula5A, 'Célula 5A deve existir na Matriz');
-  assert.match(celula5A.regra, /\$0\\%\$ para projéteis já em voo/);
-  assert.match(celula5A.regra, /congela \$100\\%\$ o carregamento de mira inimiga/);
+  assert.ok(normalizarTexto(celula5A.regra).includes('0% para projéteis já em voo'));
+  assert.ok(normalizarTexto(celula5A.regra).includes('congela 100% o carregamento de mira inimiga'));
 
   const celula3H = celulasMatriz.find(
     (c) => c.evento.startsWith('H. Perigos') && c.estado === '3_SPOOL_UP'
   );
   assert.ok(celula3H, 'Célula 3H deve existir na Matriz');
-  assert.match(celula3H.regra, /\$4\.0\\text\{s\}\$ antes/);
+  assert.ok(normalizarTexto(celula3H.regra).includes('4.0s antes'));
 });
 
 test('Junção N1 + N4: recalcula no motor as 5 Naves, 7 Armas, 6 Órgãos e Simulação (t=0s..32.75s) contra Vols. 03 e 05', () => {
@@ -300,7 +301,7 @@ test('Junção N1 + N4: recalcula no motor as 5 Naves, 7 Armas, 6 Órgãos e Sim
     sustentacaoAtualKg: 260,
     pesoTotalKg: pesoManta,
   });
-  assert.equal(pesoManta, 195);
+  assert.equal(pesoManta, 195, 'Peso da Manta-Volt recalculado no motor diverge de 195 kg');
   assert.equal(pesoManta, catalogo.naves[1].pesoTotalKgDeclarado);
   assert.equal(velManta, 12.7);
 
@@ -376,20 +377,127 @@ test('Junção N1 + N4: recalcula no motor as 5 Naves, 7 Armas, 6 Órgãos e Sim
   assert.equal(recargaArpaoTouchdown, 8.25);
 
   const simVol03 = extrairSimulacaoVolume03(cadeia.volumes[2].conteudo);
-  console.log(`[N4] Marcos temporais da Simulação Vol. 03 examinados: ${simVol03.timestampsUnicos.length}`);
+  const sim = simVol03.textoNormalizado;
+
+  // B3: a linha do tempo é RECALCULADA a partir das fontes (Vol. 01 tripulação + motor + SSOT), não copiada do texto.
+  const trip = extrairTripulacaoVolume01(cadeia.volumes[0].conteudo);
+  const polvo = trip.especies.find((e) => e.especie === 'POLVO');
+  const nadoPolvo = 1.5 / polvo.velNado; // TEMPO_NADO_SALA ÷ velocidade da espécie
+  const tTouchdown = 13.0; // torpedo inimigo de 13 s quebra o Mastro
+  const restanteNoMar = (tDisparoAnterior, recargaBase) =>
+    tTouchdown + calcularTempoRecargaArma({ tempoChassiSeg: recargaBase - (tTouchdown - tDisparoAnterior), emTouchdown: true });
+
+  const tAcustico1 = 9.0; // Emissor Acústico I: 9 s no ar
+  const tArpao1 = 11.0; // Canhão de Arpão: 11 s no ar
+  const tAcustico2 = restanteNoMar(tAcustico1, 9); // 4 s no ar + 5 s x 0.75
+  const tArpao2 = restanteNoMar(tArpao1, 11); // 2 s no ar + 9 s x 0.75
+  const tAcustico3 = tAcustico2 + recargaAcusticoTouchdown;
+  const tAcustico4 = tAcustico3 + recargaAcusticoTouchdown;
+  const tPolvoNoSifao = 10.0 + 2 * nadoPolvo; // Córtex -> Sifão (2 salas)
+  const tSifaoReparado = tPolvoNoSifao + polvo.reparoSistSeg;
+  const tFuroFechado = tSifaoReparado + polvo.reparoFuroSeg;
+  const tPolvoNoPoco = tFuroFechado + nadoPolvo;
+  const tMastroReparado = tPolvoNoPoco + polvo.reparoSistSeg;
+  const tDecolagem = tMastroReparado + 3.0; // TEMPO_SPOOL_UP
+  const tMotorInimigoInundado = tArpao1 + 12.5 / 5.0; // TAXA_FURO_MAR enche 12.5 kg
+  const tO2Recuperado = 10.0 + (4 * 10.0) / 8; // caiu -4%/s por 10 s, volta a +8%/s
+
+  // Afogamento dos marinheiros em ticks de 0.25 s (Vol. 07): fogem no 1º tick com HP < 30
+  let tFuga = null;
+  let hpMarinheiro = null;
+  for (let t = tMotorInimigoInundado; t <= 32.75; t += 0.25) {
+    const hp = 100 - 15 - 8 * (t - tMotorInimigoInundado);
+    if (hp < 30) {
+      tFuga = t;
+      hpMarinheiro = hp;
+      break;
+    }
+  }
+  const afogamentoTotal = 8 * (tFuga - tMotorInimigoInundado);
+
+  const linhaDoTempoCalculada = [
+    0, tAcustico1, 10.0, tArpao1, 10.0 + 1.7, tPolvoNoSifao, tTouchdown, tMotorInimigoInundado, tO2Recuperado,
+    tAcustico2, tSifaoReparado, tArpao2, tFuga, tFuroFechado, tAcustico3, tPolvoNoPoco, tMastroReparado, tAcustico4,
+    tDecolagem,
+  ].sort((a, b) => a - b);
+
+  console.log(`[N4] Marcos temporais da Simulação Vol. 03 examinados: ${simVol03.timestampsUnicos.length} (recalculados: ${linhaDoTempoCalculada.length})`);
   assert.deepEqual(
     simVol03.timestampsUnicos,
-    [0, 9, 10, 11, 11.7, 12.5, 13, 13.5, 15, 16.75, 18.5, 19.75, 20.625, 22.5, 23.5, 23.75, 29.75, 30.25, 32.75],
-    'Todos os 19 marcos de tempo (t=0.0s a t=32.75s) da Simulação do Passo 3 devem fechar exatamente'
+    linhaDoTempoCalculada,
+    'Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT'
   );
-  assert.equal(simVol03.possuiDanoBaiacu85Hp, true, 'Simulação deve registrar o dano antipessoal no Baiacu (100 -> 85 HP)');
-  assert.equal(simVol03.possuiCalculoAfogamento28Hp, true, 'Simulação deve fechar a conta 100 - 15 - 57 = 28 HP nos 2 marinheiros');
-  assert.equal(simVol03.possuiQuedaMarinheiros13Hp, true, 'Simulação deve registrar queda para 13 HP cada em t=23.50s');
-  assert.equal(simVol03.possuiEliminacaoMarinheiros0Hp, true, 'Simulação deve registrar eliminação 13 -> 0 HP em t=30.25s');
+
+  // Cadeia de HP recalculada: marinheiros 28 -> 13 -> <=0; casco inimigo 8 -> 2 (6 acertos); nosso peso/sustentação
+  assert.equal(hpMarinheiro, 29);
+  assert.ok(sim.includes(`100 - 15 - ${afogamentoTotal} = ${hpMarinheiro} HP`), 'Vol. 03 deve fechar 100 - 15 - afogamento = HP dos marinheiros');
+  assert.ok(sim.includes(`${hpMarinheiro - 15} HP cada`), 'Vol. 03 deve registrar a queda de -15 HP após o Acústico na Cabine');
+  assert.ok(sim.includes(`${hpMarinheiro - 15} HP -> 0 HP`), 'Vol. 03 deve registrar eliminação dos marinheiros');
+  assert.ok(hpMarinheiro - 15 <= 30, 'Salva final de 30 HP antipessoal tem de zerar os marinheiros');
+  assert.ok(sim.includes(`${8 - 6}/8 HP`), 'Casco inimigo deve terminar em 2/8 HP após 6 acertos de 1 dano');
+  const sustentacaoAposTorpedo = calcularSustentacaoAtual({ barrasIntactasMastro: 3, barrasEnergiaSifao: 1, aguaTotalTanquesKg: 99 });
+  assert.equal(sustentacaoAposTorpedo, 180);
+  assert.ok(sim.includes('180 kg'), 'Vol. 03 deve registrar sustentação de 180 kg após o torpedo');
+  assert.ok(sustentacaoAposTorpedo < 224, 'Com 180 kg < 224 kg a nave tem de cair em Touchdown em t=13.0s');
+});
+
+test('Junção N1 + L4 + N4 (B1/B2): Tabela de Tripulação do Vol. 01 é a fonte; Vols. 03, 06 e 08 têm de concordar com ela', () => {
+  const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const trip = extrairTripulacaoVolume01(cadeia.volumes[0].conteudo);
+  const vol03 = normalizarTexto(cadeia.volumes[2].conteudo);
+  const vol06 = normalizarTexto(cadeia.volumes[5].conteudo);
+  const vol08 = extrairContratoEstadoVolume08(cadeia.volumes[7].conteudo);
+
+  console.log(`[N4] Espécies de tripulação examinadas no Vol. 01: ${trip.especies.length}`);
+  assert.equal(trip.especies.length, 4, 'Vol. 01 deve definir exatamente 4 espécies de tripulação');
+
+  // Literais canônicos (L4): valores reais, não símbolos importados
+  const porEspecie = Object.fromEntries(trip.especies.map((e) => [e.especie, e]));
+  assert.equal(porEspecie.POLVO.hpMax, 80);
+  assert.equal(porEspecie.ARRAIA.hpMax, 70);
+  assert.equal(porEspecie.BAIACU.hpMax, 150);
+  assert.equal(porEspecie.CARANGUEJO.hpMax, 110);
+
+  // Reparo: tempo da espécie = tempo base da SSOT (12 s sistema / 8 s furo) ÷ multiplicador da espécie
+  for (const e of trip.especies) {
+    assert.equal(e.reparoSistSeg, 12 / e.multReparo, `Reparo de sistema de ${e.especie} incoerente com 12 s ÷ ${e.multReparo}`);
+    assert.equal(e.reparoFuroSeg, 8 / e.multReparo, `Reparo de furo de ${e.especie} incoerente com 8 s ÷ ${e.multReparo}`);
+  }
+
+  // Vol. 08: todo tripulante do GameState tem HP igual ao da tabela do Vol. 01
+  let tripulantesConferidos = 0;
+  for (const t of vol08.gameState.naveJogador.tripulacao) {
+    const fonte = porEspecie[t.especie];
+    assert.ok(fonte, `Espécie ${t.especie} do Vol. 08 não existe no Vol. 01`);
+    assert.equal(t.hpMax, fonte.hpMax, `HP máx de ${t.especie} no Vol. 08 diverge do Vol. 01`);
+    assert.equal(t.hpAtual, fonte.hpMax, `HP inicial de ${t.especie} no Vol. 08 diverge do Vol. 01`);
+    tripulantesConferidos += 1;
+  }
+  assert.equal(tripulantesConferidos, 3, '[N4] 3 tripulantes da Carcaça Alfa conferidos contra o Vol. 01');
+
+  // Vol. 03: o dano antipessoal no Baiacu parte do HP do Vol. 01 e subtrai os 15 HP da SSOT
+  const danoBaiacu = vol03.match(/-15 HP de dano antipessoal no Baiacu \((\d+) -> (\d+) HP\)/);
+  assert.ok(danoBaiacu, 'Vol. 03 deve registrar o dano antipessoal de 15 HP no Baiacu');
+  assert.equal(Number(danoBaiacu[1]), porEspecie.BAIACU.hpMax, 'HP inicial do Baiacu no Vol. 03 diverge do Vol. 01');
+  assert.equal(Number(danoBaiacu[2]), porEspecie.BAIACU.hpMax - 15, 'HP final do Baiacu no Vol. 03 não fecha com -15 HP');
+
+  // Vol. 06 (Prova Anti-Imortalidade) usa o DPS do Mergulhador: ele tem de estar definido na fonte (Vol. 01)
+  assert.equal(trip.mergulhadorDps, 12, 'Vol. 01 deve definir o DPS do Mergulhador de Assalto (12 DPS)');
+  const dpsDuplaVol06 = vol06.match(/Mergulhadores de Assalto \(2 x (\d+) DPS = ([\d.]+) DPS\)/);
+  assert.ok(dpsDuplaVol06, 'Vol. 06 deve conter a conta 2 x DPS do Mergulhador');
+  assert.equal(Number(dpsDuplaVol06[1]), trip.mergulhadorDps, 'DPS do Mergulhador no Vol. 06 diverge do Vol. 01');
+  assert.equal(Number(dpsDuplaVol06[2]), 2 * trip.mergulhadorDps);
+  assert.ok(2 * trip.mergulhadorDps > 18, 'Dupla de Mergulhadores tem de superar a cura máxima de 18 HP/s');
+
+  // B15 (decisão): inflar o Baiacu leva 1.0 s de ativação — Vol. 01 (fonte) e Vol. 03 (simulação) têm de concordar
+  assert.equal(trip.tempoInflarBaiacuSeg, 1.0, 'Vol. 01 deve definir 1.0 s de ativação do Inflar do Baiacu');
+  const inflarVol03 = vol03.match(/ativa Inflar sobre o furo \(leva ([\d.]+)s/);
+  assert.ok(inflarVol03, 'Vol. 03 deve declarar o tempo de ativação do Inflar');
+  assert.equal(Number(inflarVol03[1]), trip.tempoInflarBaiacuSeg, 'Tempo de Inflar no Vol. 03 diverge do Vol. 01');
 });
 
 test('Lei N2: verificação da Lista-Catraca (nenhum item resolvido pode permanecer na catraca)', () => {
-  console.log(`[N4] Itens na Lista-Catraca examinados: ${LISTA_CATRACA.length} (capacidade ativa: 1 sentinela)`);
+  console.log(`[N4] Itens na Lista-Catraca examinados: ${LISTA_CATRACA.length}`);
   for (const item of LISTA_CATRACA) {
     assert.ok(item.id && item.data && item.frase, 'Item da catraca exige id, data e frase');
     const aindaFalha = item.verificarFalha();

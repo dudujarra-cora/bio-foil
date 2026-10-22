@@ -1,0 +1,361 @@
+{
+  "_leia": "Fonte executável das mutações (B6). Cada 'buscar' tem de existir exatamente 1 vez no arquivo. O executor aplica as trocas numa CÓPIA do projeto, roda 'testes' e exige que a 1ª linha de falha real contenha 'falhaEsperada'. Nunca edite MUTACOES.md à mão: rode node scripts/rodar-mutacoes.mjs --gerar-md.",
+  "mutacoes": [
+    {
+      "id": "MUT-01",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "L5 / N4",
+      "descricao": "Remove o Vol. 06 da cadeia canônica (cadeia parcial de 7 com 8 volumes no disco)",
+      "trocas": [
+        {
+          "buscar": "  '06_prova_formal_matriz_e_limites.md',\n",
+          "substituir": ""
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "[L5 TRIPWIRE FALHOU]"
+    },
+    {
+      "id": "MUT-02",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "L3",
+      "descricao": "Sem permissão devolve o mesmo marcador de chave inexistente (mistura ausência com proibição)",
+      "trocas": [
+        {
+          "buscar": "marcadorExplicito: 'ACESSO_BLOQUEADO_CANAL_PERMISSAO'",
+          "substituir": "marcadorExplicito: 'CHAVE_INEXISTENTE_NO_SSOT'"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "[L3]"
+    },
+    {
+      "id": "MUT-03",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "N1 / N4",
+      "descricao": "Leitura da Matriz 6.2 ignora o estado 5 (Furtivo na Água): 32 células em vez de 40",
+      "trocas": [
+        {
+          "buscar": "          '5_FURTIVO_AGUA',\n",
+          "substituir": ""
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "40 células"
+    },
+    {
+      "id": "MUT-04",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "N1 / L1",
+      "descricao": "Motor de peso esquece os +5 kg por órgão enxertado",
+      "trocas": [
+        {
+          "buscar": "const somaOrgaos = quantidadeOrgaosEnxertados * 5;",
+          "substituir": "const somaOrgaos = quantidadeOrgaosEnxertados * 0;"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Peso da Manta-Volt"
+    },
+    {
+      "id": "MUT-05",
+      "arquivo": "tests/01-portao-gdd.test.mjs",
+      "lei": "N2",
+      "descricao": "Item já resolvido continua na Lista-Catraca",
+      "trocas": [
+        {
+          "buscar": "const LISTA_CATRACA = Object.freeze([]);",
+          "substituir": "const LISTA_CATRACA = Object.freeze([{ id: 'CAT-TEST-01', data: '2026-10-22', frase: 'resolvido e esquecido', verificarFalha: () => false }]);"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "[N2 CATRACA]"
+    },
+    {
+      "id": "MUT-06",
+      "arquivo": "scripts/hooks/pre-commit",
+      "lei": "Seção 5",
+      "descricao": "Hook sem proteção de ambiente (sem unset no topo e sem env -u na chamada dos testes)",
+      "trocas": [
+        {
+          "buscar": "unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES\n",
+          "substituir": "# mutacao: sem unset\n"
+        },
+        {
+          "buscar": "env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_PREFIX -u GIT_COMMON_DIR -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES \\\n  node --test $ARQUIVOS",
+          "substituir": "node --test $ARQUIVOS"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[Seção 5 REAL]"
+    },
+    {
+      "id": "MUT-07",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L4",
+      "descricao": "GameState do Vol. 08 com 20.0 kg de água na Câmara 1 (SSOT: 12.5 kg)",
+      "trocas": [
+        {
+          "buscar": "\"nome\": \"ARTILHARIA_DORSAL\", \"tipoSlot\": \"SISTEMA_BASE\", \"nivelMaxBarras\": 3, \"barrasIntegridade\": 3, \"barrasEnergiaAlocada\": 3, \"aguaKg\": 12.5",
+          "substituir": "\"nome\": \"ARTILHARIA_DORSAL\", \"tipoSlot\": \"SISTEMA_BASE\", \"nivelMaxBarras\": 3, \"barrasIntegridade\": 3, \"barrasEnergiaAlocada\": 3, \"aguaKg\": 20.0"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Câmara 1 no GameState deve ter 12.5 kg"
+    },
+    {
+      "id": "MUT-08",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "L5 / N4",
+      "descricao": "Suíte 02 some da lista canônica de tests/",
+      "trocas": [
+        {
+          "buscar": "  '02-hook-ambiente.test.mjs',\n",
+          "substituir": ""
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[L5 TRIPWIRE TESTES FALHOU]"
+    },
+    {
+      "id": "MUT-09",
+      "arquivo": "06_prova_formal_matriz_e_limites.md",
+      "lei": "L4 / N1",
+      "descricao": "Teto do Reator na SSOT muda de 18 para 28 barras",
+      "trocas": [
+        {
+          "buscar": "| `REATOR_TETO_COMPRA` | $18\\text{ barras}$",
+          "substituir": "| `REATOR_TETO_COMPRA` | $28\\text{ barras}$"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Valor de REATOR_TETO_COMPRA divergiu"
+    },
+    {
+      "id": "MUT-10",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "L5 / N5",
+      "descricao": "src/gdd-parser.mjs fica fora da lista canônica de src/",
+      "trocas": [
+        {
+          "buscar": "export const CADEIA_CANONICA_SRC = Object.freeze([\n  'gdd-parser.mjs',\n]);",
+          "substituir": "export const CADEIA_CANONICA_SRC = Object.freeze([]);"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[L5 TRIPWIRE SRC FALHOU]"
+    },
+    {
+      "id": "MUT-11",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "L5 / N5",
+      "descricao": "scripts/auditar-frente.sh fica fora da lista canônica de scripts/",
+      "trocas": [
+        {
+          "buscar": "  'auditar-frente.sh',\n",
+          "substituir": ""
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[L5 TRIPWIRE SCRIPTS FALHOU]"
+    },
+    {
+      "id": "MUT-12",
+      "arquivo": "03_vertical_slice_combate_e_auditoria.md",
+      "lei": "N1 / L4",
+      "descricao": "Dano antipessoal no Baiacu deixa de fechar com -15 HP (150 -> 140)",
+      "trocas": [
+        {
+          "buscar": "$150 \\rightarrow 135\\text{ HP}$",
+          "substituir": "$150 \\rightarrow 140\\text{ HP}$"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "HP final do Baiacu no Vol. 03"
+    },
+    {
+      "id": "MUT-13",
+      "arquivo": "04_mapa_procedural_e_auditoria.md",
+      "lei": "N1 / N4",
+      "descricao": "Baralho procedural com 5 nós de combate padrão (soma 19 em vez de 20)",
+      "trocas": [
+        {
+          "buscar": "* **6 Nós de Combate Padrão:**",
+          "substituir": "* **5 Nós de Combate Padrão:**"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Cotas de nós do Vol. 04"
+    },
+    {
+      "id": "MUT-14",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L4 (B1)",
+      "descricao": "Regressão da B1: Baiacu volta a ter 100 HP no GameState (Vol. 01: 150 HP)",
+      "trocas": [
+        {
+          "buscar": "\"especie\": \"BAIACU\", \"hpAtual\": 150, \"hpMax\": 150,",
+          "substituir": "\"especie\": \"BAIACU\", \"hpAtual\": 150, \"hpMax\": 100,"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "HP máx de BAIACU no Vol. 08 diverge do Vol. 01"
+    },
+    {
+      "id": "MUT-15",
+      "arquivo": "03_vertical_slice_combate_e_auditoria.md",
+      "lei": "N1 (B3)",
+      "descricao": "Reparo do Mastro conclui em 30.75 s (recalculado a partir do Vol. 01: 29.75 s)",
+      "trocas": [
+        {
+          "buscar": "(concluindo em **$t = 29.75\\text{s}$**",
+          "substituir": "(concluindo em **$t = 30.75\\text{s}$**"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Linha do tempo do Vol. 03 diverge"
+    },
+    {
+      "id": "MUT-16",
+      "arquivo": "scripts/hooks/pre-commit",
+      "lei": "L1 (B4)",
+      "descricao": "pre-commit volta a testar a árvore de trabalho em vez do conteúdo do commit",
+      "trocas": [
+        {
+          "buscar": "RAIZ_TESTE=\"$EXPORT_DIR\"",
+          "substituir": "RAIZ_TESTE=\"$REPO_ROOT\""
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[B4 REAL]"
+    },
+    {
+      "id": "MUT-17",
+      "arquivo": "scripts/hooks/pre-commit",
+      "lei": "N5 (B8)",
+      "descricao": "pre-commit deixa de bloquear commit direto na main",
+      "trocas": [
+        {
+          "buscar": "if [ \"$RAMO_ATUAL\" = \"main\" ]; then",
+          "substituir": "if [ \"$RAMO_ATUAL\" = \"__nunca__\" ]; then"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[N5 REAL]"
+    },
+    {
+      "id": "MUT-18",
+      "arquivo": "scripts/hooks/pre-commit",
+      "lei": "L1 (B4b)",
+      "descricao": "pre-commit ignora o índice temporário do commit parcial e lê o índice principal",
+      "trocas": [
+        {
+          "buscar": "if [ -n \"$INDICE_DO_COMMIT\" ]; then",
+          "substituir": "if [ -n \"\" ]; then"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[B4b REAL]"
+    },
+    {
+      "id": "MUT-19",
+      "arquivo": "scripts/hooks/pre-push",
+      "lei": "L1 (B4)",
+      "descricao": "pre-push roda os testes na árvore de trabalho em vez de HEAD",
+      "trocas": [
+        {
+          "buscar": "cd \"$EXPORT_DIR\"",
+          "substituir": "cd \"$REPO_ROOT\""
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[PRE-PUSH REAL]"
+    },
+    {
+      "id": "MUT-20",
+      "arquivo": "padrao/protocolo/PORTOES.md",
+      "lei": "N3 (B14)",
+      "descricao": "Portão 02 some do registro de portões",
+      "trocas": [
+        {
+          "buscar": "| `tests/02-hook-ambiente.test.mjs` | OBRIGATORIO |",
+          "substituir": "| `removido` | OBRIGATORIO |"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[L5 TRIPWIRE PORTOES N3 FALHOU]"
+    },
+    {
+      "id": "MUT-21",
+      "arquivo": "package.json",
+      "lei": "B10",
+      "descricao": "engines.node exige uma versão de Node que esta máquina não tem",
+      "trocas": [
+        {
+          "buscar": "\"node\": \">=22.22.0 <23.0.0\"",
+          "substituir": "\"node\": \">=99.0.0 <100.0.0\""
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[B10 ENGINES FALHOU]"
+    },
+    {
+      "id": "MUT-22",
+      "arquivo": "scripts/hooks/pre-commit",
+      "lei": "L6 (B16)",
+      "descricao": "pre-commit deixa de limpar NODE_TEST_CONTEXT herdado (node --test filho sai 0 mesmo falhando)",
+      "trocas": [
+        {
+          "buscar": "unset NODE_TEST_CONTEXT\n",
+          "substituir": ""
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[B4 REAL]"
+    }
+  ]
+}

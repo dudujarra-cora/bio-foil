@@ -1,5 +1,7 @@
 # Registro de Mutações Reais — Projeto Bio-Foil (`ftl`)
 
+> **Histórico (até o commit `5b857ef`):** a tabela logo abaixo foi preenchida **à mão**. É relato, não medição (Lei L7), e parte dela ficou obsoleta. Por exemplo, a `MUT-12` antiga travava o valor errado "100 -> 85 HP". Ela fica preservada só como histórico. **A única fonte válida é o bloco GERADO no fim deste arquivo**, produzido por `node scripts/rodar-mutacoes.mjs --gerar-md` a partir de `mutacoes.json`. O portão `tests/09-mutacoes-reais.test.mjs` re-executa todas as mutações e reprova se o bloco divergir do que foi medido.
+
 Conforme **Seção 3.5** e **Lei L6**, toda mutação abaixo foi executada alterando o significado sem quebrar a sintaxe, medida via `node --test`, teve sua primeira linha de falha real copiada literalmente e foi revertida em seguida.
 
 | ID | Alvo da Mutação | Lei Provada | Mutação Aplicada (Significado) | Primeira Linha de Falha Real Medida |
@@ -17,3 +19,32 @@ Conforme **Seção 3.5** e **Lei L6**, toda mutação abaixo foi executada alter
 | `MUT-11` | `src/gdd-parser.mjs` (`CADEIA_CANONICA_SCRIPTS`) | **L5 / N5** | Omitir `auditar-frente.sh` de `CADEIA_CANONICA_SCRIPTS` | `Error: [L5 TRIPWIRE SCRIPTS FALHOU] Script em scripts/ fora da cadeia canônica. Faltando=[] Extras=[auditar-frente.sh]` |
 | `MUT-12` | `03_vertical_slice_combate_e_auditoria.md` (Seção 3.4) | **N1 / L4** | Alterar dano antipessoal no Baiacu de `100 \rightarrow 85\text{ HP}` para `100 \rightarrow 90\text{ HP}` | `AssertionError [ERR_ASSERTION]: Simulação deve registrar o dano antipessoal no Baiacu (100 -> 85 HP)` |
 | `MUT-13` | `04_mapa_procedural_e_auditoria.md` (Seção 4.4) | **N1 / L4 / N4** | Alterar `6 Nós de Combate Padrão` para `5 Nós de Combate Padrão` no baralho de 20 nós | `AssertionError [ERR_ASSERTION]: Cotas de nós do Vol. 04 devem ser [2, 4, 6, 3, 3, 1, 1]` |
+
+<!-- INICIO BLOCO GERADO POR scripts/rodar-mutacoes.mjs — NÃO EDITAR À MÃO -->
+
+| ID | Alvo | Lei | Mutação (muda o significado, nunca a forma) | 1ª linha de falha real medida |
+| :--- | :--- | :---: | :--- | :--- |
+| `MUT-01` | `src/gdd-parser.mjs` | **L5 / N4** | Remove o Vol. 06 da cadeia canônica (cadeia parcial de 7 com 8 volumes no disco) | `Error: [L5 TRIPWIRE FALHOU] Cadeia incompleta ou item fora da lista. Faltando=[] Extras=[06_prova_formal_matriz_e_limites.md]` |
+| `MUT-02` | `src/gdd-parser.mjs` | **L3** | Sem permissão devolve o mesmo marcador de chave inexistente (mistura ausência com proibição) | `AssertionError [ERR_ASSERTION]: [L3] "Não existe" e "Não posso ver" nunca podem devolver o mesmo marcador` |
+| `MUT-03` | `src/gdd-parser.mjs` | **N1 / N4** | Leitura da Matriz 6.2 ignora o estado 5 (Furtivo na Água): 32 células em vez de 40 | `AssertionError [ERR_ASSERTION]: A Matriz 6.2 (5 estados x 8 eventos) deve conter 40 células` |
+| `MUT-04` | `src/gdd-parser.mjs` | **N1 / L1** | Motor de peso esquece os +5 kg por órgão enxertado | `AssertionError [ERR_ASSERTION]: Peso da Manta-Volt recalculado no motor diverge de 195 kg` |
+| `MUT-05` | `tests/01-portao-gdd.test.mjs` | **N2** | Item já resolvido continua na Lista-Catraca | `AssertionError [ERR_ASSERTION]: [N2 CATRACA] O item CAT-TEST-01 (resolvido e esquecido) passou a verde! Remova-o da LISTA_CATRACA.` |
+| `MUT-06` | `scripts/hooks/pre-commit` | **Seção 5** | Hook sem proteção de ambiente (sem unset no topo e sem env -u na chamada dos testes) | `AssertionError [ERR_ASSERTION]: [Seção 5 REAL] core.bare do principal virou "true" após commit na worktree` |
+| `MUT-07` | `08_contrato_estado_e_arquitetura_modulos.md` | **N1 / L4** | GameState do Vol. 08 com 20.0 kg de água na Câmara 1 (SSOT: 12.5 kg) | `AssertionError [ERR_ASSERTION]: Câmara 1 no GameState deve ter 12.5 kg de água` |
+| `MUT-08` | `src/gdd-parser.mjs` | **L5 / N4** | Suíte 02 some da lista canônica de tests/ | `Error: [L5 TRIPWIRE TESTES FALHOU] Suíte de testes fora da cadeia canônica. Faltando=[] Extras=[02-hook-ambiente.test.mjs]` |
+| `MUT-09` | `06_prova_formal_matriz_e_limites.md` | **L4 / N1** | Teto do Reator na SSOT muda de 18 para 28 barras | `AssertionError [ERR_ASSERTION]: Valor de REATOR_TETO_COMPRA divergiu do literal canônico` |
+| `MUT-10` | `src/gdd-parser.mjs` | **L5 / N5** | src/gdd-parser.mjs fica fora da lista canônica de src/ | `Error: [L5 TRIPWIRE SRC FALHOU] Módulo em src/ fora da cadeia canônica. Faltando=[] Extras=[gdd-parser.mjs]` |
+| `MUT-11` | `src/gdd-parser.mjs` | **L5 / N5** | scripts/auditar-frente.sh fica fora da lista canônica de scripts/ | `Error: [L5 TRIPWIRE SCRIPTS FALHOU] Script em scripts/ fora da cadeia canônica. Faltando=[] Extras=[auditar-frente.sh]` |
+| `MUT-12` | `03_vertical_slice_combate_e_auditoria.md` | **N1 / L4** | Dano antipessoal no Baiacu deixa de fechar com -15 HP (150 -> 140) | `AssertionError [ERR_ASSERTION]: HP final do Baiacu no Vol. 03 não fecha com -15 HP` |
+| `MUT-13` | `04_mapa_procedural_e_auditoria.md` | **N1 / N4** | Baralho procedural com 5 nós de combate padrão (soma 19 em vez de 20) | `AssertionError [ERR_ASSERTION]: Cotas de nós do Vol. 04 devem ser [2, 4, 6, 3, 3, 1, 1]` |
+| `MUT-14` | `08_contrato_estado_e_arquitetura_modulos.md` | **N1 / L4 (B1)** | Regressão da B1: Baiacu volta a ter 100 HP no GameState (Vol. 01: 150 HP) | `AssertionError [ERR_ASSERTION]: HP máx de BAIACU no Vol. 08 diverge do Vol. 01` |
+| `MUT-15` | `03_vertical_slice_combate_e_auditoria.md` | **N1 (B3)** | Reparo do Mastro conclui em 30.75 s (recalculado a partir do Vol. 01: 29.75 s) | `AssertionError [ERR_ASSERTION]: Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT` |
+| `MUT-16` | `scripts/hooks/pre-commit` | **L1 (B4)** | pre-commit volta a testar a árvore de trabalho em vez do conteúdo do commit | `AssertionError [ERR_ASSERTION]: [B4 REAL] commit com índice RUIM passou porque o hook leu a árvore de trabalho` |
+| `MUT-17` | `scripts/hooks/pre-commit` | **N5 (B8)** | pre-commit deixa de bloquear commit direto na main | `AssertionError [ERR_ASSERTION]: [N5 REAL] commit direto na main foi aceito` |
+| `MUT-18` | `scripts/hooks/pre-commit` | **L1 (B4b)** | pre-commit ignora o índice temporário do commit parcial e lê o índice principal | `AssertionError [ERR_ASSERTION]: [B4b REAL] commit parcial com conteúdo RUIM passou porque o hook leu o índice errado` |
+| `MUT-19` | `scripts/hooks/pre-push` | **L1 (B4)** | pre-push roda os testes na árvore de trabalho em vez de HEAD | `AssertionError [ERR_ASSERTION]: [PRE-PUSH REAL] push de HEAD limpo recusado por causa da árvore suja: [N4] Portoes obrigatorios examinados no pre-push: 1` |
+| `MUT-20` | `padrao/protocolo/PORTOES.md` | **N3 (B14)** | Portão 02 some do registro de portões | `Error: [L5 TRIPWIRE PORTOES N3 FALHOU] Faltando=[02-hook-ambiente.test.mjs] Extras=[]` |
+| `MUT-21` | `package.json` | **B10** | engines.node exige uma versão de Node que esta máquina não tem | `Error: [B10 ENGINES FALHOU] Node 22.22.2 fora de engines.node ">=99.0.0 <100.0.0"` |
+| `MUT-22` | `scripts/hooks/pre-commit` | **L6 (B16)** | pre-commit deixa de limpar NODE_TEST_CONTEXT herdado (node --test filho sai 0 mesmo falhando) | `AssertionError [ERR_ASSERTION]: [B4 REAL] commit com índice RUIM passou porque o hook leu a árvore de trabalho` |
+
+<!-- FIM BLOCO GERADO -->

@@ -42,3 +42,15 @@ No topo de cada hook (`pre-commit`, `pre-push`), antes de qualquer teste:
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
 ```
 Antes de cada commit e de cada push: `git config --get core.bare` no repositório principal tem que dar `false`.
+
+---
+
+## 4. Regras operacionais medidas neste projeto (2026-10-22)
+
+- **Onde ficam as worktrees (N5):** `/Users/dudujarra/Documents/ftl-worktrees/<frente>`. Nesta máquina, a pasta `/tmp` dá `Operation not permitted` para o agente (medido), então não use worktree lá.
+- **Commit direto na `main` é recusado** pelo `pre-commit` (Lei N5). A `main` só recebe `git merge --ff-only` da frente; isso não dispara o hook.
+- **O hook testa o conteúdo do commit**, não a árvore de trabalho. Ele exporta o índice, inclusive o índice temporário de `git commit <arquivo>` (B4).
+- **`NODE_TEST_CONTEXT` herdado** faz um `node --test` filho sair com 0 mesmo havendo falha (medido). Hooks e executor de mutações limpam essa variável (B16).
+- **Mutação só vale se re-executada:** `mutacoes.json` é a fonte; `node scripts/rodar-mutacoes.mjs --gerar-md` mede e gera o bloco do `MUTACOES.md` (B6).
+- **Portão novo nasce `DECLARADO`** em `PORTOES.md` e só vira `OBRIGATORIO` com 3 corridas verdes seguidas na `main`, com evidência colada (N3).
+- **Apagar qualquer coisa** (arquivo, ramo, metadado do git) exige mostrar o que vai mudar e esperar o ok do Dudu.

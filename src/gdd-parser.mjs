@@ -15,6 +15,7 @@ export const CADEIA_CANONICA_GDD = Object.freeze([
 export const CADEIA_CANONICA_TESTES = Object.freeze([
   '01-portao-gdd.test.mjs',
   '02-hook-ambiente.test.mjs',
+  '09-mutacoes-reais.test.mjs',
 ]);
 
 export const CADEIA_CANONICA_SRC = Object.freeze([
@@ -25,12 +26,102 @@ export const CADEIA_CANONICA_SCRIPTS = Object.freeze([
   'auditar-frente.sh',
   'hooks/pre-commit',
   'hooks/pre-push',
+  'rodar-mutacoes.mjs',
 ]);
 
 export const CADEIA_CANONICA_PROTOCOLO = Object.freeze([
   'LEIS-DE-TESTE.md',
   'MUTACOES.md',
+  'PORTOES.md',
+  'mutacoes.json',
 ]);
+
+/** Arquivos da raiz que não são .md (dotfiles como .git são ignorados). */
+export const CADEIA_CANONICA_RAIZ_OUTROS = Object.freeze([
+  'package.json',
+]);
+
+/** Diretórios da raiz (dot-diretórios ignorados). */
+export const CADEIA_CANONICA_DIRS_RAIZ = Object.freeze([
+  'padrao',
+  'scripts',
+  'src',
+  'tests',
+]);
+
+/**
+ * Lei L6 (B7): remove a formatação LaTeX/Markdown para que as asserções meçam SIGNIFICADO, não formatação.
+ * Ex.: "$100 \rightarrow 85\text{ HP}$" -> "100 -> 85 HP".
+ */
+export function normalizarTexto(texto) {
+  let t = String(texto);
+  for (let i = 0; i < 4; i += 1) {
+    t = t.replace(/\\(?:text|mathbf|textbf|mathrm)\{([^{}]*)\}/g, '$1');
+  }
+  return t
+    .replace(/\\rightarrow\b|\\to\b/g, '->')
+    .replace(/\\leftrightarrow\b/g, '<->')
+    .replace(/\\times\b/g, 'x')
+    .replace(/\\le\b/g, '<=')
+    .replace(/\\ge\b/g, '>=')
+    .replace(/\\%/g, '%')
+    .replace(/\\;/g, ' ')
+    .replace(/\$/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/`/g, '')
+    .replace(/[ \t]+/g, ' ');
+}
+
+const MAPA_ESPECIES = Object.freeze({
+  POLVO: 'POLVO',
+  ARRAIA: 'ARRAIA',
+  BAIACU: 'BAIACU',
+  CARANGUEJO: 'CARANGUEJO',
+});
+
+/**
+ * B2: Extrai a Tabela de Tripulação do Volume 01 (Seção 1.5) — fonte canônica de HP, velocidade, reparo e DPS.
+ */
+export function extrairTripulacaoVolume01(conteudoVol01) {
+  const secao = conteudoVol01.split('## 1.5.')[1]?.split('\n---')[0] ?? '';
+  const especies = [];
+  for (const linhaBruta of secao.split('\n')) {
+    if (!/^\| \*\*\d+\./.test(linhaBruta)) continue;
+    const cols = normalizarTexto(linhaBruta)
+      .split('|')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    const nomeLimpo = cols[0].replace(/^\d+\.\s*/, '');
+    const chave = nomeLimpo.split(' ')[0].toUpperCase();
+    const especie = MAPA_ESPECIES[chave];
+    if (!especie) {
+      throw new Error(`[Vol 01 Tripulação] Espécie desconhecida na tabela: "${nomeLimpo}"`);
+    }
+    const reparo = cols[4].match(/([\d.]+)x \(([\d.]+)s \/ ([\d.]+)s\)/);
+    if (!reparo) {
+      throw new Error(`[Vol 01 Tripulação] Coluna de reparo ilegível para ${especie}: "${cols[4]}"`);
+    }
+    especies.push({
+      especie,
+      hpMax: Number(cols[1].match(/([\d.]+) HP/)?.[1]),
+      velNado: Number(cols[2].match(/([\d.]+)x/)?.[1]),
+      multReparo: Number(reparo[1]),
+      reparoSistSeg: Number(reparo[2]),
+      reparoFuroSeg: Number(reparo[3]),
+      dps: Number(cols[5].match(/([\d.]+) DPS/)?.[1]),
+    });
+  }
+  const linhaMergulhador = normalizarTexto(secao)
+    .split('\n')
+    .find((l) => l.includes('Mergulhadores de Assalto'));
+  return clonarProfundoCongelado({
+    especies,
+    mergulhadorDps: Number(linhaMergulhador?.match(/(\d+) DPS/)?.[1] ?? NaN),
+    tempoInflarBaiacuSeg: Number(
+      normalizarTexto(secao).match(/Inflar\):[^|]*?após ([\d.]+)s de ativação/)?.[1] ?? NaN
+    ),
+  });
+}
 
 function clonarProfundoCongelado(obj) {
   const copia = structuredClone(obj);
@@ -376,15 +467,12 @@ export function extrairBaralhoVolume04(conteudoVol04) {
  * Extrai e audita os marcos temporais da Simulação do Volume 03 (Seção 3.4: t = 0.0s a t = 32.75s).
  */
 export function extrairSimulacaoVolume03(conteudoVol03) {
-  const secao34 = conteudoVol03.split('## 3.4.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
-  const timestamps = [...secao34.matchAll(/\$t = (\d+(?:\.\d+)?)\\text\{s\}\$/g)].map((m) => Number(m[1]));
+  const secao34 = normalizarTexto(conteudoVol03.split('## 3.4.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '');
+  const timestamps = [...secao34.matchAll(/t = (\d+(?:\.\d+)?)s\b/g)].map((m) => Number(m[1]));
   const unicosOrdenados = [...new Set(timestamps)].sort((a, b) => a - b);
   return clonarProfundoCongelado({
+    textoNormalizado: secao34,
     timestampsUnicos: unicosOrdenados,
-    possuiDanoBaiacu85Hp: /100 \\rightarrow 85\\text\{ HP\}/.test(secao34),
-    possuiCalculoAfogamento28Hp: /100 - 15 - 57 = \\mathbf\{28\\text\{ HP\}\}/.test(secao34),
-    possuiQuedaMarinheiros13Hp: /\$13\\text\{ HP\}\$ cada/.test(secao34),
-    possuiEliminacaoMarinheiros0Hp: /13\\text\{ HP\} \\rightarrow 0\\text\{ HP\}/.test(secao34),
   });
 }
 
@@ -516,8 +604,78 @@ export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
     }
   }
 
+  // L5: raiz do projeto — só .md canônicos (verificados em carregarCadeiaCanonicaGdd), arquivos e diretórios declarados
+  const entradasRaiz = fs.readdirSync(diretorioRaiz, { withFileTypes: true }).filter((e) => !e.name.startsWith('.'));
+  const outrosArquivosRaiz = entradasRaiz.filter((e) => e.isFile() && !e.name.endsWith('.md')).map((e) => e.name).sort();
+  const dirsRaiz = entradasRaiz.filter((e) => e.isDirectory()).map((e) => e.name).sort();
+  const compararLista = (rotulo, noDisco, esperados) => {
+    const ordenados = [...esperados].sort();
+    const falt = ordenados.filter((f) => !noDisco.includes(f));
+    const ext = noDisco.filter((f) => !ordenados.includes(f));
+    if (falt.length > 0 || ext.length > 0) {
+      throw new Error(`[L5 TRIPWIRE ${rotulo} FALHOU] Faltando=[${falt.join(', ')}] Extras=[${ext.join(', ')}]`);
+    }
+  };
+  compararLista('RAIZ ARQUIVOS', outrosArquivosRaiz, CADEIA_CANONICA_RAIZ_OUTROS);
+  compararLista('RAIZ DIRETORIOS', dirsRaiz, CADEIA_CANONICA_DIRS_RAIZ);
+
+  // B10: a versão de Node que roda os portões tem de estar dentro do intervalo fixado em package.json
+  const pacote = JSON.parse(fs.readFileSync(path.join(diretorioRaiz, 'package.json'), 'utf8'));
+  const faixa = String(pacote.engines?.node ?? '').match(/^>=(\d+)\.(\d+)\.(\d+) <(\d+)\.(\d+)\.(\d+)$/);
+  if (!faixa) {
+    throw new Error(`[B10 ENGINES FALHOU] package.json engines.node ilegível: "${pacote.engines?.node}"`);
+  }
+  const versao = process.versions.node.split('.').map(Number);
+  const comparar = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
+  const minimo = faixa.slice(1, 4).map(Number);
+  const teto = faixa.slice(4, 7).map(Number);
+  if (comparar(versao, minimo) < 0 || comparar(versao, teto) >= 0) {
+    throw new Error(
+      `[B10 ENGINES FALHOU] Node ${process.versions.node} fora de engines.node "${pacote.engines.node}"`
+    );
+  }
+
+  // Lei N3: todo portão de tests/ tem linha no PORTOES.md; OBRIGATORIO exige evidência de 3 corridas na main
+  const conteudoPortoes = fs.readFileSync(path.join(diretorioRaiz, 'padrao', 'protocolo', 'PORTOES.md'), 'utf8');
+  const portoes = conteudoPortoes
+    .split('\n')
+    .filter((l) => l.startsWith('| `tests/'))
+    .map((linha) => {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      return {
+        arquivo: cols[0].replace(/`/g, '').replace(/^tests\//, ''),
+        status: cols[1],
+        motivo: cols[2] ?? '',
+        desde: cols[3] ?? '',
+        evidencia: cols[4] ?? '',
+      };
+    });
+  compararLista('PORTOES N3', portoes.map((p) => p.arquivo).sort(), CADEIA_CANONICA_TESTES);
+  for (const p of portoes) {
+    if (!['OBRIGATORIO', 'DECLARADO'].includes(p.status)) {
+      throw new Error(`[N3 FALHOU] Status inválido para ${p.arquivo}: "${p.status}"`);
+    }
+    if (!p.motivo || !/^\d{4}-\d{2}-\d{2}$/.test(p.desde)) {
+      throw new Error(`[N3 FALHOU] Portão ${p.arquivo} sem motivo ou sem data (AAAA-MM-DD)`);
+    }
+    if (p.status === 'OBRIGATORIO' && !/`[0-9a-f]{7,40}`.*3\/3/.test(p.evidencia)) {
+      throw new Error(`[N3 FALHOU] Portão ${p.arquivo} OBRIGATORIO sem evidência de 3 corridas verdes na main (commit + 3/3)`);
+    }
+  }
+  const obrigatorios = portoes.filter((p) => p.status === 'OBRIGATORIO').length;
+  if (obrigatorios === 0) {
+    throw new Error('[N4 FALHOU] Zero portões OBRIGATORIO no PORTOES.md');
+  }
+
   const caminhoMutacoes = path.join(diretorioRaiz, 'padrao', 'protocolo', 'MUTACOES.md');
-  const conteudoMutacoes = fs.readFileSync(caminhoMutacoes, 'utf8');
+  const conteudoMutacoesCompleto = fs.readFileSync(caminhoMutacoes, 'utf8');
+  // B6: só o bloco GERADO pelo executor real conta como medição; a tabela manual antiga é histórico.
+  const iniBloco = conteudoMutacoesCompleto.indexOf('<!-- INICIO BLOCO GERADO');
+  const fimBloco = conteudoMutacoesCompleto.indexOf('<!-- FIM BLOCO GERADO -->');
+  if (iniBloco < 0 || fimBloco < iniBloco) {
+    throw new Error('[B6 FALHOU] MUTACOES.md sem bloco gerado pelo executor real (scripts/rodar-mutacoes.mjs --gerar-md)');
+  }
+  const conteudoMutacoes = conteudoMutacoesCompleto.slice(iniBloco, fimBloco);
   const linhasMutacao = conteudoMutacoes
     .split('\n')
     .filter((l) => l.startsWith('| `MUT-'));
@@ -558,6 +716,8 @@ export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
     testesDeclarados: [...CADEIA_CANONICA_TESTES],
     totalTestesExaminados: arquivosTesteNoDisco.length,
     totalMutacoesExaminadas: mutacoes.length,
+    totalPortoesExaminados: portoes.length,
+    totalPortoesObrigatorios: obrigatorios,
     mutacoes,
   });
 }
