@@ -16,14 +16,14 @@ Em um jogo tático de micropausa estilo *FTL*, **a interface é o próprio tabul
 |  METRO  |                                                      |  [CASCO/VIDA INIMIGA: ||||||||] |
 |  FOIL   |       +----------------------+---------------+       |  [BARREIRA INIMIGA: (O)]        |
 |         |  (AR) | [1. ARTILHARIA DORS.]| [7. ENXERTO A: TUBO]  |       |                                 |
-|  300kg  |       |  (Armas)     (Bulbo) |  (Abordagem)  (Bulbo) |       |        +---------------+        |
-|   |     |   +---+------------------+---+---------------+-------+---+   |        | [CABINE CMD]  |        |
-| [260kg] |   | [2. CÓRTEX]          | [3. BOMBA BRANQUIAL]          |   |   +----+-------+-------+----+   |
-| LIMITE  |   |  (Piloto)   (Bulbo)  |  (O2 + Cura)          (Bulbo) |   |   | [TORRETA]  | [MOTOR SUB]|   |
-|  FOIL   |   +----------------------+-------------------------------+   |   +------------+------------+   |
-|   |     |   | [4. GLÂNDULA BARR.]  | [5. SIFÃO PROPULSOR]          |   |~~~~~~~~~~~~ LINHA D'ÁGUA ~~~~~~~|
-| >225kg< |   |  (Escudo)   (Bulbo)  |  (Motor)              (Bulbo) |   |        | [TORPEDO SUB] |        |
-|  PESO   |   +-----------+----------+------------+------------------+   |        +---------------+        |
+|  300kg  |       |  (Armas)     (Bulbo) |  (Abordagem)  (Bulbo) |       |   +------------+------------+   |
+|   |     |   +---+------------------+---+---------------+-------+---+   |   | [CABINE]   | [TORRETA]  |   |
+| [260kg] |   | [2. CÓRTEX]          | [3. BOMBA BRANQUIAL]          |   |   |  (Piloto)  |  (Metralh.)|   |
+| LIMITE  |   |  (Piloto)   (Bulbo)  |  (O2 + Cura)          (Bulbo) |   |   +------------+------------+   |
+|  FOIL   |   +----------------------+-------------------------------+   |~~~~~~~~~~~~ LINHA D'ÁGUA ~~~~~~~|
+|   |     |   | [4. GLÂNDULA BARR.]  | [5. SIFÃO PROPULSOR]          |   |   | [MOTOR SUB]| [TORP. SUB]|   |
+| >225kg< |   |  (Escudo)   (Bulbo)  |  (Motor)              (Bulbo) |   |   +------------+------------+   |
+|  PESO   |   +-----------+----------+------------+------------------+   |                                 |
 |  ATUAL  |~~~~~~~~~~~~~~~| [6. POÇO DA QUILHA]   | [8. ENXERTO B]   |~~~|                                 |
 |   |     |               +------||       ||------+------------------+   |  [INTENÇÃO INIMIGA: MIRANDO EM  |
 |  100kg  |                      || FOIL  ||                             |   SIFÃO PROPULSOR - 3.2s]       |

@@ -14,6 +14,8 @@ import {
   calcularSustentacaoAtual,
   calcularVelocidadeCruzeiro,
   calcularTempoRecargaArma,
+  extrairBaralhoVolume04,
+  extrairSimulacaoVolume03,
   extrairContratoEstadoVolume08,
 } from '../src/gdd-parser.mjs';
 
@@ -46,27 +48,53 @@ test('Portão L5 + N4: aplica a cadeia canônica inteira (01..08) na ordem e val
   const vol07 = resultado.volumes[6].conteudo;
   const leisMapeadas = [...vol07.matchAll(/\| \*\*(L[1-7]|N[1-7])\*\* \|/g)].map((m) => m[1]);
   const ondasPlanejadas = [...vol07.matchAll(/### ONDA ([1-6]):/g)].map((m) => m[1]);
-  const mutacoesPlanejadas = [...vol07.matchAll(/`(MUT-O[1-5]-0[1-4])`/g)].map((m) => m[1]);
+  const mutacoesPlanejadas = [...vol07.matchAll(/`(MUT-O[1-6]-0[1-4])`/g)].map((m) => m[1]);
 
   console.log(
     `[N4] Vol. 07 examinado: ${leisMapeadas.length} leis, ${ondasPlanejadas.length} ondas de implementação, ${mutacoesPlanejadas.length} mutações planejadas`
   );
   assert.equal(leisMapeadas.length, 14, 'Vol. 07 deve mapear todas as 14 Leis (L1..L7 e N1..N7)');
   assert.equal(ondasPlanejadas.length, 6, 'Vol. 07 deve planejar as 6 Ondas de implementação');
-  assert.equal(mutacoesPlanejadas.length, 19, 'Vol. 07 deve especificar as 19 mutações obrigatórias das Ondas 1 a 5');
+  assert.equal(mutacoesPlanejadas.length, 22, 'Vol. 07 deve especificar as 22 mutações obrigatórias das Ondas 1 a 6');
 
   const vol08 = extrairContratoEstadoVolume08(resultado.volumes[7].conteudo);
   console.log(
-    `[N4] Vol. 08 examinado: ${vol08.dominiosRaiz.length} domínios no GameState, ${vol08.linhasTabelaL3.length} canais L3, ${vol08.juncoesN1.length} junções N1`
+    `[N4] Vol. 08 examinado: ${vol08.dominiosRaiz.length} domínios no GameState, ${vol08.gameState.naveJogador.camaras.length} câmaras, ${vol08.gameState.naveJogador.tripulacao.length} tripulantes, ${vol08.linhasTabelaL3.length} canais L3, ${vol08.juncoesN1.length} junções N1`
   );
   assert.equal(vol08.dominiosRaiz.length, 8, 'GameState deve ter exatamente 8 domínios raiz');
   assert.equal(vol08.gameState.naveJogador.hpCascoMax, 30, 'HP base no GameState deve bater com SSOT (30 HP)');
   assert.equal(vol08.gameState.naveJogador.pesoChassiKg, 100.0, 'Peso chassi no GameState deve bater com SSOT (100 kg)');
-  assert.equal(vol08.gameState.naveJogador.camaras[0].aguaKg, 12.5, 'Água por câmara no GameState deve bater com SSOT (12.5 kg)');
+  assert.equal(vol08.gameState.naveJogador.camaras.length, 8, 'GameState deve listar todas as 8 câmaras canônicas');
+  for (const camara of vol08.gameState.naveJogador.camaras) {
+    assert.equal(camara.aguaKg, 12.5, `Câmara ${camara.id} no GameState deve ter 12.5 kg de água`);
+  }
+  assert.equal(vol08.gameState.naveJogador.tripulacao.length, 3, 'GameState inicial deve listar os 3 tripulantes da Carcaça Alfa');
   assert.equal(vol08.gameState.naveJogador.armasAtivas.length, 4, 'GameState deve ter exatamente 4 slots de armas ativas');
   assert.equal(vol08.gameState.naveJogador.poraoCarga.length, 4, 'GameState deve ter exatamente 4 slots de porão de carga');
   assert.equal(vol08.linhasTabelaL3.length, 5, 'Tabela L3 da Seção 8.2 deve especificar os 5 estados de visibilidade');
   assert.equal(vol08.juncoesN1.length, 5, 'Seção 8.4 deve definir as 5 assinaturas puras de junção N1');
+
+  // Junção N1 direta entre o JSON do Volume 08 e o Motor Matemático
+  const nav = vol08.gameState.naveJogador;
+  const pesoCalculadoDoJsonVol08 = calcularPesoTotalNave({
+    pesoChassiKg: nav.pesoChassiKg,
+    aguaPorCamaraKg: nav.camaras.map((c) => c.aguaKg),
+    pesosArmasAtivasKg: nav.armasAtivas.filter((s) => s.arma !== null).map((s) => s.arma.pesoBaseKg),
+    pesosCargaPoraoKg: nav.poraoCarga.filter((s) => s.item !== null).map((s) => s.item.pesoKg),
+    quantidadeOrgaosEnxertados: nav.armasAtivas
+      .filter((s) => s.arma !== null)
+      .reduce((acc, s) => acc + s.arma.orgaosEnxertados.length, 0),
+    nivelBlindagem: nav.nivelBlindagem,
+  });
+  const mastroCamara6 = nav.camaras.find((c) => c.id === 6);
+  const sifaoCamara5 = nav.camaras.find((c) => c.id === 5);
+  const sustCalculadaDoJsonVol08 = calcularSustentacaoAtual({
+    barrasIntactasMastro: mastroCamara6.barrasIntegridade,
+    barrasEnergiaSifao: sifaoCamara5.barrasEnergiaAlocada,
+    aguaTotalTanquesKg: nav.camaras.reduce((acc, c) => acc + c.aguaKg, 0),
+  });
+  assert.equal(pesoCalculadoDoJsonVol08, 225, 'GameState inicial do Vol. 08 deve produzir exatos 225 kg no motor');
+  assert.equal(sustCalculadaDoJsonVol08, 260, 'GameState inicial do Vol. 08 deve produzir exatos 260 kg de sustentação no motor');
 
   // Prova do Tripwire L5: criar um diretório temporário com item extra fora da lista deve dar vermelho
   const pastaTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ftl-tripwire-l5-'));
@@ -129,28 +157,79 @@ test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 
   const vol05 = cadeia.volumes[4].conteudo;
   const vol06 = cadeia.volumes[5].conteudo;
 
-  const { totalConstantes, constantesSsot, totalCelulasMatriz, celulasMatriz } =
-    extrairSsotEMatrizDoVolume06(vol06);
+  const {
+    totalConstantes,
+    constantesSsot,
+    totalCelulasMatriz,
+    celulasMatriz,
+    limitesExtremos,
+    niveisPrecedencia,
+  } = extrairSsotEMatrizDoVolume06(vol06);
 
-  console.log(`[N4] Constantes SSOT examinadas: ${totalConstantes}`);
-  console.log(`[N4] Células da Matriz de Estados 5x8 examinadas: ${totalCelulasMatriz}`);
+  console.log(
+    `[N4] Vol. 06 examinado: ${totalConstantes} constantes SSOT, ${totalCelulasMatriz} células 5x8, ${limitesExtremos.length} limites extremos, ${niveisPrecedencia.length} níveis de precedência`
+  );
 
   assert.equal(totalConstantes, 26, 'A Tabela SSOT 6.1 deve conter exatamente 26 constantes canônicas');
   assert.equal(totalCelulasMatriz, 40, 'A Matriz 6.2 (5 estados x 8 eventos) deve conter 40 células');
+  assert.equal(limitesExtremos.length, 4, 'A Seção 6.3 deve conter exatamente 4 Provas de Limite Extremo');
+  assert.equal(niveisPrecedencia.length, 4, 'A Seção 6.4 deve conter exatamente 4 Níveis de Precedência');
 
-  // L4: Asserções contra valores literais reais e cruzamento com o texto dos Volumes 01..05
-  assert.equal(constantesSsot.NUM_CAMARAS_NAVE.valorBruto, '$8\\text{ câmaras}$');
-  assert.equal(constantesSsot.CAP_AGUA_CAMARA.valorBruto, '$12.5\\text{ kg}$');
-  assert.equal(constantesSsot.RESERVA_MIN_SIFAO.valorBruto, '$62.5\\text{ kg}$');
-  assert.equal(constantesSsot.SLOTS_ARMAS_ATIVAS.valorBruto, '$4\\text{ slots}$');
-  assert.equal(constantesSsot.SUSTENTACAO_MAX_ABS.valorBruto, '$480.0\\text{ kg}$');
-  assert.equal(constantesSsot.TEMPO_SPOOL_UP.valorBruto, '$3.0\\text{ s}$');
+  // L4: Asserções contra os valores literais reais de TODAS as 26 constantes da SSOT (0 falsos verdes!)
+  const gabaritoLiteralSsot = {
+    HP_CASCO_BASE: '$30\\text{ HP}$',
+    PESO_CHASSI_BASE: '$100\\text{ kg}$',
+    NUM_CAMARAS_NAVE: '$8\\text{ câmaras}$',
+    CAP_AGUA_CAMARA: '$12.5\\text{ kg}$',
+    RESERVA_MIN_SIFAO: '$62.5\\text{ kg}$',
+    PENALIDADE_CAVITACAO: '$-2.0\\text{ kg}$',
+    SLOTS_ARMAS_ATIVAS: '$4\\text{ slots}$',
+    SLOTS_PORAO_CARGA: '$4\\text{ slots}$',
+    PESO_ORGAO_ENXERTO: '$+5.0\\text{ kg}$',
+    PESO_SUBSISTEMA: '$0.0\\text{ kg}$',
+    PESO_BLINDAGEM_NV: '$+15.0\\text{ kg}$',
+    MASTRO_FOIL_CURVA: '$200 / 240 / 280 / 330\\text{ kg}$',
+    SIFAO_EMP_POR_BARRA: '$+30.0\\text{ kg}$',
+    SUSTENTACAO_MAX_ABS: '$480.0\\text{ kg}$',
+    TEMPO_SPOOL_UP: '$3.0\\text{ s}$',
+    TAXA_FURO_AR: '$-1.0\\text{ kg/s}$',
+    TAXA_VALVULA_AR: '$-2.5\\text{ kg/s}$',
+    TAXA_FURO_MAR: '$+5.0\\text{ kg/s}$',
+    TAXA_RECARGA_MAR: '$+5.0\\text{ kg/s}$',
+    TAXA_CAPILAR_AR: '$+1.25\\text{ kg/s}$',
+    TAXA_DRENO_PESADO: '$-4.0\\text{ kg/s}$',
+    TEMPO_NADO_SALA: '$1.5\\text{ s}$',
+    TEMPO_REPARO_SIST: '$12.0\\text{ s}$',
+    TEMPO_REPARO_FURO: '$8.0\\text{ s}$',
+    DANO_ANTIPESSOAL: '$15\\text{ HP}$',
+    REATOR_TETO_COMPRA: '$18\\text{ barras}$',
+  };
+  let constantesVerificadasLiteralmente = 0;
+  for (const [idConstante, valorLiteralEsperado] of Object.entries(gabaritoLiteralSsot)) {
+    assert.ok(constantesSsot[idConstante], `Constante ${idConstante} ausente da SSOT`);
+    assert.equal(
+      constantesSsot[idConstante].valorBruto,
+      valorLiteralEsperado,
+      `Valor de ${idConstante} divergiu do literal canônico`
+    );
+    constantesVerificadasLiteralmente += 1;
+  }
+  assert.equal(constantesVerificadasLiteralmente, 26, 'Todas as 26 constantes da SSOT devem ter asserção literal');
 
   // Cruzamento N1 com Volume 01, 02, 03 e 04
   assert.match(vol01, /4\\text\{ Slots de Armas Ativas\}/, 'Vol. 01 deve declarar 4 Slots de Armas Ativas');
   assert.match(vol01, /8 \\times 12\.5\\text\{ kg\} = \\mathbf\{100\\text\{ kg\}\}/, 'Vol. 01 deve manter 8 x 12.5 kg = 100 kg');
   assert.match(vol02, /\[ARMAS: 4 SLOTS \(3 BARRAS\)\]/, 'Vol. 02 Wireframe deve exibir 4 SLOTS de armas');
   assert.match(vol02, /\[3: VAZIO\]\s+\[4: VAZIO\]/, 'Vol. 02 Wireframe deve listar os slots 3 e 4 vazios na nave inicial');
+
+  // Verifica no Wireframe (Vol. 02) que [CABINE] e [TORRETA] estão acima da LINHA D'ÁGUA e [MOTOR SUB] / [TORP. SUB] abaixo
+  const partesLinhaDaguaVol02 = vol02.split("LINHA D'ÁGUA");
+  assert.equal(partesLinhaDaguaVol02.length, 2, 'Wireframe Vol. 02 deve conter a divisória LINHA D\'ÁGUA');
+  assert.match(partesLinhaDaguaVol02[0], /\[CABINE\]/, '[CABINE] deve estar acima da linha d\'água no Vol. 02');
+  assert.match(partesLinhaDaguaVol02[0], /\[TORRETA\]/, '[TORRETA] deve estar acima da linha d\'água no Vol. 02');
+  assert.match(partesLinhaDaguaVol02[1], /\[MOTOR SUB\]/, '[MOTOR SUB] deve estar abaixo da linha d\'água no Vol. 02');
+  assert.match(partesLinhaDaguaVol02[1], /\[TORP\. SUB\]/, '[TORP. SUB] deve estar abaixo da linha d\'água no Vol. 02');
+
   assert.match(vol03, /4 Slots de Armas Ativas/, 'Vol. 03 deve declarar 4 Slots de Armas Ativas na ficha da Carcaça Alfa');
   assert.match(vol04, /\\min\\left\(15\.0,\\; V_\{\\text\{base\}\} \\times \\left\(\\frac\{S_\{\\text\{máx\}\}\}\{P_\{\\text\{total\}\}\}\\right\)\\right\)/, 'Vol. 04 deve conter a equação de velocidade com teto 15.0 MN/h');
 
@@ -171,17 +250,26 @@ test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 
 
 test('Junção N1 + N4: recalcula no motor as 5 Naves, 7 Armas, 6 Órgãos e Simulação (t=0s..32.75s) contra Vols. 03 e 05', () => {
   const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const vol04 = cadeia.volumes[3].conteudo;
   const vol05 = cadeia.volumes[4].conteudo;
+  const baralhoVol04 = extrairBaralhoVolume04(vol04);
   const catalogo = extrairCatalogoVolume05(vol05);
 
   console.log(
-    `[N4] Catálogo Vol. 05 examinado: ${catalogo.armas.length} armas, ${catalogo.orgaos.length} órgãos, ${catalogo.naves.length} naves`
+    `[N4] Baralho Vol. 04 examinado: ${baralhoVol04.cotas.length} categorias de cotas (soma = ${baralhoVol04.somaTotalNosBase} nós)`
+  );
+  console.log(
+    `[N4] Catálogo Vol. 05 examinado: ${catalogo.armas.length} armas, ${catalogo.orgaos.length} órgãos, ${catalogo.biomas.length} biomas, ${catalogo.naves.length} naves, ${catalogo.fasesChefe.length} fases do chefe`
   );
 
+  assert.deepEqual(baralhoVol04.cotas, [2, 4, 6, 3, 3, 1, 1], 'Cotas de nós do Vol. 04 devem ser [2, 4, 6, 3, 3, 1, 1]');
+  assert.equal(baralhoVol04.somaTotalNosBase, 20, 'Soma do baralho procedural base do Vol. 04 deve fechar em exatos 20 nós');
   assert.equal(catalogo.armas.length, 7, 'Catálogo 5.1 deve ter exatamente 7 chassis de armas');
   assert.equal(catalogo.orgaos.length, 6, 'Catálogo 5.2 deve ter exatamente 6 órgãos de enxerto');
+  assert.equal(catalogo.biomas.length, 8, 'Catálogo 5.3 deve ter exatamente 8 biomas/setores');
   assert.equal(catalogo.pesoPorOrgaoKg, 5, 'Cada órgão deve pesar exatamente +5 kg');
   assert.equal(catalogo.naves.length, 5, 'Catálogo 5.4 deve ter exatamente 5 naves desbloqueáveis');
+  assert.equal(catalogo.fasesChefe.length, 3, 'Seção 5.5 deve definir exatamente as 3 Fases do Chefe Final');
 
   const tanquesCheios = Array(8).fill(12.5);
 
@@ -275,7 +363,7 @@ test('Junção N1 + N4: recalcula no motor as 5 Naves, 7 Armas, 6 Órgãos e Sim
   assert.equal(sustMaxAbsoluta, 480);
   assert.ok(pesoMaxEquipado + 50 <= sustMaxAbsoluta, 'Nave maximizada deve suportar Onda de Arrasto (+50 kg) sem cair');
 
-  // Simulação do Passo 3: tempos de recarga resfriados em Touchdown (-25%)
+  // Simulação do Passo 3: tempos de recarga resfriados em Touchdown (-25%) e auditoria da linha do tempo (0.0s..32.75s)
   const recargaAcusticoTouchdown = calcularTempoRecargaArma({
     tempoChassiSeg: 9,
     emTouchdown: true,
@@ -286,6 +374,18 @@ test('Junção N1 + N4: recalcula no motor as 5 Naves, 7 Armas, 6 Órgãos e Sim
   });
   assert.equal(recargaAcusticoTouchdown, 6.75);
   assert.equal(recargaArpaoTouchdown, 8.25);
+
+  const simVol03 = extrairSimulacaoVolume03(cadeia.volumes[2].conteudo);
+  console.log(`[N4] Marcos temporais da Simulação Vol. 03 examinados: ${simVol03.timestampsUnicos.length}`);
+  assert.deepEqual(
+    simVol03.timestampsUnicos,
+    [0, 9, 10, 11, 11.7, 12.5, 13, 13.5, 15, 16.75, 18.5, 19.75, 20.625, 22.5, 23.5, 23.75, 29.75, 30.25, 32.75],
+    'Todos os 19 marcos de tempo (t=0.0s a t=32.75s) da Simulação do Passo 3 devem fechar exatamente'
+  );
+  assert.equal(simVol03.possuiDanoBaiacu85Hp, true, 'Simulação deve registrar o dano antipessoal no Baiacu (100 -> 85 HP)');
+  assert.equal(simVol03.possuiCalculoAfogamento28Hp, true, 'Simulação deve fechar a conta 100 - 15 - 57 = 28 HP nos 2 marinheiros');
+  assert.equal(simVol03.possuiQuedaMarinheiros13Hp, true, 'Simulação deve registrar queda para 13 HP cada em t=23.50s');
+  assert.equal(simVol03.possuiEliminacaoMarinheiros0Hp, true, 'Simulação deve registrar eliminação 13 -> 0 HP em t=30.25s');
 });
 
 test('Lei N2: verificação da Lista-Catraca (nenhum item resolvido pode permanecer na catraca)', () => {

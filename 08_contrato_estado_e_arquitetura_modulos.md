@@ -55,28 +55,14 @@ $$\text{Transição}(\text{EstadoAnterior Congelado}, \text{Ação/Comando}, \De
     "furtividadeAtivaSeg": 0.0,
     "recargaFurtividadeSeg": 0.0,
     "camaras": [
-      {
-        "id": 1,
-        "nome": "ARTILHARIA_DORSAL",
-        "tipoSlot": "SISTEMA_BASE",
-        "nivelMaxBarras": 3,
-        "barrasIntegridade": 3,
-        "barrasEnergiaAlocada": 3,
-        "aguaKg": 12.5,
-        "alagamentoPesadoKg": 0.0,
-        "oxigenioPct": 100.0,
-        "rombosCasco": 0,
-        "progressoReparoRomboSeg": 0.0,
-        "progressoReparoSistemaSeg": 0.0,
-        "valvulaExternaAberta": false,
-        "curtoCircuitoAtivo": false,
-        "progressoExtincaoSecoSeg": 0.0,
-        "progressoDanoCurtoSeg": 0.0,
-        "progressoReparoCurtoSeg": 0.0,
-        "tempoParalisiaIonSeg": 0.0,
-        "isolamentoResidualChoqueSeg": 0.0,
-        "baiacuInfladoId": null
-      }
+      { "id": 1, "nome": "ARTILHARIA_DORSAL", "tipoSlot": "SISTEMA_BASE", "nivelMaxBarras": 3, "barrasIntegridade": 3, "barrasEnergiaAlocada": 3, "aguaKg": 12.5, "alagamentoPesadoKg": 0.0, "oxigenioPct": 100.0, "rombosCasco": 0, "progressoReparoRomboSeg": 0.0, "progressoReparoSistemaSeg": 0.0, "valvulaExternaAberta": false, "curtoCircuitoAtivo": false, "progressoExtincaoSecoSeg": 0.0, "progressoDanoCurtoSeg": 0.0, "progressoReparoCurtoSeg": 0.0, "tempoParalisiaIonSeg": 0.0, "isolamentoResidualChoqueSeg": 0.0, "baiacuInfladoId": null },
+      { "id": 2, "nome": "CORTEX_NAVEGACAO", "tipoSlot": "SISTEMA_BASE", "nivelMaxBarras": 1, "barrasIntegridade": 1, "barrasEnergiaAlocada": 0, "aguaKg": 12.5, "alagamentoPesadoKg": 0.0, "oxigenioPct": 100.0, "rombosCasco": 0, "progressoReparoRomboSeg": 0.0, "progressoReparoSistemaSeg": 0.0, "valvulaExternaAberta": false, "curtoCircuitoAtivo": false, "progressoExtincaoSecoSeg": 0.0, "progressoDanoCurtoSeg": 0.0, "progressoReparoCurtoSeg": 0.0, "tempoParalisiaIonSeg": 0.0, "isolamentoResidualChoqueSeg": 0.0, "baiacuInfladoId": null },
+      { "id": 3, "nome": "BOMBA_BRANQUIAL", "tipoSlot": "SISTEMA_BASE", "nivelMaxBarras": 1, "barrasIntegridade": 1, "barrasEnergiaAlocada": 0, "aguaKg": 12.5, "alagamentoPesadoKg": 0.0, "oxigenioPct": 100.0, "rombosCasco": 0, "progressoReparoRomboSeg": 0.0, "progressoReparoSistemaSeg": 0.0, "valvulaExternaAberta": false, "curtoCircuitoAtivo": false, "progressoExtincaoSecoSeg": 0.0, "progressoDanoCurtoSeg": 0.0, "progressoReparoCurtoSeg": 0.0, "tempoParalisiaIonSeg": 0.0, "isolamentoResidualChoqueSeg": 0.0, "baiacuInfladoId": null },
+      { "id": 4, "nome": "GLANDULA_BARREIRA", "tipoSlot": "SISTEMA_BASE", "nivelMaxBarras": 2, "barrasIntegridade": 2, "barrasEnergiaAlocada": 2, "aguaKg": 12.5, "alagamentoPesadoKg": 0.0, "oxigenioPct": 100.0, "rombosCasco": 0, "progressoReparoRomboSeg": 0.0, "progressoReparoSistemaSeg": 0.0, "valvulaExternaAberta": false, "curtoCircuitoAtivo": false, "progressoExtincaoSecoSeg": 0.0, "progressoDanoCurtoSeg": 0.0, "progressoReparoCurtoSeg": 0.0, "tempoParalisiaIonSeg": 0.0, "isolamentoResidualChoqueSeg": 0.0, "baiacuInfladoId": null },
+      { "id": 5, "nome": "SIFAO_PROPULSAO", "tipoSlot": "SISTEMA_BASE", "nivelMaxBarras": 2, "barrasIntegridade": 2, "barrasEnergiaAlocada": 2, "aguaKg": 12.5, "alagamentoPesadoKg": 0.0, "oxigenioPct": 100.0, "rombosCasco": 0, "progressoReparoRomboSeg": 0.0, "progressoReparoSistemaSeg": 0.0, "valvulaExternaAberta": false, "curtoCircuitoAtivo": false, "progressoExtincaoSecoSeg": 0.0, "progressoDanoCurtoSeg": 0.0, "progressoReparoCurtoSeg": 0.0, "tempoParalisiaIonSeg": 0.0, "isolamentoResidualChoqueSeg": 0.0, "baiacuInfladoId": null },
+      { "id": 6, "nome": "POCO_DA_QUILHA_MASTRO", "tipoSlot": "SISTEMA_BASE", "nivelMaxBarras": 4, "barrasIntegridade": 4, "barrasEnergiaAlocada": 0, "aguaKg": 12.5, "alagamentoPesadoKg": 0.0, "oxigenioPct": 100.0, "rombosCasco": 0, "progressoReparoRomboSeg": 0.0, "progressoReparoSistemaSeg": 0.0, "valvulaExternaAberta": false, "curtoCircuitoAtivo": false, "progressoExtincaoSecoSeg": 0.0, "progressoDanoCurtoSeg": 0.0, "progressoReparoCurtoSeg": 0.0, "tempoParalisiaIonSeg": 0.0, "isolamentoResidualChoqueSeg": 0.0, "baiacuInfladoId": null },
+      { "id": 7, "nome": "CAMARA_ENXERTO_A", "tipoSlot": "SUBSISTEMA_ENXERTO", "nivelMaxBarras": 0, "barrasIntegridade": 0, "barrasEnergiaAlocada": 0, "aguaKg": 12.5, "alagamentoPesadoKg": 0.0, "oxigenioPct": 100.0, "rombosCasco": 0, "progressoReparoRomboSeg": 0.0, "progressoReparoSistemaSeg": 0.0, "valvulaExternaAberta": false, "curtoCircuitoAtivo": false, "progressoExtincaoSecoSeg": 0.0, "progressoDanoCurtoSeg": 0.0, "progressoReparoCurtoSeg": 0.0, "tempoParalisiaIonSeg": 0.0, "isolamentoResidualChoqueSeg": 0.0, "baiacuInfladoId": null },
+      { "id": 8, "nome": "CAMARA_ENXERTO_B", "tipoSlot": "SUBSISTEMA_ENXERTO", "nivelMaxBarras": 0, "barrasIntegridade": 0, "barrasEnergiaAlocada": 0, "aguaKg": 12.5, "alagamentoPesadoKg": 0.0, "oxigenioPct": 100.0, "rombosCasco": 0, "progressoReparoRomboSeg": 0.0, "progressoReparoSistemaSeg": 0.0, "valvulaExternaAberta": false, "curtoCircuitoAtivo": false, "progressoExtincaoSecoSeg": 0.0, "progressoDanoCurtoSeg": 0.0, "progressoReparoCurtoSeg": 0.0, "tempoParalisiaIonSeg": 0.0, "isolamentoResidualChoqueSeg": 0.0, "baiacuInfladoId": null }
     ],
     "armasAtivas": [
       {
@@ -104,19 +90,9 @@ $$\text{Transição}(\text{EstadoAnterior Congelado}, \text{Ação/Comando}, \De
       { "slotIndex": 3, "item": null }
     ],
     "tripulacao": [
-      {
-        "id": "trip-polvo-1",
-        "especie": "POLVO",
-        "hpAtual": 80,
-        "hpMax": 80,
-        "camaraAtualId": 2,
-        "camaraDestinoId": null,
-        "progressoNadoSeg": 0.0,
-        "acopladoBulbo": true,
-        "inflado": false,
-        "atordoadoSeg": 0.0,
-        "localizacao": "NAVE_JOGADOR"
-      }
+      { "id": "trip-polvo-1", "especie": "POLVO", "hpAtual": 80, "hpMax": 80, "camaraAtualId": 2, "camaraDestinoId": null, "progressoNadoSeg": 0.0, "acopladoBulbo": true, "inflado": false, "atordoadoSeg": 0.0, "localizacao": "NAVE_JOGADOR" },
+      { "id": "trip-arraia-1", "especie": "ARRAIA", "hpAtual": 70, "hpMax": 70, "camaraAtualId": 4, "camaraDestinoId": null, "progressoNadoSeg": 0.0, "acopladoBulbo": true, "inflado": false, "atordoadoSeg": 0.0, "localizacao": "NAVE_JOGADOR" },
+      { "id": "trip-baiacu-1", "especie": "BAIACU", "hpAtual": 100, "hpMax": 100, "camaraAtualId": 5, "camaraDestinoId": null, "progressoNadoSeg": 0.0, "acopladoBulbo": true, "inflado": false, "atordoadoSeg": 0.0, "localizacao": "NAVE_JOGADOR" }
     ]
   },
   "alvoCombate": {

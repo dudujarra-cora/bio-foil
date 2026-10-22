@@ -17,6 +17,21 @@ export const CADEIA_CANONICA_TESTES = Object.freeze([
   '02-hook-ambiente.test.mjs',
 ]);
 
+export const CADEIA_CANONICA_SRC = Object.freeze([
+  'gdd-parser.mjs',
+]);
+
+export const CADEIA_CANONICA_SCRIPTS = Object.freeze([
+  'auditar-frente.sh',
+  'hooks/pre-commit',
+  'hooks/pre-push',
+]);
+
+export const CADEIA_CANONICA_PROTOCOLO = Object.freeze([
+  'LEIS-DE-TESTE.md',
+  'MUTACOES.md',
+]);
+
 function clonarProfundoCongelado(obj) {
   const copia = structuredClone(obj);
   const congelar = (alvo) => {
@@ -78,12 +93,15 @@ export function extrairSsotEMatrizDoVolume06(conteudoVol06) {
   const linhas = conteudoVol06.split('\n');
   const constantesSsot = {};
   const celulasMatriz = [];
+  const limitesExtremos = [];
+  const niveisPrecedencia = [];
 
   let secaoAtual = '';
   for (const linha of linhas) {
     if (linha.startsWith('## 6.1.')) secaoAtual = '6.1';
     else if (linha.startsWith('## 6.2.')) secaoAtual = '6.2';
     else if (linha.startsWith('## 6.3.')) secaoAtual = '6.3';
+    else if (linha.startsWith('## 6.4.')) secaoAtual = '6.4';
 
     if (secaoAtual === '6.1' && linha.startsWith('| `')) {
       const colunas = linha
@@ -116,13 +134,25 @@ export function extrairSsotEMatrizDoVolume06(conteudoVol06) {
           '5_FURTIVO_AGUA',
         ];
         estados.forEach((estadoId, idx) => {
+          const regra = colunas[idx + 1];
+          if (!regra || regra.length < 10 || /\b(TODO|TBD|FIXME)\b/i.test(regra)) {
+            throw new Error(`[Vol 06 Matriz 6.2] Célula inválida ou incompleta em (${evento} x ${estadoId}): "${regra}"`);
+          }
           celulasMatriz.push({
             evento,
             estado: estadoId,
-            regra: colunas[idx + 1],
+            regra,
           });
         });
       }
+    }
+
+    if (secaoAtual === '6.3' && linha.startsWith('### Limite Extremo ')) {
+      limitesExtremos.push(linha.replace(/^###\s+/, '').trim());
+    }
+
+    if (secaoAtual === '6.4' && /^\d+\.\s+\*\*Nível\s+\d+/.test(linha)) {
+      niveisPrecedencia.push(linha.trim());
     }
   }
 
@@ -131,6 +161,8 @@ export function extrairSsotEMatrizDoVolume06(conteudoVol06) {
     constantesSsot,
     totalCelulasMatriz: celulasMatriz.length,
     celulasMatriz,
+    limitesExtremos,
+    niveisPrecedencia,
   });
 }
 
@@ -172,7 +204,9 @@ export function extrairCatalogoVolume05(conteudoVol05) {
   const linhas = conteudoVol05.split('\n');
   const armas = [];
   const orgaos = [];
+  const biomas = [];
   const naves = [];
+  const fasesChefe = [];
 
   let secao = '';
   for (const linha of linhas) {
@@ -181,6 +215,7 @@ export function extrairCatalogoVolume05(conteudoVol05) {
     else if (linha.startsWith('## 5.3.')) secao = '5.3';
     else if (linha.startsWith('## 5.4.')) secao = '5.4';
     else if (linha.startsWith('## 5.5.')) secao = '5.5';
+    else if (linha.startsWith('# CONTRA-AUDITORIA')) secao = 'AUDITORIA';
 
     if (secao === '5.1' && linha.startsWith('| **')) {
       const cols = linha
@@ -201,6 +236,11 @@ export function extrairCatalogoVolume05(conteudoVol05) {
     if (secao === '5.2' && /^\d+\.\s+\*\*/.test(linha)) {
       const nome = linha.match(/^\d+\.\s+\*\*([^*]+)\*\*/)?.[1] ?? linha;
       orgaos.push({ nome });
+    }
+
+    if (secao === '5.3' && /^\d+\.\s+\*\*/.test(linha)) {
+      const nome = linha.match(/^\d+\.\s+\*\*([^*]+)\*\*/)?.[1] ?? linha;
+      biomas.push({ nome });
     }
 
     if (secao === '5.4' && linha.startsWith('| **')) {
@@ -224,6 +264,10 @@ export function extrairCatalogoVolume05(conteudoVol05) {
         });
       }
     }
+
+    if (secao === '5.5' && linha.startsWith('### Fase ')) {
+      fasesChefe.push(linha.replace(/^###\s+/, '').trim());
+    }
   }
 
   const matchPesoOrgao = conteudoVol05.match(/Cada Órgão adiciona \*\*\$\+(\d+(?:\.\d+)?)\\text\{ kg\}\$\*\*/);
@@ -232,8 +276,10 @@ export function extrairCatalogoVolume05(conteudoVol05) {
   return clonarProfundoCongelado({
     armas,
     orgaos,
+    biomas,
     pesoPorOrgaoKg,
     naves,
+    fasesChefe,
   });
 }
 
@@ -306,6 +352,43 @@ export function calcularTempoRecargaArma({
 }
 
 /**
+ * Extrai e audita o Baralho Procedural de Nós do Volume 04 (Seção 4.4: soma = 20 nós base).
+ */
+export function extrairBaralhoVolume04(conteudoVol04) {
+  const secao44 = conteudoVol04.split('## 4.4.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const cotas = [];
+  for (const linha of secao44.split('\n')) {
+    if (linha.startsWith('* **')) {
+      const nums = [...linha.matchAll(/(\d+)\s+Nó(?:s)?(?![a-zA-ZÀ-ÿ])/g)].map((m) => Number(m[1]));
+      if (nums.length > 0) {
+        cotas.push(...nums);
+      }
+    }
+  }
+  const somaTotalNosBase = cotas.reduce((acc, n) => acc + n, 0);
+  return clonarProfundoCongelado({
+    cotas,
+    somaTotalNosBase,
+  });
+}
+
+/**
+ * Extrai e audita os marcos temporais da Simulação do Volume 03 (Seção 3.4: t = 0.0s a t = 32.75s).
+ */
+export function extrairSimulacaoVolume03(conteudoVol03) {
+  const secao34 = conteudoVol03.split('## 3.4.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const timestamps = [...secao34.matchAll(/\$t = (\d+(?:\.\d+)?)\\text\{s\}\$/g)].map((m) => Number(m[1]));
+  const unicosOrdenados = [...new Set(timestamps)].sort((a, b) => a - b);
+  return clonarProfundoCongelado({
+    timestampsUnicos: unicosOrdenados,
+    possuiDanoBaiacu85Hp: /100 \\rightarrow 85\\text\{ HP\}/.test(secao34),
+    possuiCalculoAfogamento28Hp: /100 - 15 - 57 = \\mathbf\{28\\text\{ HP\}\}/.test(secao34),
+    possuiQuedaMarinheiros13Hp: /\$13\\text\{ HP\}\$ cada/.test(secao34),
+    possuiEliminacaoMarinheiros0Hp: /13\\text\{ HP\} \\rightarrow 0\\text\{ HP\}/.test(secao34),
+  });
+}
+
+/**
  * Extrai e valida o Contrato JSON do GameState (Seção 8.1), a Tabela L3 (8.2) e as Junções N1 (8.4) do Volume 08.
  */
 export function extrairContratoEstadoVolume08(conteudoVol08) {
@@ -374,13 +457,77 @@ export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
     );
   }
 
+  const pastaSrc = path.join(diretorioRaiz, 'src');
+  if (fs.existsSync(pastaSrc)) {
+    const arquivosSrcNoDisco = fs
+      .readdirSync(pastaSrc, { withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => e.name)
+      .sort();
+    const esperadosSrc = [...CADEIA_CANONICA_SRC].sort();
+    const faltandoSrc = esperadosSrc.filter((f) => !arquivosSrcNoDisco.includes(f));
+    const extrasSrc = arquivosSrcNoDisco.filter((f) => !esperadosSrc.includes(f));
+    if (faltandoSrc.length > 0 || extrasSrc.length > 0) {
+      throw new Error(
+        `[L5 TRIPWIRE SRC FALHOU] Módulo em src/ fora da cadeia canônica. Faltando=[${faltandoSrc.join(', ')}] Extras=[${extrasSrc.join(', ')}]`
+      );
+    }
+  }
+
+  const pastaScripts = path.join(diretorioRaiz, 'scripts');
+  if (fs.existsSync(pastaScripts)) {
+    const listarRecursivo = (dir, prefixo = '') => {
+      const itens = [];
+      for (const entrada of fs.readdirSync(dir, { withFileTypes: true })) {
+        const rel = prefixo ? `${prefixo}/${entrada.name}` : entrada.name;
+        if (entrada.isDirectory()) {
+          itens.push(...listarRecursivo(path.join(dir, entrada.name), rel));
+        } else if (entrada.isFile()) {
+          itens.push(rel);
+        }
+      }
+      return itens;
+    };
+    const scriptsNoDisco = listarRecursivo(pastaScripts).sort();
+    const esperadosScripts = [...CADEIA_CANONICA_SCRIPTS].sort();
+    const faltandoScripts = esperadosScripts.filter((f) => !scriptsNoDisco.includes(f));
+    const extrasScripts = scriptsNoDisco.filter((f) => !esperadosScripts.includes(f));
+    if (faltandoScripts.length > 0 || extrasScripts.length > 0) {
+      throw new Error(
+        `[L5 TRIPWIRE SCRIPTS FALHOU] Script em scripts/ fora da cadeia canônica. Faltando=[${faltandoScripts.join(', ')}] Extras=[${extrasScripts.join(', ')}]`
+      );
+    }
+  }
+
+  const pastaProtocolo = path.join(diretorioRaiz, 'padrao', 'protocolo');
+  if (fs.existsSync(pastaProtocolo)) {
+    const arquivosProtoNoDisco = fs
+      .readdirSync(pastaProtocolo, { withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => e.name)
+      .sort();
+    const esperadosProto = [...CADEIA_CANONICA_PROTOCOLO].sort();
+    const faltandoProto = esperadosProto.filter((f) => !arquivosProtoNoDisco.includes(f));
+    const extrasProto = arquivosProtoNoDisco.filter((f) => !esperadosProto.includes(f));
+    if (faltandoProto.length > 0 || extrasProto.length > 0) {
+      throw new Error(
+        `[L5 TRIPWIRE PROTOCOLO FALHOU] Arquivo em padrao/protocolo/ fora da cadeia canônica. Faltando=[${faltandoProto.join(', ')}] Extras=[${extrasProto.join(', ')}]`
+      );
+    }
+  }
+
   const caminhoMutacoes = path.join(diretorioRaiz, 'padrao', 'protocolo', 'MUTACOES.md');
   const conteudoMutacoes = fs.readFileSync(caminhoMutacoes, 'utf8');
   const linhasMutacao = conteudoMutacoes
     .split('\n')
     .filter((l) => l.startsWith('| `MUT-'));
 
-  const mutacoes = linhasMutacao.map((linha) => {
+  if (linhasMutacao.length === 0) {
+    throw new Error('[N4 / Seção 3.5 FALHOU] Zero mutações encontradas em MUTACOES.md');
+  }
+
+  const idsVistos = new Set();
+  const mutacoes = linhasMutacao.map((linha, idx) => {
     const cols = linha
       .split('|')
       .map((c) => c.trim())
@@ -390,6 +537,14 @@ export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
     const lei = cols[2] ?? '';
     const descricao = cols[3] ?? '';
     const primeiraLinhaFalha = cols[4]?.replace(/`/g, '') ?? '';
+
+    const idEsperado = `MUT-${String(idx + 1).padStart(2, '0')}`;
+    if (id !== idEsperado || idsVistos.has(id)) {
+      throw new Error(
+        `[L5 / Seção 3.5 FALHOU] ID de mutação fora de sequência ou duplicado: recebido="${id}", esperado="${idEsperado}"`
+      );
+    }
+    idsVistos.add(id);
 
     if (!id || !alvo || !descricao || !/(Error|AssertionError)/.test(primeiraLinhaFalha)) {
       throw new Error(

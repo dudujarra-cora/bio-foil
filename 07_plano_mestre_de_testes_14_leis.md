@@ -105,6 +105,11 @@ flowchart LR
 ### ONDA 6: Junção Interface 16:9 (`UI`) $\leftrightarrow$ Motor (`N1` Ponta a Ponta)
 * **O que será codado nesta onda:** Componentes visuais do Wireframe (Passo 2): Barra Superior, Termômetro Vertical de Sustentação (`Peso vs. Sustentação`), Corte Transversal das 8 Câmaras com Linha d'Água Dinâmica (`12.5 kg` por sala), Caixa de Armas (`4 Slots Ativos`), Caixa de Sistemas (`6 Sistemas + 2 Subsistemas`) e Painel do Alvo.
 * **Junção Obrigatória (`N1`):** O teste dispara ações na UI (ex.: clicar para desligar 1 barra do Sifão ou abrir a Válvula Externa) $\rightarrow$ o Motor roda de verdade $\rightarrow$ a UI re-renderiza e o teste lê no DOM/estado renderizado a queda da Linha de Sustentação, o bloqueio do botão de Válvula em *Touchdown* e os 4 Slots de Armas.
+* **Contadores Obrigatórios (`N4`):** `8` câmaras renderizadas, `4` slots de armas ativas renderizados, `8` sistemas/subsistemas na barra inferior e `5` estados de visibilidade `L3` do painel inimigo.
+* **Mutações que o teste da Onda 6 é obrigado a pegar (`L6`):**
+  1. `MUT-O6-01`: Desabilitar a trava visual/interativa do botão de Válvula Externa quando `estadoFisico === '2_TOUCHDOWN'` ou `'3_SPOOL_UP'` $\rightarrow$ **DEVE FICAR VERMELHO**.
+  2. `MUT-O6-02`: Renderizar apenas 3 slots de armas ou misturar o Subsistema *Tubo Pressurizado* dentro da caixa `[ARMAS]` $\rightarrow$ **DEVE FICAR VERMELHO**.
+  3. `MUT-O6-03`: Exibir `"0 tripulantes"` no Painel do Alvo quando `canalVisibilidadeSonar !== 'VISIVEL'` (violando a **Lei L3** na camada de apresentação) $\rightarrow$ **DEVE FICAR VERMELHO**.
 
 ---
 
