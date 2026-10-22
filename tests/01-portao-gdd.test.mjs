@@ -24,12 +24,12 @@ const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url))
  */
 const LISTA_CATRACA = Object.freeze([]);
 
-test('Portão L5 + N4: aplica a cadeia canônica inteira (01..06) na ordem e valida tripwire de diretório', () => {
+test('Portão L5 + N4: aplica a cadeia canônica inteira (01..07) na ordem e valida tripwire de diretório', () => {
   const resultado = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
 
   console.log(`[N4] Arquivos .md examinados na cadeia canônica: ${resultado.arquivosExaminados}`);
   assert.ok(resultado.arquivosExaminados > 0, '[N4] Zero arquivos examinados deve reprovar');
-  assert.equal(resultado.arquivosExaminados, 6, 'Deve examinar exatamente os 6 volumes canônicos');
+  assert.equal(resultado.arquivosExaminados, 7, 'Deve examinar exatamente os 7 volumes canônicos (01..07)');
 
   assert.deepEqual(resultado.cadeiaDeclarada, [
     '01_matematica_base_e_auditoria.md',
@@ -38,7 +38,20 @@ test('Portão L5 + N4: aplica a cadeia canônica inteira (01..06) na ordem e val
     '04_mapa_procedural_e_auditoria.md',
     '05_conteudo_chefe_e_auditoria_final.md',
     '06_prova_formal_matriz_e_limites.md',
+    '07_plano_mestre_de_testes_14_leis.md',
   ]);
+
+  const vol07 = resultado.volumes[6].conteudo;
+  const leisMapeadas = [...vol07.matchAll(/\| \*\*(L[1-7]|N[1-7])\*\* \|/g)].map((m) => m[1]);
+  const ondasPlanejadas = [...vol07.matchAll(/### ONDA ([1-6]):/g)].map((m) => m[1]);
+  const mutacoesPlanejadas = [...vol07.matchAll(/`(MUT-O[1-5]-0[1-4])`/g)].map((m) => m[1]);
+
+  console.log(
+    `[N4] Vol. 07 examinado: ${leisMapeadas.length} leis, ${ondasPlanejadas.length} ondas de implementação, ${mutacoesPlanejadas.length} mutações planejadas`
+  );
+  assert.equal(leisMapeadas.length, 14, 'Vol. 07 deve mapear todas as 14 Leis (L1..L7 e N1..N7)');
+  assert.equal(ondasPlanejadas.length, 6, 'Vol. 07 deve planejar as 6 Ondas de implementação');
+  assert.equal(mutacoesPlanejadas.length, 19, 'Vol. 07 deve especificar as 19 mutações obrigatórias das Ondas 1 a 5');
 
   // Prova do Tripwire L5: criar um diretório temporário com item extra fora da lista deve dar vermelho
   const pastaTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ftl-tripwire-l5-'));
@@ -46,7 +59,7 @@ test('Portão L5 + N4: aplica a cadeia canônica inteira (01..06) na ordem e val
     for (const v of resultado.volumes) {
       fs.writeFileSync(path.join(pastaTmp, v.arquivo), v.conteudo, 'utf8');
     }
-    fs.writeFileSync(path.join(pastaTmp, '07_arquivo_intruso_nao_declarado.md'), '# Intruso', 'utf8');
+    fs.writeFileSync(path.join(pastaTmp, '08_arquivo_intruso_nao_declarado.md'), '# Intruso', 'utf8');
     assert.throws(
       () => carregarCadeiaCanonicaGdd(pastaTmp),
       /\[L5 TRIPWIRE FALHOU\]/,

@@ -8,6 +8,7 @@ export const CADEIA_CANONICA_GDD = Object.freeze([
   '04_mapa_procedural_e_auditoria.md',
   '05_conteudo_chefe_e_auditoria_final.md',
   '06_prova_formal_matriz_e_limites.md',
+  '07_plano_mestre_de_testes_14_leis.md',
 ]);
 
 function clonarProfundoCongelado(obj) {
