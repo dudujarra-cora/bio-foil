@@ -12,6 +12,11 @@ export const CADEIA_CANONICA_GDD = Object.freeze([
   '08_contrato_estado_e_arquitetura_modulos.md',
 ]);
 
+export const CADEIA_CANONICA_TESTES = Object.freeze([
+  '01-portao-gdd.test.mjs',
+  '02-hook-ambiente.test.mjs',
+]);
+
 function clonarProfundoCongelado(obj) {
   const copia = structuredClone(obj);
   const congelar = (alvo) => {
@@ -345,5 +350,59 @@ export function extrairContratoEstadoVolume08(conteudoVol08) {
     dominiosRaiz,
     linhasTabelaL3,
     juncoesN1,
+  });
+}
+
+/**
+ * Lei L5 + Seção 3.5: Tripwire da pasta tests/ e auditoria estrutural de padrao/protocolo/MUTACOES.md.
+ */
+export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
+  const pastaTestes = path.join(diretorioRaiz, 'tests');
+  const arquivosTesteNoDisco = fs
+    .readdirSync(pastaTestes, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith('.test.mjs'))
+    .map((e) => e.name)
+    .sort();
+
+  const esperadosOrdenados = [...CADEIA_CANONICA_TESTES].sort();
+  const faltando = esperadosOrdenados.filter((f) => !arquivosTesteNoDisco.includes(f));
+  const extras = arquivosTesteNoDisco.filter((f) => !esperadosOrdenados.includes(f));
+
+  if (faltando.length > 0 || extras.length > 0) {
+    throw new Error(
+      `[L5 TRIPWIRE TESTES FALHOU] Suíte de testes fora da cadeia canônica. Faltando=[${faltando.join(', ')}] Extras=[${extras.join(', ')}]`
+    );
+  }
+
+  const caminhoMutacoes = path.join(diretorioRaiz, 'padrao', 'protocolo', 'MUTACOES.md');
+  const conteudoMutacoes = fs.readFileSync(caminhoMutacoes, 'utf8');
+  const linhasMutacao = conteudoMutacoes
+    .split('\n')
+    .filter((l) => l.startsWith('| `MUT-'));
+
+  const mutacoes = linhasMutacao.map((linha) => {
+    const cols = linha
+      .split('|')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    const id = cols[0]?.replace(/`/g, '') ?? '';
+    const alvo = cols[1] ?? '';
+    const lei = cols[2] ?? '';
+    const descricao = cols[3] ?? '';
+    const primeiraLinhaFalha = cols[4]?.replace(/`/g, '') ?? '';
+
+    if (!id || !alvo || !descricao || !/(Error|AssertionError)/.test(primeiraLinhaFalha)) {
+      throw new Error(
+        `[L6 / Seção 3.5 FALHOU] Mutação ${id || 'SEM_ID'} sem primeira linha de falha real medida: "${primeiraLinhaFalha}"`
+      );
+    }
+    return { id, alvo, lei, descricao, primeiraLinhaFalha };
+  });
+
+  return clonarProfundoCongelado({
+    testesDeclarados: [...CADEIA_CANONICA_TESTES],
+    totalTestesExaminados: arquivosTesteNoDisco.length,
+    totalMutacoesExaminadas: mutacoes.length,
+    mutacoes,
   });
 }

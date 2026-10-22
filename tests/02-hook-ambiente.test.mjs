@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { verificarCadeiaTestesEMutacoes } from '../src/gdd-parser.mjs';
 
 const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -105,13 +106,30 @@ test('Seção 5 + N4: prova real de isolamento de GIT_DIR/GIT_INDEX_FILE em hook
       );
       assert.match(
         conteudoHook,
-        /git -C "\$REPO_ROOT" config --get core\.bare/,
-        `O hook ${relPath} deve verificar core.bare no repositório`
+        /git --git-dir="\$MAIN_GIT_DIR" config --get core\.bare/,
+        `O hook ${relPath} deve verificar core.bare no repositório principal via --git-dir="$MAIN_GIT_DIR"`
       );
     }
 
+    const auditoriaTestesMutacoes = verificarCadeiaTestesEMutacoes(DIRETORIO_RAIZ);
+    assert.equal(auditoriaTestesMutacoes.totalTestesExaminados, 2, 'Cadeia de testes Onda 0 deve ter 2 suítes');
+    assert.ok(auditoriaTestesMutacoes.totalMutacoesExaminadas >= 8, 'MUTACOES.md deve ter pelo menos 8 mutações registradas');
+
+    // Prova do Tripwire L5 na pasta tests/: arquivo .test.mjs fora da lista deve dar vermelho
+    const tmpProjeto = path.join(raizTeste, 'projeto-tripwire-testes');
+    fs.mkdirSync(path.join(tmpProjeto, 'tests'), { recursive: true });
+    for (const nomeTeste of auditoriaTestesMutacoes.testesDeclarados) {
+      fs.writeFileSync(path.join(tmpProjeto, 'tests', nomeTeste), '// ok\n', 'utf8');
+    }
+    fs.writeFileSync(path.join(tmpProjeto, 'tests', '99-intruso-nao-declarado.test.mjs'), '// intruso\n', 'utf8');
+    assert.throws(
+      () => verificarCadeiaTestesEMutacoes(tmpProjeto),
+      /\[L5 TRIPWIRE TESTES FALHOU\]/,
+      'Arquivo .test.mjs fora da cadeia canônica deve reprovar no tripwire L5'
+    );
+
     console.log(
-      `[N4] Variáveis de ambiente de hook examinadas: ${VARIAVEIS_GIT_HOOK.length}, scripts de hook examinados: ${hooksVerificados.length}`
+      `[N4] Variáveis de ambiente de hook examinadas: ${VARIAVEIS_GIT_HOOK.length}, scripts de hook examinados: ${hooksVerificados.length}, suítes de teste: ${auditoriaTestesMutacoes.totalTestesExaminados}, mutações registradas: ${auditoriaTestesMutacoes.totalMutacoesExaminadas}`
     );
   } finally {
     fs.rmSync(raizTeste, { recursive: true, force: true });
