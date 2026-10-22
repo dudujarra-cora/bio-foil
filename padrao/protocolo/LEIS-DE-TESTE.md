@@ -53,4 +53,6 @@ Antes de cada commit e de cada push: `git config --get core.bare` no repositóri
 - **`NODE_TEST_CONTEXT` herdado** faz um `node --test` filho sair com 0 mesmo havendo falha (medido). Hooks e executor de mutações limpam essa variável (B16).
 - **Mutação só vale se re-executada:** `mutacoes.json` é a fonte; `node scripts/rodar-mutacoes.mjs --gerar-md` mede e gera o bloco do `MUTACOES.md` (B6).
 - **Portão novo nasce `DECLARADO`** em `PORTOES.md` e só vira `OBRIGATORIO` com 3 corridas verdes seguidas na `main`, com evidência colada (N3).
-- **Apagar qualquer coisa** (arquivo, ramo, metadado do git) exige mostrar o que vai mudar e esperar o ok do Dudu.
+- **Apagar arquivo de produto ou documento** exige mostrar o que vai mudar e esperar o ok do Dudu.
+- **Worktree e ramo de frente** já juntados na `main` *e* no remoto são removidos pelo próprio agente, mas só com comandos que recusam quando há pendência: `git worktree remove` (sem `--force`) e `git branch -d` (nunca `-D`). Decisão delegada pelo Dudu em 2026-10-22.
+- **Dúvida não se deduz, se testa:** quando um número do GDD depende de um parâmetro não declarado, o portão enumera as possibilidades, imprime quais quebram o resultado e exige que o GDD declare o valor canônico (exemplo: os 12 cenários do Marinheiro 1).

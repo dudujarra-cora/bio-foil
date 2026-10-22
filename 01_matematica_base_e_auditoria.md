@@ -129,7 +129,7 @@ Cada uma das **8 câmaras internas** tem capacidade normal de **$12.5\text{ kg}$
 
 ## 1.5. Tabela Matemática da Tripulação (Os 4 Arquétipos)
 
-* **Tempo base de travessia entre salas adjacentes:** $1.5\text{ segundos}$ (dividido pelo multiplicador de velocidade da espécie).
+* **Tempo base de travessia entre salas adjacentes:** $1.5\text{ segundos}$ (dividido pelo multiplicador de velocidade da espécie e arredondado para cima ao próximo tick de $0.25\text{ s}$).
 * **Tempo base para reparar 1 barra de sistema:** $12\text{ segundos}$ ($6\text{s}$ com Polvo).
 * **Tempo base para fechar 1 rombo no casco:** $8\text{ segundos}$ ($4\text{s}$ com Polvo). *(Como um rombo leva $12.5\text{s}$ para secar a sala de $12.5\text{ kg}$, um tripulante comum que nada da sala vizinha em $1.5\text{s}$ e repara em $8\text{s}$ fecha o furo em $9.5\text{s}$, salvando a sala antes de secar!).*
 * **Penalidade de Reparo no Seco ($0\%$ de água):** Tripulantes puramente aquáticos (Polvo, Arraia, Baiacu) sofrem **$-50\%$ na velocidade de reparo** enquanto sufocam numa sala seca; o **Caranguejo Anfíbio** mantém $100\%$ da velocidade de reparo no seco.
@@ -143,6 +143,7 @@ Cada uma das **8 câmaras internas** tem capacidade normal de **$12.5\text{ kg}$
 | **4. Caranguejo Anfíbio** | $110\text{ HP}$ | $0.9\times$ | **$1.0\times$ (Normal!)** | $1.0\times$ ($12\text{s} / 8\text{s}$) | $12\text{ DPS}$ | **$0\text{ HP/s}$ (Imune!)** | Respira no ar e na água; pode andar no casco externo e invadir barcos secos sem perder vida. |
 
 ### Regra de Simetria: Como Invasores Inimigos Operam Dentro da Sua Nave
+* **Marinheiros Humanos (tripulação dos barcos da Corporação, sem escafandro):** $100\text{ HP}$, $8\text{ DPS}$; andam a $1.0\times$ no seco e a $0.7\times$ em sala inundada; afogam a $-8\text{ HP/s}$ em sala $100\%$ inundada e recuam para a sala seca mais próxima no primeiro *tick* com HP $<30$.
 * **Mergulhadores de Assalto da Corporação (Humanos c/ Escafandro Pressurizado):** Causam $12\text{ DPS}$ corpo-a-corpo. Não se afogam nas suas câmaras inundadas graças ao escafandro, mas caminham devagar na água ($0.7\times$). **Ponto fraco:** São altamente vulneráveis a **Curto-Circuito Aquático** e à Arraia Elétrica (o traje metálico amplifica o choque em $+50\%$).
 * **Parasitas / Predadores Invasores (Biológicos):** Nadam rápido nas suas câmaras inundadas ($1.2\times$), mas **sofrem $-10\text{ HP/s}$ de dessecação se você abrir a válvula externa no ar (*No Foil*) para secar a sala**, permitindo sufocá-los exatamente como você sufoca invasores com vácuo no FTL!
 

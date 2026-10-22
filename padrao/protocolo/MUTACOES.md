@@ -46,5 +46,8 @@ Conforme **Seção 3.5** e **Lei L6**, toda mutação abaixo foi executada alter
 | `MUT-20` | `padrao/protocolo/PORTOES.md` | **N3 (B14)** | Portão 02 some do registro de portões | `Error: [L5 TRIPWIRE PORTOES N3 FALHOU] Faltando=[02-hook-ambiente.test.mjs] Extras=[]` |
 | `MUT-21` | `package.json` | **B10** | engines.node exige uma versão de Node que esta máquina não tem | `Error: [B10 ENGINES FALHOU] Node 22.22.2 fora de engines.node ">=99.0.0 <100.0.0"` |
 | `MUT-22` | `scripts/hooks/pre-commit` | **L6 (B16)** | pre-commit deixa de limpar NODE_TEST_CONTEXT herdado (node --test filho sai 0 mesmo falhando) | `AssertionError [ERR_ASSERTION]: [B4 REAL] commit com índice RUIM passou porque o hook leu a árvore de trabalho` |
+| `MUT-23` | `03_vertical_slice_combate_e_auditoria.md` | **N1 (possibilidades)** | Marinheiro 1 desce para a Sala do Torpedo (cenário que quebra o desfecho) | `AssertionError [ERR_ASSERTION]: Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT` |
+| `MUT-24` | `01_matematica_base_e_auditoria.md` | **N1 (possibilidades)** | Marinheiro humano anda a 0.5x em sala inundada (Vol. 03 calculado com 0.7x) | `AssertionError [ERR_ASSERTION]: Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT` |
+| `MUT-25` | `02_wireframe_ui_e_auditoria.md` | **N1 (possibilidades)** | Wireframe troca Motor e Torpedo de lugar: Cabine deixa de ficar sobre o Motor | `AssertionError [ERR_ASSERTION]: Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT` |
 
 <!-- FIM BLOCO GERADO -->

@@ -464,6 +464,36 @@ export function extrairBaralhoVolume04(conteudoVol04) {
 }
 
 /**
+ * Extrai os 3 parâmetros que decidem o destino dos marinheiros da Lancha (Vol. 03) — cada um de um volume diferente:
+ *  - velAgua / arredondaTick: Vol. 01 (Regra de Simetria — Marinheiros Humanos);
+ *  - salasCabineMotor: Vol. 02 (Wireframe: Cabine na mesma coluna que a Sala do Motor = 1 sala de distância);
+ *  - salaM1: Vol. 03 (para onde o Marinheiro 1 desce em t = 11.0 s).
+ * Valor ausente vira null/NaN (L3: "não declarado" nunca vira um número padrão silencioso).
+ */
+export function extrairParametrosMarinheiros(cadeia) {
+  const vol01 = normalizarTexto(cadeia.volumes[0].conteudo);
+  const vol02Linhas = cadeia.volumes[1].conteudo.split('\n');
+  const vol03 = normalizarTexto(cadeia.volumes[2].conteudo);
+
+  const linhaMarinheiros = vol01.split('\n').find((l) => l.includes('Marinheiros Humanos')) ?? '';
+  const velAgua = Number(linhaMarinheiros.match(/([\d.]+)x em sala inundada/)?.[1] ?? NaN);
+  const arredondaTick = /arredondad[oa] para cima ao próximo tick de 0\.25 ?s/.test(vol01);
+
+  const coluna = (marcador) => {
+    const linha = vol02Linhas.find((l) => l.includes(marcador));
+    return linha ? linha.indexOf(marcador) : -1;
+  };
+  const colCabine = coluna('[CABINE]');
+  const colMotor = coluna('[MOTOR SUB]');
+  const salasCabineMotor = colCabine < 0 || colMotor < 0 ? null : Math.abs(colCabine - colMotor) <= 2 ? 1 : 2;
+
+  const destino = vol03.match(/Marinheiro 1\*? a descer da Cabine[^.]*?até a Sala do (Motor|Torpedo)/)?.[1];
+  const salaM1 = destino ? destino.toUpperCase() : null;
+
+  return clonarProfundoCongelado({ velAgua, arredondaTick, salasCabineMotor, salaM1 });
+}
+
+/**
  * Extrai e audita os marcos temporais da Simulação do Volume 03 (Seção 3.4: t = 0.0s a t = 32.75s).
  */
 export function extrairSimulacaoVolume03(conteudoVol03) {

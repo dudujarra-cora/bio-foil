@@ -356,6 +356,54 @@
         "tests/02-hook-ambiente.test.mjs"
       ],
       "falhaEsperada": "[B4 REAL]"
+    },
+    {
+      "id": "MUT-23",
+      "arquivo": "03_vertical_slice_combate_e_auditoria.md",
+      "lei": "N1 (possibilidades)",
+      "descricao": "Marinheiro 1 desce para a Sala do Torpedo (cenário que quebra o desfecho)",
+      "trocas": [
+        {
+          "buscar": "até a Sala do Motor para tentar ajudar",
+          "substituir": "até a Sala do Torpedo para tentar ajudar"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Linha do tempo do Vol. 03 diverge"
+    },
+    {
+      "id": "MUT-24",
+      "arquivo": "01_matematica_base_e_auditoria.md",
+      "lei": "N1 (possibilidades)",
+      "descricao": "Marinheiro humano anda a 0.5x em sala inundada (Vol. 03 calculado com 0.7x)",
+      "trocas": [
+        {
+          "buscar": "a $0.7\\times$ em sala inundada",
+          "substituir": "a $0.5\\times$ em sala inundada"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Linha do tempo do Vol. 03 diverge"
+    },
+    {
+      "id": "MUT-25",
+      "arquivo": "02_wireframe_ui_e_auditoria.md",
+      "lei": "N1 (possibilidades)",
+      "descricao": "Wireframe troca Motor e Torpedo de lugar: Cabine deixa de ficar sobre o Motor",
+      "trocas": [
+        {
+          "buscar": "[MOTOR SUB]| [TORP. SUB]|",
+          "substituir": "[TORP. SUB]| [MOTOR SUB]|"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Linha do tempo do Vol. 03 diverge"
     }
   ]
 }

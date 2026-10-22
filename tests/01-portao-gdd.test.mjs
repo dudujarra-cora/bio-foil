@@ -18,8 +18,50 @@ import {
   extrairSimulacaoVolume03,
   extrairContratoEstadoVolume08,
   extrairTripulacaoVolume01,
+  extrairParametrosMarinheiros,
   normalizarTexto,
 } from '../src/gdd-parser.mjs';
+
+/**
+ * Simulador INDEPENDENTE dos 2 marinheiros da Lancha (Vol. 03), em ticks de 0.25 s. Não lê o texto da simulação:
+ * só recebe os 3 parâmetros que o GDD declara. Regras usadas (todas do GDD): sala inunda a +5 kg/s até 12.5 kg;
+ * afogamento -8 HP/s em sala 100% inundada; recuo no 1º tick com HP < 30; Arpão (-15 HP) no Motor em t=11.0 s e no
+ * Torpedo em t=19.75 s; Acústico (-15 HP) na Cabine em t=23.50 s; salva final (-30 HP) na Cabine em t=30.25 s.
+ */
+function simularMarinheiros({ salaM1, velAgua, salasCabineMotor }) {
+  const DT = 0.25;
+  const travessia = (nSalas) => Math.ceil((nSalas * 1.5) / velAgua / DT) * DT;
+  const salasAteCabine = { MOTOR: salasCabineMotor, TORPEDO: salasCabineMotor + 1 };
+  const cheiaEm = { MOTOR: 11.0 + 12.5 / 5.0, TORPEDO: 19.75 + 12.5 / 5.0 };
+  const arpaoEm = { MOTOR: 11.0, TORPEDO: 19.75 };
+  const marinheiros = {
+    M2: { sala: 'MOTOR', chegada: 0 },
+    M1: { sala: salaM1, chegada: 11.0 + travessia(salasAteCabine[salaM1]) },
+  };
+  const resultado = { motorCheioEm: cheiaEm.MOTOR };
+  for (const [id, m] of Object.entries(marinheiros)) {
+    let hp = 100;
+    if (m.chegada <= arpaoEm[m.sala]) hp -= 15;
+    const inicioAfogamento = Math.max(m.chegada, cheiaEm[m.sala]);
+    let fuga = null;
+    for (let t = inicioAfogamento; t <= 60; t += DT) {
+      if (hp - 8 * (t - inicioAfogamento) < 30) {
+        fuga = t;
+        break;
+      }
+    }
+    const afogamento = 8 * (fuga - inicioAfogamento);
+    const hpFuga = hp - afogamento;
+    const naCabine = fuga + travessia(salasAteCabine[m.sala]);
+    let hpFinal = hpFuga;
+    if (naCabine <= 23.5) hpFinal -= 15;
+    const hpAntesSalva = hpFinal;
+    if (naCabine <= 30.25) hpFinal -= 30;
+    resultado[id] = { chegada: m.chegada, fuga, afogamento, hpFuga, naCabine, hpAntesSalva, eliminado: hpFinal <= 0 };
+  }
+  resultado.ambosEliminados = resultado.M1.eliminado && resultado.M2.eliminado;
+  return resultado;
+}
 
 const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -402,43 +444,68 @@ test('Junção N1 + N4: recalcula no motor as 5 Naves, 7 Armas, 6 Órgãos e Sim
   const tMotorInimigoInundado = tArpao1 + 12.5 / 5.0; // TAXA_FURO_MAR enche 12.5 kg
   const tO2Recuperado = 10.0 + (4 * 10.0) / 8; // caiu -4%/s por 10 s, volta a +8%/s
 
-  // Afogamento dos marinheiros em ticks de 0.25 s (Vol. 07): fogem no 1º tick com HP < 30
-  let tFuga = null;
-  let hpMarinheiro = null;
-  for (let t = tMotorInimigoInundado; t <= 32.75; t += 0.25) {
-    const hp = 100 - 15 - 8 * (t - tMotorInimigoInundado);
-    if (hp < 30) {
-      tFuga = t;
-      hpMarinheiro = hp;
-      break;
-    }
-  }
-  const afogamentoTotal = 8 * (tFuga - tMotorInimigoInundado);
+  // Marinheiros inimigos: simulados em ticks de 0.25 s com os parâmetros que o GDD declara (Vol. 01, 02 e 03)
+  const params = extrairParametrosMarinheiros(cadeia);
+  const canonico = simularMarinheiros(params);
+  const { M1, M2 } = canonico;
 
   const linhaDoTempoCalculada = [
-    0, tAcustico1, 10.0, tArpao1, 10.0 + 1.7, tPolvoNoSifao, tTouchdown, tMotorInimigoInundado, tO2Recuperado,
-    tAcustico2, tSifaoReparado, tArpao2, tFuga, tFuroFechado, tAcustico3, tPolvoNoPoco, tMastroReparado, tAcustico4,
-    tDecolagem,
-  ].sort((a, b) => a - b);
+    0, tAcustico1, 10.0, tArpao1, 10.0 + 1.7, tPolvoNoSifao, tTouchdown, M1.chegada, canonico.motorCheioEm,
+    tO2Recuperado, tAcustico2, tSifaoReparado, tArpao2, M2.fuga, M1.fuga, M2.naCabine, tFuroFechado, tAcustico3,
+    tPolvoNoPoco, M1.naCabine, tMastroReparado, tAcustico4, tDecolagem,
+  ];
+  const linhaDoTempoUnica = [...new Set(linhaDoTempoCalculada)].sort((a, b) => a - b);
 
-  console.log(`[N4] Marcos temporais da Simulação Vol. 03 examinados: ${simVol03.timestampsUnicos.length} (recalculados: ${linhaDoTempoCalculada.length})`);
+  console.log(`[N4] Marcos temporais da Simulação Vol. 03 examinados: ${simVol03.timestampsUnicos.length} (recalculados: ${linhaDoTempoUnica.length})`);
   assert.deepEqual(
     simVol03.timestampsUnicos,
-    linhaDoTempoCalculada,
+    linhaDoTempoUnica,
     'Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT'
   );
 
-  // Cadeia de HP recalculada: marinheiros 28 -> 13 -> <=0; casco inimigo 8 -> 2 (6 acertos); nosso peso/sustentação
-  assert.equal(hpMarinheiro, 29);
-  assert.ok(sim.includes(`100 - 15 - ${afogamentoTotal} = ${hpMarinheiro} HP`), 'Vol. 03 deve fechar 100 - 15 - afogamento = HP dos marinheiros');
-  assert.ok(sim.includes(`${hpMarinheiro - 15} HP cada`), 'Vol. 03 deve registrar a queda de -15 HP após o Acústico na Cabine');
-  assert.ok(sim.includes(`${hpMarinheiro - 15} HP -> 0 HP`), 'Vol. 03 deve registrar eliminação dos marinheiros');
-  assert.ok(hpMarinheiro - 15 <= 30, 'Salva final de 30 HP antipessoal tem de zerar os marinheiros');
+  // Cadeia de HP recalculada e conferida no texto do Vol. 03
+  assert.ok(sim.includes(`100 - 15 - ${M2.afogamento} = ${M2.hpFuga} HP`), 'Vol. 03 deve fechar o HP de fuga do Marinheiro 2');
+  assert.ok(sim.includes(`100 - ${M1.afogamento} = ${M1.hpFuga} HP`), 'Vol. 03 deve fechar o HP de fuga do Marinheiro 1');
+  assert.ok(sim.includes(`${M2.hpFuga} -> ${M2.hpFuga - 15} HP`), 'Vol. 03 deve registrar o Acústico na Cabine atingindo só o Marinheiro 2');
+  assert.ok(sim.includes(`${M2.hpAntesSalva} HP -> 0`) && sim.includes(`${M1.hpAntesSalva} HP -> 0`), 'Vol. 03 deve registrar a eliminação dos dois marinheiros');
+  assert.ok(!/impacto no Marinheiro 1/.test(sim), 'Marinheiro 1 está na Sala do Motor: não pode levar o Arpão da Sala do Torpedo');
+  assert.equal(canonico.ambosEliminados, true, 'No cenário canônico a salva de 30.25 s tem de eliminar os dois marinheiros');
   assert.ok(sim.includes(`${8 - 6}/8 HP`), 'Casco inimigo deve terminar em 2/8 HP após 6 acertos de 1 dano');
   const sustentacaoAposTorpedo = calcularSustentacaoAtual({ barrasIntactasMastro: 3, barrasEnergiaSifao: 1, aguaTotalTanquesKg: 99 });
   assert.equal(sustentacaoAposTorpedo, 180);
   assert.ok(sim.includes('180 kg'), 'Vol. 03 deve registrar sustentação de 180 kg após o torpedo');
   assert.ok(sustentacaoAposTorpedo < 224, 'Com 180 kg < 224 kg a nave tem de cair em Touchdown em t=13.0s');
+});
+
+test('Possibilidades (dúvida testada, não deduzida): 12 cenários do Marinheiro 1; o GDD tem de fixar o único canônico', () => {
+  const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const params = extrairParametrosMarinheiros(cadeia);
+
+  // O GDD tem de declarar os 3 parâmetros que o próprio GDD deixava em aberto
+  assert.equal(params.salaM1, 'MOTOR', 'Vol. 03 deve declarar que o Marinheiro 1 desce para a Sala do Motor');
+  assert.equal(params.velAgua, 0.7, 'Vol. 01 deve declarar a velocidade do marinheiro humano em sala inundada (0.7x)');
+  assert.equal(params.salasCabineMotor, 1, 'Wireframe do Vol. 02 deve pôr a Cabine diretamente acima da Sala do Motor');
+  assert.equal(params.arredondaTick, true, 'Vol. 01 deve declarar o arredondamento de travessias ao tick de 0.25 s');
+
+  const cenarios = [];
+  for (const salaM1 of ['MOTOR', 'TORPEDO']) {
+    for (const velAgua of [0.5, 0.7, 1.0]) {
+      for (const salasCabineMotor of [1, 2]) {
+        const r = simularMarinheiros({ salaM1, velAgua, salasCabineMotor });
+        cenarios.push({ chave: `${salaM1}/${velAgua}x/${salasCabineMotor}sala`, ambosEliminados: r.ambosEliminados });
+      }
+    }
+  }
+  const quebram = cenarios.filter((c) => !c.ambosEliminados).map((c) => c.chave);
+  console.log(`[N4] Cenários do Marinheiro 1 examinados: ${cenarios.length} | quebram o desfecho: ${quebram.length} -> ${quebram.join(', ')}`);
+  assert.equal(cenarios.length, 12);
+  assert.deepEqual(
+    quebram,
+    ['MOTOR/0.5x/2sala', 'TORPEDO/0.5x/1sala', 'TORPEDO/0.5x/2sala', 'TORPEDO/0.7x/1sala', 'TORPEDO/0.7x/2sala', 'TORPEDO/1x/1sala', 'TORPEDO/1x/2sala'],
+    'Mapa de robustez mudou: revise o Vol. 03 antes de aceitar'
+  );
+  const chaveCanonica = `${params.salaM1}/${params.velAgua}x/${params.salasCabineMotor}sala`;
+  assert.ok(!quebram.includes(chaveCanonica), `O cenário canônico (${chaveCanonica}) não pode quebrar o desfecho`);
 });
 
 test('Junção N1 + L4 + N4 (B1/B2): Tabela de Tripulação do Vol. 01 é a fonte; Vols. 03, 06 e 08 têm de concordar com ela', () => {
