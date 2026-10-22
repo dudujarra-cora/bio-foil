@@ -1,6 +1,6 @@
 # Registro de Mutações Reais — Projeto Bio-Foil (`ftl`)
 
-> **Histórico (até o commit `5b857ef`):** a tabela logo abaixo foi preenchida **à mão**. É relato, não medição (Lei L7), e parte dela ficou obsoleta. Por exemplo, a `MUT-12` antiga travava o valor errado "100 -> 85 HP". Ela fica preservada só como histórico. **A única fonte válida é o bloco GERADO no fim deste arquivo**, produzido por `node scripts/rodar-mutacoes.mjs --gerar-md` a partir de `mutacoes.json`. O portão `tests/09-mutacoes-reais.test.mjs` re-executa todas as mutações e reprova se o bloco divergir do que foi medido.
+> **Histórico (até o commit `e6a5ebc`):** a tabela logo abaixo foi preenchida **à mão**. É relato, não medição (Lei L7), e parte dela ficou obsoleta. Por exemplo, a `MUT-12` antiga travava o valor errado "100 -> 85 HP". Ela fica preservada só como histórico. **A única fonte válida é o bloco GERADO no fim deste arquivo**, produzido por `node scripts/rodar-mutacoes.mjs --gerar-md` a partir de `mutacoes.json`. O portão `tests/09-mutacoes-reais.test.mjs` re-executa todas as mutações e reprova se o bloco divergir do que foi medido.
 
 Conforme **Seção 3.5** e **Lei L6**, toda mutação abaixo foi executada alterando o significado sem quebrar a sintaxe, medida via `node --test`, teve sua primeira linha de falha real copiada literalmente e foi revertida em seguida.
 
@@ -49,5 +49,7 @@ Conforme **Seção 3.5** e **Lei L6**, toda mutação abaixo foi executada alter
 | `MUT-23` | `03_vertical_slice_combate_e_auditoria.md` | **N1 (possibilidades)** | Marinheiro 1 desce para a Sala do Torpedo (cenário que quebra o desfecho) | `AssertionError [ERR_ASSERTION]: Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT` |
 | `MUT-24` | `01_matematica_base_e_auditoria.md` | **N1 (possibilidades)** | Marinheiro humano anda a 0.5x em sala inundada (Vol. 03 calculado com 0.7x) | `AssertionError [ERR_ASSERTION]: Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT` |
 | `MUT-25` | `02_wireframe_ui_e_auditoria.md` | **N1 (possibilidades)** | Wireframe troca Motor e Torpedo de lugar: Cabine deixa de ficar sobre o Motor | `AssertionError [ERR_ASSERTION]: Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT` |
+| `MUT-26` | `src/gdd-parser.mjs` | **L5 (CI)** | Workflow portoes.yml some da lista canônica de .github/workflows | `Error: [L5 TRIPWIRE WORKFLOWS CI FALHOU] Faltando=[] Extras=[portoes.yml]` |
+| `MUT-27` | `.github/workflows/portoes.yml` | **L1 (CI)** | CI deixa de rodar os portões (job vira um echo verde) | `Error: [CI FALHOU] .github/workflows/portoes.yml tem de ter o job "portoes" rodando "sh scripts/hooks/pre-push"` |
 
 <!-- FIM BLOCO GERADO -->

@@ -41,6 +41,21 @@ git -C "$REPO_ROOT" worktree list
 echo "[N5] Ramos abertos:"
 git -C "$REPO_ROOT" branch -a
 
+# Lei N3: toda evidência (hash) citada em PORTOES.md tem de existir no histórico de HEAD
+QTD_EVID=0
+for H in $(grep -oE '`[0-9a-f]{7,40}`' "$REPO_ROOT/padrao/protocolo/PORTOES.md" | tr -d '`' | sort -u); do
+  if ! git -C "$REPO_ROOT" merge-base --is-ancestor "$H" HEAD 2>/dev/null; then
+    echo "ERRO FATAL [Lei N3]: evidência $H citada em PORTOES.md não existe no histórico de HEAD." >&2
+    exit 1
+  fi
+  QTD_EVID=$((QTD_EVID + 1))
+done
+echo "[N3] Evidências de PORTOES.md conferidas no histórico: $QTD_EVID"
+if [ "$QTD_EVID" -eq 0 ]; then
+  echo "ERRO FATAL [Lei N4]: zero evidências examinadas em PORTOES.md." >&2
+  exit 1
+fi
+
 # 5. Lei N3 / Seção 3.6: 3 Corridas Verdes Seguidas
 for i in 1 2 3; do
   echo "=== CORRIDA $i/3 ==="

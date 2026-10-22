@@ -1,0 +1,27 @@
+name: portoes
+
+# Portão no SERVIDOR: roda exatamente a mesma lógica do pre-push local (portões OBRIGATORIO do PORTOES.md sobre HEAD).
+# Fecha a brecha de quem pula os hooks locais com --no-verify: a proteção da main exige este job verde.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  portoes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Identidade git para os repositórios descartáveis criados pelos testes
+        run: |
+          git config --global user.email ci@bio-foil.invalid
+          git config --global user.name "CI Bio-Foil"
+          git config --global init.defaultBranch main
+      - name: Portões OBRIGATORIO (mesmo script do pre-push)
+        run: sh scripts/hooks/pre-push

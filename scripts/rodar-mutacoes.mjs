@@ -34,7 +34,7 @@ function ambienteSemGit() {
 
 export function copiarProjeto(origem, destino) {
   for (const entrada of fs.readdirSync(origem, { withFileTypes: true })) {
-    if (entrada.name.startsWith('.') || entrada.name === 'node_modules') continue;
+    if (entrada.name === '.git' || entrada.name === 'node_modules') continue;
     const de = path.join(origem, entrada.name);
     const para = path.join(destino, entrada.name);
     if (entrada.isDirectory()) {

@@ -49,6 +49,11 @@ export const CADEIA_CANONICA_DIRS_RAIZ = Object.freeze([
   'tests',
 ]);
 
+/** Workflows de CI em .github/workflows (portão no servidor). */
+export const CADEIA_CANONICA_WORKFLOWS = Object.freeze([
+  'portoes.yml',
+]);
+
 /**
  * Lei L6 (B7): remove a formatação LaTeX/Markdown para que as asserções meçam SIGNIFICADO, não formatação.
  * Ex.: "$100 \rightarrow 85\text{ HP}$" -> "100 -> 85 HP".
@@ -648,6 +653,17 @@ export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
   };
   compararLista('RAIZ ARQUIVOS', outrosArquivosRaiz, CADEIA_CANONICA_RAIZ_OUTROS);
   compararLista('RAIZ DIRETORIOS', dirsRaiz, CADEIA_CANONICA_DIRS_RAIZ);
+
+  // L5: CI no servidor — .github/workflows só contém os workflows declarados, e o portoes.yml roda o pre-push
+  const pastaWorkflows = path.join(diretorioRaiz, '.github', 'workflows');
+  const workflowsNoDisco = fs.existsSync(pastaWorkflows)
+    ? fs.readdirSync(pastaWorkflows, { withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name).sort()
+    : [];
+  compararLista('WORKFLOWS CI', workflowsNoDisco, CADEIA_CANONICA_WORKFLOWS);
+  const workflowPortoes = fs.readFileSync(path.join(pastaWorkflows, 'portoes.yml'), 'utf8');
+  if (!/^\s{2}portoes:\s*$/m.test(workflowPortoes) || !/^\s+run: sh scripts\/hooks\/pre-push\s*$/m.test(workflowPortoes)) {
+    throw new Error('[CI FALHOU] .github/workflows/portoes.yml tem de ter o job "portoes" rodando "sh scripts/hooks/pre-push"');
+  }
 
   // B10: a versão de Node que roda os portões tem de estar dentro do intervalo fixado em package.json
   const pacote = JSON.parse(fs.readFileSync(path.join(diretorioRaiz, 'package.json'), 'utf8'));

@@ -404,6 +404,38 @@
         "tests/01-portao-gdd.test.mjs"
       ],
       "falhaEsperada": "Linha do tempo do Vol. 03 diverge"
+    },
+    {
+      "id": "MUT-26",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "L5 (CI)",
+      "descricao": "Workflow portoes.yml some da lista canônica de .github/workflows",
+      "trocas": [
+        {
+          "buscar": "export const CADEIA_CANONICA_WORKFLOWS = Object.freeze([\n  'portoes.yml',\n]);",
+          "substituir": "export const CADEIA_CANONICA_WORKFLOWS = Object.freeze([]);"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[L5 TRIPWIRE WORKFLOWS CI FALHOU]"
+    },
+    {
+      "id": "MUT-27",
+      "arquivo": ".github/workflows/portoes.yml",
+      "lei": "L1 (CI)",
+      "descricao": "CI deixa de rodar os portões (job vira um echo verde)",
+      "trocas": [
+        {
+          "buscar": "        run: sh scripts/hooks/pre-push",
+          "substituir": "        run: echo verde"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[CI FALHOU]"
     }
   ]
 }
