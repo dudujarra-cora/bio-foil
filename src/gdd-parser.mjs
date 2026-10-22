@@ -9,6 +9,7 @@ export const CADEIA_CANONICA_GDD = Object.freeze([
   '05_conteudo_chefe_e_auditoria_final.md',
   '06_prova_formal_matriz_e_limites.md',
   '07_plano_mestre_de_testes_14_leis.md',
+  '08_contrato_estado_e_arquitetura_modulos.md',
 ]);
 
 function clonarProfundoCongelado(obj) {
@@ -297,4 +298,52 @@ export function calcularTempoRecargaArma({
   const reducaoTouchdown = emTouchdown ? 0.25 : 0;
   const multiplicador = Math.max(0.5, 1.0 - reducaoOperador - reducaoTouchdown);
   return (tempoChassiSeg + penalidadeOrgaosSeg) * multiplicador;
+}
+
+/**
+ * Extrai e valida o Contrato JSON do GameState (Seção 8.1), a Tabela L3 (8.2) e as Junções N1 (8.4) do Volume 08.
+ */
+export function extrairContratoEstadoVolume08(conteudoVol08) {
+  const matchJson = conteudoVol08.match(/```json\n([\s\S]*?)\n```/);
+  if (!matchJson) {
+    throw new Error('[Vol 08] Bloco JSON do GameState não encontrado');
+  }
+  const gameState = JSON.parse(matchJson[1]);
+  const dominiosRaiz = Object.keys(gameState);
+
+  const linhas = conteudoVol08.split('\n');
+  let secao = '';
+  const linhasTabelaL3 = [];
+  const juncoesN1 = [];
+
+  for (const linha of linhas) {
+    if (linha.startsWith('## 8.2.')) secao = '8.2';
+    else if (linha.startsWith('## 8.3.')) secao = '8.3';
+    else if (linha.startsWith('## 8.4.')) secao = '8.4';
+    else if (linha.startsWith('# CONTRA-AUDITORIA')) secao = 'AUDITORIA';
+
+    if (secao === '8.2' && linha.startsWith('| ') && !linha.startsWith('| Situação') && !linha.startsWith('| :---')) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 5) {
+        linhasTabelaL3.push({
+          situacao: cols[0],
+          canalPermissao: cols[1].replace(/`/g, ''),
+          status: cols[2].replace(/`/g, ''),
+          marcadorExplicito: cols[3].replace(/`/g, ''),
+          dados: cols[4],
+        });
+      }
+    }
+
+    if (secao === '8.4' && /^\d+\.\s+\*\*Junção/.test(linha)) {
+      juncoesN1.push(linha);
+    }
+  }
+
+  return clonarProfundoCongelado({
+    gameState,
+    dominiosRaiz,
+    linhasTabelaL3,
+    juncoesN1,
+  });
 }

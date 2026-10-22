@@ -14,6 +14,7 @@ import {
   calcularSustentacaoAtual,
   calcularVelocidadeCruzeiro,
   calcularTempoRecargaArma,
+  extrairContratoEstadoVolume08,
 } from '../src/gdd-parser.mjs';
 
 const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,12 +25,12 @@ const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url))
  */
 const LISTA_CATRACA = Object.freeze([]);
 
-test('Portão L5 + N4: aplica a cadeia canônica inteira (01..07) na ordem e valida tripwire de diretório', () => {
+test('Portão L5 + N4: aplica a cadeia canônica inteira (01..08) na ordem e valida tripwire de diretório', () => {
   const resultado = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
 
   console.log(`[N4] Arquivos .md examinados na cadeia canônica: ${resultado.arquivosExaminados}`);
   assert.ok(resultado.arquivosExaminados > 0, '[N4] Zero arquivos examinados deve reprovar');
-  assert.equal(resultado.arquivosExaminados, 7, 'Deve examinar exatamente os 7 volumes canônicos (01..07)');
+  assert.equal(resultado.arquivosExaminados, 8, 'Deve examinar exatamente os 8 volumes canônicos (01..08)');
 
   assert.deepEqual(resultado.cadeiaDeclarada, [
     '01_matematica_base_e_auditoria.md',
@@ -39,6 +40,7 @@ test('Portão L5 + N4: aplica a cadeia canônica inteira (01..07) na ordem e val
     '05_conteudo_chefe_e_auditoria_final.md',
     '06_prova_formal_matriz_e_limites.md',
     '07_plano_mestre_de_testes_14_leis.md',
+    '08_contrato_estado_e_arquitetura_modulos.md',
   ]);
 
   const vol07 = resultado.volumes[6].conteudo;
@@ -53,13 +55,26 @@ test('Portão L5 + N4: aplica a cadeia canônica inteira (01..07) na ordem e val
   assert.equal(ondasPlanejadas.length, 6, 'Vol. 07 deve planejar as 6 Ondas de implementação');
   assert.equal(mutacoesPlanejadas.length, 19, 'Vol. 07 deve especificar as 19 mutações obrigatórias das Ondas 1 a 5');
 
+  const vol08 = extrairContratoEstadoVolume08(resultado.volumes[7].conteudo);
+  console.log(
+    `[N4] Vol. 08 examinado: ${vol08.dominiosRaiz.length} domínios no GameState, ${vol08.linhasTabelaL3.length} canais L3, ${vol08.juncoesN1.length} junções N1`
+  );
+  assert.equal(vol08.dominiosRaiz.length, 8, 'GameState deve ter exatamente 8 domínios raiz');
+  assert.equal(vol08.gameState.naveJogador.hpCascoMax, 30, 'HP base no GameState deve bater com SSOT (30 HP)');
+  assert.equal(vol08.gameState.naveJogador.pesoChassiKg, 100.0, 'Peso chassi no GameState deve bater com SSOT (100 kg)');
+  assert.equal(vol08.gameState.naveJogador.camaras[0].aguaKg, 12.5, 'Água por câmara no GameState deve bater com SSOT (12.5 kg)');
+  assert.equal(vol08.gameState.naveJogador.armasAtivas.length, 4, 'GameState deve ter exatamente 4 slots de armas ativas');
+  assert.equal(vol08.gameState.naveJogador.poraoCarga.length, 4, 'GameState deve ter exatamente 4 slots de porão de carga');
+  assert.equal(vol08.linhasTabelaL3.length, 5, 'Tabela L3 da Seção 8.2 deve especificar os 5 estados de visibilidade');
+  assert.equal(vol08.juncoesN1.length, 5, 'Seção 8.4 deve definir as 5 assinaturas puras de junção N1');
+
   // Prova do Tripwire L5: criar um diretório temporário com item extra fora da lista deve dar vermelho
   const pastaTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ftl-tripwire-l5-'));
   try {
     for (const v of resultado.volumes) {
       fs.writeFileSync(path.join(pastaTmp, v.arquivo), v.conteudo, 'utf8');
     }
-    fs.writeFileSync(path.join(pastaTmp, '08_arquivo_intruso_nao_declarado.md'), '# Intruso', 'utf8');
+    fs.writeFileSync(path.join(pastaTmp, '09_arquivo_intruso_nao_declarado.md'), '# Intruso', 'utf8');
     assert.throws(
       () => carregarCadeiaCanonicaGdd(pastaTmp),
       /\[L5 TRIPWIRE FALHOU\]/,
