@@ -676,8 +676,9 @@ export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
   const minimo = faixa.slice(1, 4).map(Number);
   const teto = faixa.slice(4, 7).map(Number);
   if (comparar(versao, minimo) < 0 || comparar(versao, teto) >= 0) {
+    // 1ª linha determinística (vai para o registro de mutações); a versão medida vai na 2ª linha (difere por máquina)
     throw new Error(
-      `[B10 ENGINES FALHOU] Node ${process.versions.node} fora de engines.node "${pacote.engines.node}"`
+      `[B10 ENGINES FALHOU] versão do Node fora de engines.node "${pacote.engines.node}"\nversão medida: ${process.versions.node}`
     );
   }
 
