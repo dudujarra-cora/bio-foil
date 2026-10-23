@@ -580,6 +580,54 @@
         "tests/01-portao-gdd.test.mjs"
       ],
       "falhaEsperada": "Grade ortogonal 2x4 (4 cantos grau 2 + 4 internos grau 3) deve admitir exatamente 32 trincas ordenadas simples de Beam"
+    },
+    {
+      "id": "MUT-37",
+      "arquivo": "04_mapa_procedural_e_auditoria.md",
+      "lei": "N1 / L4",
+      "descricao": "Muda a categoria de SOS_4_COMBOIO_ENCALHADO na Tabela 4.5.A (quebra cota de 4 nós SOS da Seção 4.4)",
+      "trocas": [
+        {
+          "buscar": "| `SOS_4_COMBOIO_ENCALHADO` | `SOS` |",
+          "substituir": "| `SOS_4_COMBOIO_ENCALHADO` | `EXPLORACAO` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Catálogo 4.5.A deve conter exatamente 4 templates SOS (cota 4.4 = 4 Nós)"
+    },
+    {
+      "id": "MUT-38",
+      "arquivo": "04_mapa_procedural_e_auditoria.md",
+      "lei": "N1 / L3",
+      "descricao": "PER_3_AGUAS_TURVAS troca canal NEGADO_SONAR por NEGADO_TINTA (quebra Junção N1 com a Tabela 8.2 do Vol. 08)",
+      "trocas": [
+        {
+          "buscar": "| `PER_3_AGUAS_TURVAS` | `PERIGO` | **10. Águas Turvas Abissais** | Combate obrigatório c/ Canal `L3` em `NEGADO_SONAR` |",
+          "substituir": "| `PER_3_AGUAS_TURVAS` | `PERIGO` | **10. Águas Turvas Abissais** | Combate obrigatório c/ Canal `L3` em `NEGADO_TINTA` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "PER_3_AGUAS_TURVAS na Seção 4.5.A deve referenciar o Canal L3 e os estados NEGADO_SONAR / VISIVEL da Tabela 8.2 (Vol. 08)"
+    },
+    {
+      "id": "MUT-39",
+      "arquivo": "04_mapa_procedural_e_auditoria.md",
+      "lei": "N1 / L4",
+      "descricao": "Saque de SOS Expirado no Setor 1 (Captura Intacta) muda de 12 para 15 Sucata na Seção 4.5.B (quebra regra floor(0.5 x 25) = 12 do Vol. 03)",
+      "trocas": [
+        {
+          "buscar": "e por Captura Intacta rende $\\lfloor 0.5 \\times 25 \\rfloor = \\mathbf{12\\text{ Sucata}}$",
+          "substituir": "e por Captura Intacta rende $\\lfloor 0.5 \\times 25 \\rfloor = \\mathbf{15\\text{ Sucata}}$"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Exemplo de SOS Expirado (Captura Intacta Setor 1) na Seção 4.5.B diverge de floor(0.5 x 25) = 12 Sucata"
     }
   ]
 }

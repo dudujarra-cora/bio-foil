@@ -20,6 +20,8 @@ import {
   calcularVelocidadeCruzeiro,
   calcularTempoRecargaArma,
   extrairBaralhoVolume04,
+  extrairCatalogoEventosVolume04,
+  resolverEventoNoESaque,
   extrairSimulacaoVolume03,
   extrairContratoEstadoVolume08,
   extrairTripulacaoVolume01,
@@ -1144,6 +1146,228 @@ test('Junção N1 + L4 + N4: audita Topologia 2x4 + Duto 5<->6 (1.6.A), Lotaçã
     [3, 2, 1],
     [4, 3, 2],
   ]);
+});
+
+test('Junção N1 + L4 + N4: audita o Catálogo Determinístico de Eventos (4.5.A) e a Regra de SOS Expirado / Frente Corporativa (4.5.B) contra Vols. 01, 03, 05, 06 e 08', () => {
+  const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const vol01 = cadeia.volumes[0].conteudo;
+  const vol03 = cadeia.volumes[2].conteudo;
+  const vol04 = cadeia.volumes[3].conteudo;
+  const vol05 = cadeia.volumes[4].conteudo;
+  const vol06 = cadeia.volumes[5].conteudo;
+  const vol08 = extrairContratoEstadoVolume08(cadeia.volumes[7].conteudo);
+
+  const baralho = extrairBaralhoVolume04(vol04);
+  const catalogoEventos = extrairCatalogoEventosVolume04(vol04);
+  const catalogoVol05 = extrairCatalogoVolume05(vol05);
+  const economiaVol05 = extrairEconomiaVolume05(vol05);
+  const saqueS1Vol03 = extrairSaqueSetor1Volume03(vol03);
+  const tripVol01 = extrairTripulacaoVolume01(vol01);
+  const { constantesSsot } = extrairSsotEMatrizDoVolume06(vol06);
+
+  console.log(
+    `[N4] Catálogo de Eventos Vol. 04 examinado: ${catalogoEventos.templates.length} templates (SOS=${
+      catalogoEventos.templates.filter((t) => t.categoria === 'SOS').length
+    }, EXPLORACAO=${catalogoEventos.templates.filter((t) => t.categoria === 'EXPLORACAO').length}, PERIGO=${
+      catalogoEventos.templates.filter((t) => t.categoria === 'PERIGO').length
+    }), estado expirado=${catalogoEventos.regrasSosEFrente.estadoSosExpirado}`
+  );
+
+  // 1. Auditoria da Tabela 4.5.A contra o Baralho Procedural (Seção 4.4)
+  assert.equal(
+    catalogoEventos.templates.length,
+    10,
+    'Seção 4.5.A deve definir exatamente os 10 templates de nós especiais (4 SOS + 3 Exploração + 3 Perigos)'
+  );
+  const sosTemplates = catalogoEventos.templates.filter((t) => t.categoria === 'SOS');
+  const expTemplates = catalogoEventos.templates.filter((t) => t.categoria === 'EXPLORACAO');
+  const perTemplates = catalogoEventos.templates.filter((t) => t.categoria === 'PERIGO');
+  assert.equal(sosTemplates.length, 4, 'Catálogo 4.5.A deve conter exatamente 4 templates SOS (cota 4.4 = 4 Nós)');
+  assert.equal(expTemplates.length, 3, 'Catálogo 4.5.A deve conter exatamente 3 templates EXPLORACAO (cota 4.4 = 3 Nós)');
+  assert.equal(perTemplates.length, 3, 'Catálogo 4.5.A deve conter exatamente 3 templates PERIGO (cota 4.4 = 3 Nós)');
+  assert.equal(baralho.somaTotalNosBase, 20, 'Baralho base da Seção 4.4 deve continuar somando exatamente 20 nós');
+
+  const idsUnicos = new Set(catalogoEventos.templates.map((t) => t.id));
+  assert.equal(idsUnicos.size, 10, 'Todos os 10 templates da Seção 4.5.A devem ter IDs únicos');
+
+  assert.equal(
+    catalogoEventos.regrasOpcoes.taxaSucessoCriticoBlueOption,
+    100,
+    'Blue Option (Opção B) deve ter 100% de sucesso crítico garantido'
+  );
+  assert.equal(catalogoEventos.regrasOpcoes.danoCascoBlueOption, 0, 'Blue Option (Opção B) deve causar 0 dano de casco');
+  assert.equal(
+    catalogoEventos.regrasOpcoes.marcadorOpcaoCPerigo,
+    'BLOQUEADO_COMBATE_OBRIGATORIO',
+    'Opção C em nós PERIGO deve usar o marcador canônico BLOQUEADO_COMBATE_OBRIGATORIO'
+  );
+
+  // 2. Cruzamento N1 dos Requisitos de Blue Options contra Tripulação (Vol. 01), Armas (5.1) e Sistemas (5.6.A)
+  assert.equal(tripVol01.especies.length, 4);
+  const nomesArmas51 = catalogoVol05.armas.map((a) => normalizarTexto(a.nome));
+  const nomesSistemas56 = economiaVol05.upgrades.map((u) => normalizarTexto(u.nome));
+
+  for (const t of catalogoEventos.templates) {
+    assert.ok(t.id && t.nome && t.opcaoA && t.requisitoBlueOption && t.recompensaBlueOption, `Campos vazios em ${t.id}`);
+    if (t.categoria !== 'PERIGO') {
+      assert.ok(
+        /p=0:.*p=1:/.test(t.opcaoA),
+        `Template ${t.id} deve explicitar a resolução determinística p=0 e p=1 na Opção A`
+      );
+    } else {
+      assert.ok(
+        t.opcaoA.includes('Combate obrigatório'),
+        `Template de perigo ${t.id} deve declarar Combate obrigatório na Opção A`
+      );
+    }
+  }
+
+  // Verifica que sistemas e armas citados nas Blue Options existem nas tabelas canônicas do Vol. 05
+  assert.ok(nomesArmas51.some((n) => n.includes('Cortador Térmico a Plasma')));
+  assert.ok(nomesArmas51.some((n) => n.includes('Canhão de Arpão de Cabo')));
+  assert.ok(nomesArmas51.some((n) => n.includes('Emissor Acústico')));
+  for (const sisCitado of [
+    'Sifão de Propulsão',
+    'Bomba Branquial',
+    'Glândula de Tinta Furtiva',
+    'Córtex de Navegação',
+    'Placas de Blindagem',
+    'Glândula de Barreira',
+    'Mastro do Foil',
+  ]) {
+    assert.ok(
+      nomesSistemas56.some((s) => s.includes(sisCitado)),
+      `Sistema "${sisCitado}" exigido numa Blue Option da Seção 4.5.A não existe na Tabela 5.6.A (Vol. 05)`
+    );
+  }
+
+  // Verifica alinhamento do PER_3_AGUAS_TURVAS com a Tabela 8.2 (Canal L3 e canalPermissao NEGADO_SONAR) do Vol. 08
+  const per3 = catalogoEventos.templates.find((t) => t.id === 'PER_3_AGUAS_TURVAS');
+  const linhaSonarVol08 = vol08.linhasTabelaL3.find((l) => l.canalPermissao.includes('NEGADO_SONAR'));
+  assert.ok(linhaSonarVol08, 'Tabela 8.2 do Vol. 08 deve declarar canalPermissao NEGADO_SONAR');
+  assert.ok(
+    per3.opcaoA.includes('L3') && per3.opcaoA.includes('NEGADO_SONAR') && per3.recompensaBlueOption.includes('VISIVEL'),
+    'PER_3_AGUAS_TURVAS na Seção 4.5.A deve referenciar o Canal L3 e os estados NEGADO_SONAR / VISIVEL da Tabela 8.2 (Vol. 08)'
+  );
+
+  // 3. Auditoria da Regra de SOS Expirado (Zona Morta Industrializada) e Frente Corporativa (Seção 4.5.B + Falha 4 vs. Vols. 03, 05, 06 e 08)
+  const regras = catalogoEventos.regrasSosEFrente;
+  assert.equal(regras.margemPrazoHoras, 1.5, 'Margem de T_prazo em relação a T_rota_minima deve ser +1.5h');
+  assert.equal(
+    regras.estadoSosExpirado,
+    'ZONA_MORTA_INDUSTRIALIZADA',
+    'Estado de SOS expirado deve ser ZONA_MORTA_INDUSTRIALIZADA'
+  );
+  assert.equal(
+    regras.multiplicadorSucataSosExpirado,
+    0.5,
+    'Multiplicador de Sucata em SOS Expirado deve ser 0.5 (-50% arredondado para baixo)'
+  );
+  assert.equal(regras.combustivelSosExpirado, 0, 'Combustível extra em SOS Expirado deve ser 0');
+  assert.equal(regras.municaoSosExpirado, 0, 'Munição extra em SOS Expirado deve ser 0');
+  assert.equal(
+    regras.exemplosSetor1SosExpirado.destruicaoBruta,
+    Math.floor(0.5 * saqueS1Vol03.barcoBrutoSucata),
+    'Exemplo de SOS Expirado (Destruição Bruta Setor 1) na Seção 4.5.B diverge de floor(0.5 x 12) = 6 Sucata'
+  );
+  assert.equal(
+    regras.exemplosSetor1SosExpirado.capturaIntacta,
+    Math.floor(0.5 * saqueS1Vol03.barcoCapturaSucata),
+    'Exemplo de SOS Expirado (Captura Intacta Setor 1) na Seção 4.5.B diverge de floor(0.5 x 25) = 12 Sucata'
+  );
+  const velFrenteSecao43 = Number(normalizarTexto(vol04).match(/velocidade constante de (\d+(?:\.\d+)?) MN por Hora/i)?.[1]);
+  assert.equal(
+    regras.velocidadeFrenteCorporativaMnPorHora,
+    velFrenteSecao43,
+    'Velocidade da Frente Extrativista na Seção 4.5.B diverge da Seção 4.3 (6.0 MN/h)'
+  );
+  assert.equal(regras.velocidadeFrenteCorporativaMnPorHora, 6.0);
+  assert.equal(regras.bonusBarreiraFrenteCorporativa, 1, 'Frente Corporativa deve adicionar +1 bolha de Barreira');
+  assert.equal(regras.tetoBarreiraFrenteCorporativa, 4, 'Teto de Barreira na Frente Corporativa deve ser 4 bolhas');
+  assert.deepEqual(
+    regras.saqueFrenteCorporativa,
+    { sucata: 0, biomassa: 0, municao: 0, combustivel: 1 },
+    'Nó engolido pela Frente Corporativa deve render 0 Sucata, 0 Biomassa, 0 Munição e 1 Combustível'
+  );
+  assert.equal(
+    catalogoEventos.temFalha4FarmingInfinitoSosExpirado,
+    true,
+    'Contra-Auditoria #4 do Vol. 04 deve conter a Falha Encontrada 4 (Farming Infinito e SOS Expirado)'
+  );
+
+  // 4. Prova do Avaliador Puro Determinístico (resolverEventoNoESaque) nos 3 estados de nó e nos 8 setores
+  const sosAtivoBlue = resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+    idEvento: 'SOS_1_REDE_ARRASTO',
+    setor: 1,
+    tAtualHoras: 3.5,
+    tRotaMinimaHoras: 2.0, // T_prazo = 3.5h -> exatamente no limite (t_atual <= T_prazo)
+    xNoMn: 25,
+    temRequisitoBlueOption: true,
+    escolha: 'B',
+  });
+  assert.equal(sosAtivoBlue.estadoNo, 'EVENTO_ATIVO');
+  assert.deepEqual(sosAtivoBlue.opcoesDisponiveis, ['A', 'B', 'C']);
+  assert.equal(sosAtivoBlue.resultadoEscolha, 'SUCESSO_CRITICO_BLUE_OPTION');
+  assert.equal(sosAtivoBlue.danoCasco, 0);
+
+  for (const linhaSaque of economiaVol05.curvaSetores) {
+    const s = linhaSaque.setor;
+    const expBruta = resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+      idEvento: 'SOS_2_CAPSULA_AFUNDANDO',
+      setor: s,
+      tAtualHoras: 3.6,
+      tRotaMinimaHoras: 2.0, // 3.6 > 3.5 -> SOS Expirado
+      xNoMn: 30,
+      modalidadeVit: 'DESTRUICAO_BRUTA',
+    });
+    assert.equal(expBruta.estadoNo, 'ZONA_MORTA_INDUSTRIALIZADA');
+    assert.deepEqual(expBruta.opcoesDisponiveis, []);
+    assert.equal(expBruta.combateObrigatorio, true);
+    assert.equal(expBruta.saquePosCombate.sucata, Math.floor(0.5 * linhaSaque.barcoBrutoSucata));
+    assert.equal(expBruta.saquePosCombate.combustivel, 0);
+    assert.equal(expBruta.saquePosCombate.municao, 0);
+
+    const expCaptura = resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+      idEvento: 'SOS_4_COMBOIO_ENCALHADO',
+      setor: s,
+      tAtualHoras: 4.0,
+      tRotaMinimaHoras: 2.0,
+      xNoMn: 30,
+      modalidadeVit: 'CAPTURA_INTACTA',
+    });
+    assert.equal(expCaptura.saquePosCombate.sucata, Math.floor(0.5 * linhaSaque.barcoCapturaSucata));
+  }
+
+  const noEngolidoFrente = resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+    idEvento: 'EXP_1_NAUFRAGIO_ANTIGO',
+    setor: 4,
+    tAtualHoras: 5.0,
+    tRotaMinimaHoras: 2.0,
+    xNoMn: 30.0, // 30.0 <= 6.0 * 5.0 -> engolido pela Frente Extrativista!
+  });
+  assert.equal(noEngolidoFrente.estadoNo, 'FROTA_PRINCIPAL_CORPORACAO');
+  assert.equal(noEngolidoFrente.combateObrigatorio, true);
+  assert.equal(noEngolidoFrente.bonusBarreiraInimigo, 1);
+  assert.deepEqual(noEngolidoFrente.saquePosCombate, {
+    sucata: 0,
+    biomassa: 0,
+    municao: 0,
+    combustivel: 1,
+  });
+
+  assert.throws(
+    () =>
+      resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+        idEvento: 'PER_1_CHUVA_ACIDA',
+        setor: 2,
+        tAtualHoras: 1.0,
+        tRotaMinimaHoras: 1.0,
+        xNoMn: 20,
+        escolha: 'C',
+      }),
+    /BLOQUEADO_COMBATE_OBRIGATORIO/,
+    'Tentar escolher Opção C num nó PERIGO deve lançar erro com BLOQUEADO_COMBATE_OBRIGATORIO'
+  );
 });
 
 test('Lei N2: verificação da Lista-Catraca (nenhum item resolvido pode permanecer na catraca)', () => {

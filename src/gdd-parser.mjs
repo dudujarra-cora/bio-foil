@@ -1049,7 +1049,7 @@ export function calcularTempoRecargaArma({
  * Extrai e audita o Baralho Procedural de Nós do Volume 04 (Seção 4.4: soma = 20 nós base).
  */
 export function extrairBaralhoVolume04(conteudoVol04) {
-  const secao44 = conteudoVol04.split('## 4.4.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const secao44 = conteudoVol04.split('## 4.4.')[1]?.split('## 4.5.')[0]?.split('# CONTRA-AUDITORIA')[0] ?? '';
   const cotas = [];
   for (const linha of secao44.split('\n')) {
     if (linha.startsWith('* **')) {
@@ -1063,6 +1063,236 @@ export function extrairBaralhoVolume04(conteudoVol04) {
   return clonarProfundoCongelado({
     cotas,
     somaTotalNosBase,
+  });
+}
+
+/**
+ * Extrai e audita o Catálogo Determinístico de Eventos de Nós (Seção 4.5.A) e a Regra Mecânica
+ * de SOS Expirado / Frente Extrativista (Seção 4.5.B + Falha Encontrada 4) do Volume 04.
+ * Valor ausente vira null/NaN (L3).
+ */
+export function extrairCatalogoEventosVolume04(conteudoVol04) {
+  const secao45 = conteudoVol04.split('## 4.5.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const subA = secao45.split('### A.')[1]?.split('### B.')[0] ?? '';
+  const subB = secao45.split('### B.')[1] ?? '';
+  const subANorm = normalizarTexto(subA);
+  const subBNorm = normalizarTexto(subB);
+
+  const taxaSucessoCriticoBlueOption = Number(
+    subANorm.match(/(\d+)%\s+de sucesso cr[ií]tico garantido/i)?.[1] ?? NaN
+  );
+  const danoCascoBlueOption = Number(
+    subANorm.match(/\((\d+)\s+dano\s+de casco e recompensa m[aá]xima\)/i)?.[1] ?? NaN
+  );
+  const marcadorOpcaoCPerigo =
+    subA.match(/nos nós `PERIGO`, o combate é obrigatório \(`([A-Z0-9_]+)`\)/)?.[1] ?? null;
+
+  const templates = [];
+  for (const linha of subA.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID do Evento') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 6) {
+        templates.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          categoria: cols[1].replace(/`/g, '').trim(),
+          nome: normalizarTexto(cols[2]),
+          opcaoA: normalizarTexto(cols[3]),
+          requisitoBlueOption: normalizarTexto(cols[4].replace(/`/g, '')),
+          recompensaBlueOption: normalizarTexto(cols[5]),
+        });
+      }
+    }
+  }
+
+  const margemPrazoHoras = Number(
+    subBNorm.match(/T_\{?prazo\}?\s*=\s*T_\{?rota m[ií]nima\}?\s*\+\s*(\d+(?:\.\d+)?)h/i)?.[1] ?? NaN
+  );
+  const estadoSosExpirado =
+    subB.match(/o estado do nó muda para `([A-Z0-9_]+)`/)?.[1] ?? null;
+  const multiplicadorSucataSosExpirado = Number(
+    subBNorm.match(
+      /Sucata_\{?SOS expirado\}?\(S\)\s*=\s*(?:\\lfloor|floor\()\s*(\d+(?:\.\d+)?)\s*[x*]\s*Sucata_\{?modalidade\}?\(S\)/i
+    )?.[1] ?? NaN
+  );
+  const matchExtrasSos = subBNorm.match(/com\s+(\d+)\s+Combust[ií]vel\s+e\s+(\d+)\s+Muni[cç][aã]o\s+extras/i);
+  const combustivelSosExpirado = matchExtrasSos ? Number(matchExtrasSos[1]) : NaN;
+  const municaoSosExpirado = matchExtrasSos ? Number(matchExtrasSos[2]) : NaN;
+
+  const matchExSetor1 = subBNorm.match(
+    /Destrui[cç][aã]o Bruta num SOS Expirado rende apenas\s+[^=]+=\s*(\d+)\s+Sucata,\s+e por Captura Intacta rende\s+[^=]+=\s*(\d+)\s+Sucata/i
+  );
+  const exemplosSetor1SosExpirado = {
+    destruicaoBruta: matchExSetor1 ? Number(matchExSetor1[1]) : NaN,
+    capturaIntacta: matchExSetor1 ? Number(matchExSetor1[2]) : NaN,
+  };
+
+  const velocidadeFrenteCorporativaMnPorHora = Number(
+    subBNorm.match(/X_\{?n[oó]\}?\s*<=\s*(\d+(?:\.\d+)?)\s*MN\/h\s*[x*]\s*t_\{?atual\}?/i)?.[1] ?? NaN
+  );
+  const matchBarreiraFrente = subBNorm.match(
+    /\+(\d+)\s+bolha\s+de Barreira adicional\s+\(at[eé] o teto de\s+(\d+)\s+bolhas\)/i
+  );
+  const bonusBarreiraFrenteCorporativa = matchBarreiraFrente ? Number(matchBarreiraFrente[1]) : NaN;
+  const tetoBarreiraFrenteCorporativa = matchBarreiraFrente ? Number(matchBarreiraFrente[2]) : NaN;
+
+  const matchSaqueFrente = subBNorm.match(
+    /concede\s+(\d+)\s+Sucata,\s+(\d+)\s+Biomassa\s+e\s+(\d+)\s+Muni[cç][aã]o,\s+entregando exclusivamente\s+(\d+)\s+C[eé]lula de Combust[ií]vel/i
+  );
+  const saqueFrenteCorporativa = {
+    sucata: matchSaqueFrente ? Number(matchSaqueFrente[1]) : NaN,
+    biomassa: matchSaqueFrente ? Number(matchSaqueFrente[2]) : NaN,
+    municao: matchSaqueFrente ? Number(matchSaqueFrente[3]) : NaN,
+    combustivel: matchSaqueFrente ? Number(matchSaqueFrente[4]) : NaN,
+  };
+
+  const secaoContra4 = conteudoVol04.split('# CONTRA-AUDITORIA #4')[1] ?? '';
+  const temFalha4FarmingInfinitoSosExpirado =
+    /### Falha Encontrada 4: O Exploit de "Farming Infinito" na Frente da Corporação e nos SOS Expirados/.test(
+      secaoContra4
+    );
+
+  return clonarProfundoCongelado({
+    templates,
+    regrasOpcoes: {
+      taxaSucessoCriticoBlueOption,
+      danoCascoBlueOption,
+      marcadorOpcaoCPerigo,
+    },
+    regrasSosEFrente: {
+      margemPrazoHoras,
+      estadoSosExpirado,
+      multiplicadorSucataSosExpirado,
+      combustivelSosExpirado,
+      municaoSosExpirado,
+      exemplosSetor1SosExpirado,
+      velocidadeFrenteCorporativaMnPorHora,
+      bonusBarreiraFrenteCorporativa,
+      tetoBarreiraFrenteCorporativa,
+      saqueFrenteCorporativa,
+    },
+    temFalha4FarmingInfinitoSosExpirado,
+  });
+}
+
+/**
+ * Avaliador puro determinístico de estado de nó especial (SOS, Exploração, Perigo),
+ * opções disponíveis (A/B/C) e saque pós-combate (SOS Expirado vs Frente Corporativa).
+ */
+export function resolverEventoNoESaque(
+  catalogoEventos,
+  economiaSetorial,
+  {
+    idEvento,
+    setor = 1,
+    tAtualHoras = 0,
+    tRotaMinimaHoras = 2.0,
+    xNoMn = 50,
+    modalidadeVit = 'DESTRUICAO_BRUTA',
+    temRequisitoBlueOption = false,
+    escolha = 'A',
+    paridadeSeed = 0,
+  }
+) {
+  const template = catalogoEventos.templates.find((t) => t.id === idEvento);
+  if (!template) {
+    throw new Error(`[EVENTO FALHOU] Template de evento inexistente: "${idEvento}"`);
+  }
+
+  const {
+    margemPrazoHoras,
+    estadoSosExpirado,
+    multiplicadorSucataSosExpirado,
+    combustivelSosExpirado,
+    municaoSosExpirado,
+    velocidadeFrenteCorporativaMnPorHora,
+    bonusBarreiraFrenteCorporativa,
+    saqueFrenteCorporativa,
+  } = catalogoEventos.regrasSosEFrente;
+
+  // 1. Verifica se o nó já foi engolido pela Frente Extrativista da Corporação
+  if (xNoMn <= velocidadeFrenteCorporativaMnPorHora * tAtualHoras) {
+    return clonarProfundoCongelado({
+      estadoNo: 'FROTA_PRINCIPAL_CORPORACAO',
+      opcoesDisponiveis: [],
+      combateObrigatorio: true,
+      bonusBarreiraInimigo: bonusBarreiraFrenteCorporativa,
+      saquePosCombate: { ...saqueFrenteCorporativa },
+    });
+  }
+
+  // 2. Verifica se é um nó SOS cujo relógio ultrapassou T_prazo = T_rota_minima + margemPrazoHoras
+  const tPrazo = tRotaMinimaHoras + margemPrazoHoras;
+  if (template.categoria === 'SOS' && tAtualHoras > tPrazo) {
+    const linhaSaque = economiaSetorial.curvaSetores.find((s) => s.setor === setor);
+    if (!linhaSaque) {
+      throw new Error(`[EVENTO FALHOU] Setor ${setor} ausente na curva setorial 5.6.C`);
+    }
+    const sucataBase =
+      modalidadeVit === 'CAPTURA_INTACTA'
+        ? linhaSaque.barcoCapturaSucata
+        : linhaSaque.barcoBrutoSucata;
+    const sucataExpirado = Math.floor(multiplicadorSucataSosExpirado * sucataBase);
+    return clonarProfundoCongelado({
+      estadoNo: estadoSosExpirado,
+      opcoesDisponiveis: [],
+      combateObrigatorio: true,
+      bonusBarreiraInimigo: 0,
+      saquePosCombate: {
+        sucata: sucataExpirado,
+        biomassa: 0,
+        combustivel: combustivelSosExpirado,
+        municao: municaoSosExpirado,
+      },
+    });
+  }
+
+  // 3. Nó de evento ativo dentro do prazo
+  const opcoesDisponiveis = ['A'];
+  if (temRequisitoBlueOption) opcoesDisponiveis.push('B');
+  if (template.categoria !== 'PERIGO') opcoesDisponiveis.push('C');
+
+  if (escolha === 'B') {
+    if (!temRequisitoBlueOption) {
+      throw new Error(
+        `[EVENTO FALHOU] Opção B (Blue Option) indisponível para "${idEvento}" sem cumprir requisito`
+      );
+    }
+    return clonarProfundoCongelado({
+      estadoNo: 'EVENTO_ATIVO',
+      opcoesDisponiveis,
+      combateObrigatorio: template.categoria === 'PERIGO',
+      resultadoEscolha: 'SUCESSO_CRITICO_BLUE_OPTION',
+      taxaSucessoCriticoPct: catalogoEventos.regrasOpcoes.taxaSucessoCriticoBlueOption,
+      danoCasco: catalogoEventos.regrasOpcoes.danoCascoBlueOption,
+      recompensaBlueOption: template.recompensaBlueOption,
+    });
+  }
+
+  if (escolha === 'C') {
+    if (template.categoria === 'PERIGO') {
+      throw new Error(
+        `[EVENTO FALHOU] Opção C bloqueada em nó PERIGO: ${catalogoEventos.regrasOpcoes.marcadorOpcaoCPerigo}`
+      );
+    }
+    return clonarProfundoCongelado({
+      estadoNo: 'EVENTO_ATIVO',
+      opcoesDisponiveis,
+      combateObrigatorio: false,
+      resultadoEscolha: 'RECUO_SEGURO',
+      danoCasco: 0,
+    });
+  }
+
+  return clonarProfundoCongelado({
+    estadoNo: 'EVENTO_ATIVO',
+    opcoesDisponiveis,
+    combateObrigatorio: template.categoria === 'PERIGO',
+    resultadoEscolha: paridadeSeed === 0 ? 'SUCESSO_PADRAO_A' : 'COMPLICACAO_PADRAO_A',
+    paridadeSeed,
   });
 }
 

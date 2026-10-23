@@ -95,6 +95,42 @@ Todo setor sorteia a posição dos seus nós usando um baralho de cotas fixo par
 
 ---
 
+## 4.5. Catálogo Determinístico de Eventos de Nós (`SOS`, *Blue Options* e Perigos) e Regra de SOS Expirado
+
+Para que a Onda 4 (`src/onda4-mapa/gerador-poisson.mjs` e `src/onda4-mapa/relogio-viagem.mjs`) opere com **zero texto placeholder e zero sorteio global impuro**, todos os **10 nós especiais** do baralho setorial ($4\text{ SOS} + 3\text{ Exploração} + 3\text{ Perigos Ambientais} = \mathbf{10\text{ templates}}$) são resolvidos de forma $100\%$ determinística a partir de `(seedPartida, setorNumero, noId)` e da tabela de saque setorial $S \in \{1..8\}$ da Seção 5.6.C.
+
+### A. Tabela Canônica dos 10 Templates de Eventos (4 SOS + 3 Exploração + 3 Perigos Ambientais)
+
+* **Resolução Determinística da Opção A (Sem Requisito):** Calcula-se a paridade $p = \text{hash32}(\text{seedPartida}, S, \text{noId}) \bmod 2 \in \{0, 1\}$. Se $p = 0$ (**Sucesso Padrão**), entrega a recompensa base sem dano; se $p = 1$ (**Complicação Padrão**), cobra o custo de risco ($-3\text{ HP}$ de casco ou combate imediato) em troca de recompensa parcial.
+* **Resolução da Opção B (*Blue Option* — Requisito Satisfeito):** Tem **$100\%$ de sucesso crítico garantido** ($0\text{ dano}$ de casco e recompensa máxima), independente da paridade $p$.
+* **Resolução da Opção C (Recusar / Seguir Viagem):** Nos nós `SOS` e `EXPLORACAO`, permite recuar com $0\text{ dano}$ e $0\text{ recompensa}$; nos nós `PERIGO`, o combate é obrigatório (`BLOQUEADO_COMBATE_OBRIGATORIO`).
+
+| ID do Evento | Categoria | Nome do Evento | Opção A (Padrão: $p=0$ Sucesso / $p=1$ Risco) | Requisito Exato da Opção B (*Blue Option*) | Recompensa Crítica da Opção B ($100\%$ Garantida) |
+| :--- | :---: | :--- | :--- | :--- | :--- |
+| `SOS_1_REDE_ARRASTO` | `SOS` | **1. Criatura em Rede de Arrasto** | $p=0$: $+1\text{ Tripulante}$ e $-2\text{ HP}$ casco; $p=1$: Combate Barco $+ \text{Biomassa}_{\text{bruta}}(S)$ | `ARMA: Cortador Térmico a Plasma OU TRIPULANTE: Caranguejo Anfíbio` | **Recruta $+1\text{ Tripulante}$** ($0\text{ dano}$) $+ \text{Biomassa}_{\text{bruta}}(S)$ |
+| `SOS_2_CAPSULA_AFUNDANDO` | `SOS` | **2. Cápsula Suprimento na Fossa** | $p=0$: $+\text{Sucata}_{\text{bruta}}(S) + 2\text{ Comb.}$; $p=1$: $-3\text{ HP}$ casco $+\text{Sucata}_{\text{bruta}}(S)$ | `SISTEMA: Sifão de Propulsão Nv. 3+ OU TRIPULANTE: Polvo` | **$+\text{Sucata}_{\text{captura}}(S) + 3\text{ Combustíveis} + 2\text{ Munições}$** |
+| `SOS_3_NINHO_SITIADO` | `SOS` | **3. Recife-Berçário Sitiado** | $p=0$: $+\text{Biomassa}_{\text{cirúrgica}}(S)$; $p=1$: Combate Monstro $+\text{Biomassa}_{\text{bruta}}(S)$ | `SISTEMA: Bomba Branquial Nv. 2+ OU TRIPULANTE: Baiacu Espinhoso` | **$+1\text{ Órgão Intacto}$ (Catálogo 5.2) $+ \text{Biomassa}_{\text{cirúrgica}}(S)$** |
+| `SOS_4_COMBOIO_ENCALHADO` | `SOS` | **4. Cargueiro Corporativo em Pane** | $p=0$: $+\text{Sucata}_{\text{captura}}(S)$; $p=1$: Combate Barco $+\text{Sucata}_{\text{bruta}}(S)$ | `SISTEMA: Glândula de Tinta Furtiva Nv. 1+ OU TRIPULANTE: Arraia Elétrica` | **$+1\text{ Arma Recuperada}$ (Catálogo 5.1) $+ \text{Sucata}_{\text{captura}}(S)$** |
+| `EXP_1_NAUFRAGIO_ANTIGO` | `EXPLORACAO` | **5. Couraçado Pré-Dilúvio** | $p=0$: $+\text{Sucata}_{\text{bruta}}(S)$; $p=1$: $-3\text{ HP}$ casco $+\text{Sucata}_{\text{bruta}}(S)$ | `TRIPULANTE: Caranguejo Anfíbio OU ARMA: Canhão de Arpão de Cabo` | **$+\text{Sucata}_{\text{captura}}(S) + 2\text{ Munições}$** ($0\text{ dano}$) |
+| `EXP_2_PLATAFORMA_FANTASMA` | `EXPLORACAO` | **6. Estação de Sonar Abandonada** | $p=0$: $+\text{Sucata}_{\text{bruta}}(S)$; $p=1$: Alarme dispara Combate Barco | `TRIPULANTE: Arraia Elétrica OU SISTEMA: Córtex de Navegação Nv. 2+` | **Revela $100\%$ Mapa Setorial $+ \text{Sucata}_{\text{bruta}}(S) + 2\text{ Combustíveis}$** |
+| `EXP_3_CARDUME_SIMBIOTICO` | `EXPLORACAO` | **7. Cardume Bioluminescente** | $p=0$: $+\text{Biomassa}_{\text{bruta}}(S)$; $p=1$: $-2\text{ HP}$ casco $+\text{Biomassa}_{\text{bruta}}(S)$ | `TRIPULANTE: Polvo OU SISTEMA: Bomba Branquial Nv. 2+` | **Repara $+5\text{ HP}$ no Casco $+ \text{Biomassa}_{\text{cirúrgica}}(S)$** |
+| `PER_1_CHUVA_ACIDA` | `PERIGO` | **8. Chuva Radioativa Ácida** | Combate obrigatório c/ Ácido ($-1\text{ HP}$ casco a cada $15\text{s}$ *No Foil*) | `SISTEMA: Placas de Blindagem Nv. 2+ OU Glândula de Barreira Nv. 4+` | **Neutraliza os primeiros $30\text{s}$ de Chuva Ácida** $+ 10\text{ Sucata}$ bônus pós-luta |
+| `PER_2_VORTICE_CORRENTEZA` | `PERIGO` | **9. Vórtice de Correnteza** | Combate obrigatório c/ Vórtice ($-40\text{ kg}$ na Sustentação do Foil) | `SISTEMA: Mastro do Foil Nv. 2+ OU Sifão de Propulsão Nv. 3+` | **Reduz penalidade do Vórtice pela metade ($-20\text{ kg}$ em vez de $-40\text{ kg}$)** |
+| `PER_3_AGUAS_TURVAS` | `PERIGO` | **10. Águas Turvas Abissais** | Combate obrigatório c/ Canal `L3` em `NEGADO_SONAR` | `TRIPULANTE: Arraia Elétrica OU ARMA: Família Emissor Acústico` | **Restaura Canal `L3` para `VISIVEL` durante todo o combate** |
+
+### B. Regra Mecânica Exata de SOS Expirado (*Zona Morta Industrializada*) e Nó Engolido pela Frente Corporativa
+
+1. **SOS Dentro do Prazo ($t_{\text{atual}} \le T_{\text{prazo}}$):** O evento `SOS_1..4` está ativo com suas Opções A, B (*Blue Option*) e C íntegras.
+2. **SOS Expirado ($t_{\text{atual}} > T_{\text{prazo}} \Rightarrow$ *Zona Morta Industrializada*):**
+   * Quando o relógio do setor ultrapassa estritamente $T_{\text{prazo}} = T_{\text{rota mínima}} + 1.5\text{h}$, a Corporação conclui o saque/abate antes da chegada do jogador e o estado do nó muda para `ZONA_MORTA_INDUSTRIALIZADA`.
+   * **Penalidade Mecânica ao Visitar:** As Opções A/B/C do SOS desaparecem ($0\%$ de chance de recrutamento, órgão ou arma bônus). O jogador cai obrigatoriamente em combate contra uma **Patrulha Corporativa de Retaguarda** do setor atual (`BARCO_HUMANO`) cujo saque pós-combate sofre **penalidade de $-50\%$ arredondada para baixo**:
+     $$\text{Sucata}_{\text{SOS expirado}}(S) = \lfloor 0.5 \times \text{Sucata}_{\text{modalidade}}(S) \rfloor \quad (\text{com } 0\text{ Combustível e } 0\text{ Munição extras})$$
+     *(Ex.: No Setor 1, vencer por Destruição Bruta num SOS Expirado rende apenas $\lfloor 0.5 \times 12 \rfloor = \mathbf{6\text{ Sucata}}$, e por Captura Intacta rende $\lfloor 0.5 \times 25 \rfloor = \mathbf{12\text{ Sucata}}$).*
+3. **Nó Engolido pela Frente Extrativista ($X_{\text{nó}} \le 6.0\text{ MN/h} \times t_{\text{atual}} \Rightarrow$ *Frota Principal da Corporação*):**
+   * Se o jogador visitar qualquer nó cuja coordenada horizontal $X_{\text{nó}}$ já foi alcançada ou ultrapassada pela Frente Extrativista ($6.0\text{ MN/h}$), enfrenta um **Barco Corporativo de Elite** com **$+1\text{ bolha}$ de Barreira adicional** (até o teto de $4\text{ bolhas}$) que concede **$0\text{ Sucata}$, $0\text{ Biomassa}$ e $0\text{ Munição}$**, entregando exclusivamente **$1\text{ Célula de Combustível}$** em caso de vitória.
+
+---
+
 # CONTRA-AUDITORIA #4 (Análise Brutal do Mapa Procedural do Passo 4)
 
 Vamos procurar onde o jogador pode trapacear esse sistema de mapa ou onde o gerador procedural pode travar a partida (*Softlock*):
@@ -117,3 +153,11 @@ Vamos procurar onde o jogador pode trapacear esse sistema de mapa ou onde o gera
   * **Deriva na Correnteza (Modo Sem Combustível):**
     * Sem combustível, você ainda pode viajar para o próximo nó usando apenas a força muscular dos animais e as correntes marítimas (**Modo Deriva**), **MAS a viagem demora o DOBRO de Horas ($2.0\times$)** e você começa o próximo combate já caído na água (*Touchdown*) com o Sifão em partida a frio (exigindo $2\text{s}$ de ignição hidrodinâmica + os $3\text{s}$ padrão de *Spool-up* = **$5\text{ segundos}$ totais** para levantar o foil)!
     * Isso é melhor que o FTL: você nunca fica travado esperando sorteio numa tela parada, mas ficar sem combustível te atrasa brutalmente no relógio do setor e te joga em combate em desvantagem!
+
+### Falha Encontrada 4: O Exploit de "Farming Infinito" na Frente da Corporação e nos SOS Expirados
+* **O Problema Duplo:**
+  1. Se os nós engolidos pela Frente Extrativista ($6.0\text{ MN/h}$) continuassem pagando Sucata normal, uma nave forte no Setor 6 ficaria indo e voltando dentro da mancha vermelha da Corporação para farmar Sucata infinita!
+  2. Se um nó de **SOS Expirado** ($t_{\text{atual}} > T_{\text{prazo}}$) apenas virasse um combate normal com $100\%$ de saque, perder o prazo de um SOS não teria punição econômica real para uma *build* focada em combate bruto.
+* **Correção Obrigatória Aplicada ao Design (Travada na Seção 4.5.B):**
+  1. **Zero Farming na Frente Extrativista ($0\text{ Sucata} / 0\text{ Biomassa}$):** Nós engolidos pela maré corporativa colocam o jogador contra naves de elite ($+1\text{ bolha}$ de Barreira) que dão apenas **$1\text{ Célula de Combustível}$** de sobrevivência (zero Sucata/Biomassa).
+  2. **Saque Cortado pela Metade no SOS Expirado ($\lfloor 0.5 \times \text{Sucata} \rfloor$):** Visitar uma *Zona Morta Industrializada* após $T_{\text{prazo}}$ elimina o evento especial e reduz o saque da patrulha remanescente em **$-50\%$** (com $0\text{ Combustível}$ e $0\text{ Munição}$ extras), tornando o relógio de $T_{\text{prazo}}$ uma pressão tática real em qualquer *build*!
