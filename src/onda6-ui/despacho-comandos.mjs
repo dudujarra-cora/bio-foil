@@ -14,7 +14,7 @@ import {
   drenarTodasValvulas,
   alternarMergulhoTatico,
 } from '../onda1-fisica/tick-hidraulica-foil.mjs';
-import { validarTrincaBeam } from '../onda2-combate/tick-sistemas-armas.mjs';
+import { GRAFOS_BEAM_CANONICOS, validarTrincaBeam } from '../onda2-combate/tick-sistemas-armas.mjs';
 import { iniciarTravessiaMapa } from '../onda4-mapa/relogio-viagem.mjs';
 import { resolverVisitaNoMapa } from '../onda4-mapa/eventos-nos.mjs';
 import { tentarAbordagemContraAlvo } from '../onda5-catalogo-chefe/chefe-draga.mjs';
@@ -155,15 +155,19 @@ export function despacharComandoUi(estado, comando) {
     return rejeitarComando(estado, comando, 'REJEITADO_FASE_INVALIDA');
   }
 
-  const p = comando.payload ?? {};
+  const p = comando.payload ?? comando;
   const nave = estado.naveJogador;
+  const estadoFisicoAtual =
+    nave.estadoVoo && nave.estadoVoo !== '1_NO_FOIL'
+      ? nave.estadoVoo
+      : (nave.estadoFisico ?? nave.estadoVoo ?? '1_NO_FOIL');
 
   switch (comando.tipo) {
     case 'ALTERNAR_VALVULA': {
-      if (nave.estadoFisico !== '1_NO_FOIL') {
+      if (estadoFisicoAtual !== '1_NO_FOIL') {
         return rejeitarComando(estado, comando, 'BLOQUEADO_TRAVA_HIDROSTATICA', 'CUE_TRAVA_HIDROSTATICA');
       }
-      const novoEstado = alternarValvulaExterna(estado, p.camaraId, p.aberta);
+      const novoEstado = alternarValvulaExterna(estado, p.camaraId, p.aberta ?? p.abrir);
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
@@ -173,7 +177,7 @@ export function despacharComandoUi(estado, comando) {
     }
 
     case 'DRENAR_TUDO': {
-      if (nave.estadoFisico !== '1_NO_FOIL') {
+      if (estadoFisicoAtual !== '1_NO_FOIL') {
         return rejeitarComando(estado, comando, 'BLOQUEADO_TRAVA_HIDROSTATICA', 'CUE_TRAVA_HIDROSTATICA');
       }
       const novoEstado = drenarTodasValvulas(estado, p.abrirTodas ?? true);
@@ -186,7 +190,8 @@ export function despacharComandoUi(estado, comando) {
     }
 
     case 'ALOCAR_ENERGIA': {
-      const { camaraId, deltaBarras } = p;
+      const camaraId = p.camaraId;
+      const deltaBarras = p.deltaBarras ?? p.delta;
       if (![1, -1].includes(deltaBarras)) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
@@ -196,13 +201,13 @@ export function despacharComandoUi(estado, comando) {
       const ionBarra = Number(cam.barrasIonizadas ?? cam.danoIonizado ?? 0);
       const atualBarra = Number(cam.barrasEnergiaAlocada ?? cam.energiaAlocada ?? 0);
       const novaBarra = atualBarra + deltaBarras;
-      const dispReator = Number(nave.reator?.barrasDisponiveis ?? 7);
+      const dispReator = Number(nave.reator?.barrasDisponiveis ?? nave.energiaLivre ?? 7);
 
       if (novaBarra < 0 || novaBarra > intBarra - ionBarra || dispReator - deltaBarras < 0) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
 
-      const eraNoFoil = nave.estadoFisico === '1_NO_FOIL';
+      const eraNoFoil = estadoFisicoAtual === '1_NO_FOIL';
       const novasCamaras = nave.camaras.map((c) =>
         c.id === camaraId
           ? { ...c, barrasEnergiaAlocada: novaBarra, energiaAlocada: novaBarra }
@@ -230,8 +235,17 @@ export function despacharComandoUi(estado, comando) {
     }
 
     case 'MOVER_TRIPULANTE': {
-      const trip = nave.tripulacao.find((t) => t.id === p.tripulanteId);
-      if (!trip || trip.localizacao !== 'NAVE_JOGADOR' || trip.inflado) {
+      const idTrip = p.tripulanteId ?? p.idTripulante;
+      const trip = nave.tripulacao.find((t) => t.id === idTrip);
+      const camaraDestinoExiste = (nave.camaras ?? []).some((c) => c.id === p.camaraDestinoId);
+      if (
+        !trip ||
+        trip.localizacao !== 'NAVE_JOGADOR' ||
+        trip.inflado ||
+        trip.hpAtual <= 0 ||
+        trip.vivo === false ||
+        !camaraDestinoExiste
+      ) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
       const aliadosNoDestino = nave.tripulacao.filter(
@@ -264,8 +278,31 @@ export function despacharComandoUi(estado, comando) {
       const slot = (nave.armasAtivas ?? [])[p.slotIndex];
       const arma = slot?.arma !== undefined ? slot.arma : slot;
       if (!arma) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
-      if (p.trincaSalasBeam && !validarTrincaBeam(p.trincaSalasBeam)) {
+      const custoEne = Number(arma.energiaCusto ?? arma.energia ?? 1);
+      const alocadaEne = Number(arma.energiaAlocada ?? custoEne);
+      if (alocadaEne < custoEne) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      }
+      const idChassi = arma.chassiId ?? arma.idArma ?? arma.id ?? '';
+      const ehFeixe = Boolean(arma.ehFeixe) || idChassi === 'CORTADOR_TERMICO_PLASMA' || idChassi === 'CORTADOR_TERMICO';
+      const exigeSubmersa = Boolean(arma.exigeSalaSubmersa) || idChassi === 'LANCADOR_TORPEDO_ABISSAL';
+      if (ehFeixe && !p.trincaSalasBeam) {
+        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      }
+      if (p.trincaSalasBeam) {
+        const validaQualquerGrafo =
+          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.BIONAVE_2X4) ||
+          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.BARCO_2X2) ||
+          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.MONSTRO_1X4);
+        if (!validaQualquerGrafo) {
+          return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+        }
+      }
+      if (exigeSubmersa && p.salaAlvoId !== undefined && p.salaAlvoId !== null) {
+        const salaAlvo = (estado.alvoCombate?.salasOuOrgaos ?? []).find((s) => s.id === p.salaAlvoId);
+        if (salaAlvo && salaAlvo.submersa === false) {
+          return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+        }
       }
       return clonarProfundoCongelado({
         aceito: true,
@@ -316,7 +353,8 @@ export function despacharComandoUi(estado, comando) {
 
     case 'ATIVAR_PULSO_ENZIMAS': {
       const camBrq = nave.camaras.find((c) => c.id === 3);
-      const energiaBrq = Number(camBrq?.barrasEnergiaAlocada ?? camBrq?.energiaAlocada ?? 0);
+      const ionBrq = Math.max(0, Number(camBrq?.danoIonizado ?? camBrq?.barrasIonizadas ?? 0));
+      const energiaBrq = Math.max(0, Number(camBrq?.barrasEnergiaAlocada ?? camBrq?.energiaAlocada ?? 0) - ionBrq);
       if (energiaBrq < 2 || (nave.recargaPulsoEnzimasSeg ?? 0) > 0) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
@@ -337,7 +375,8 @@ export function despacharComandoUi(estado, comando) {
 
     case 'ATIVAR_TINTA_FURTIVA': {
       const camTinta = nave.camaras.find((c) => c.id === 8);
-      const energiaTinta = Number(camTinta?.barrasEnergiaAlocada ?? camTinta?.energiaAlocada ?? 0);
+      const ionTinta = Math.max(0, Number(camTinta?.danoIonizado ?? camTinta?.barrasIonizadas ?? 0));
+      const energiaTinta = Math.max(0, Number(camTinta?.barrasEnergiaAlocada ?? camTinta?.energiaAlocada ?? 0) - ionTinta);
       if (energiaTinta < 1 || (nave.recargaFurtividadeSeg ?? 0) > 0) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
@@ -359,8 +398,22 @@ export function despacharComandoUi(estado, comando) {
 
     case 'LANCAR_ABORDAGEM': {
       const camTubo = nave.camaras.find((c) => c.id === 7);
-      const energiaTubo = Number(camTubo?.barrasEnergiaAlocada ?? camTubo?.energiaAlocada ?? 0);
-      if (energiaTubo < 1 || !Array.isArray(p.tripulantesIds) || p.tripulantesIds.length < 1 || p.tripulantesIds.length > 2) {
+      const ionTubo = Math.max(0, Number(camTubo?.danoIonizado ?? camTubo?.barrasIonizadas ?? 0));
+      const energiaTubo = Math.max(0, Number(camTubo?.barrasEnergiaAlocada ?? camTubo?.energiaAlocada ?? 0) - ionTubo);
+      if (
+        energiaTubo < 1 ||
+        (nave.recargaTuboAbordagemSeg ?? 0) > 0 ||
+        !Array.isArray(p.tripulantesIds) ||
+        p.tripulantesIds.length < 1 ||
+        p.tripulantesIds.length > 2
+      ) {
+        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      }
+      const todosValidosNaCamara7 = p.tripulantesIds.every((idTrip) => {
+        const t = (nave.tripulacao ?? []).find((x) => x.id === idTrip);
+        return t && t.hpAtual > 0 && t.localizacao === 'NAVE_JOGADOR' && t.camaraAtualId === 7;
+      });
+      if (!todosValidosNaCamara7) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
       const resAbord = tentarAbordagemContraAlvo(estado, p.tripulantesIds, p.salaAlvoId);
@@ -371,7 +424,13 @@ export function despacharComandoUi(estado, comando) {
         aceito: true,
         marcadorRejeicao: null,
         cueEmitido: null,
-        estado: resAbord.estado,
+        estado: {
+          ...resAbord.estado,
+          naveJogador: {
+            ...resAbord.estado.naveJogador,
+            recargaTuboAbordagemSeg: 15.0,
+          },
+        },
       });
     }
 
@@ -388,8 +447,10 @@ export function despacharComandoUi(estado, comando) {
     case 'SALTO_FUGA': {
       const camCtx = nave.camaras.find((c) => c.id === 2);
       const camSif = nave.camaras.find((c) => c.id === 5);
-      const ctxInt = Number(camCtx?.barrasIntegridade ?? camCtx?.integridade ?? 0);
-      const sifEne = Number(camSif?.barrasEnergiaAlocada ?? camSif?.energiaAlocada ?? 0);
+      const ionCtx = Math.max(0, Number(camCtx?.danoIonizado ?? camCtx?.barrasIonizadas ?? 0));
+      const ionSif = Math.max(0, Number(camSif?.danoIonizado ?? camSif?.barrasIonizadas ?? 0));
+      const ctxInt = Math.max(0, Number(camCtx?.barrasIntegridade ?? camCtx?.integridade ?? 0) - ionCtx);
+      const sifEne = Math.max(0, Number(camSif?.barrasEnergiaAlocada ?? camSif?.energiaAlocada ?? 0) - ionSif);
       const comb = Number(estado.economia?.combustivel ?? estado.recursos?.combustivel ?? 0);
       const cargaPronta = (nave.progressoFugaSeg ?? 0) >= 20.0 || (nave.cargaSaltoPct ?? 0) >= 100;
       if (!cargaPronta || ctxInt < 1 || sifEne < 1 || comb < 1) {
@@ -501,6 +562,7 @@ export function despacharComandoUi(estado, comando) {
       };
       let novaCarteiraLoja = { ...baseCarteira };
       let novoHpCascoLoja = nave.hpCascoAtual;
+      let novaTripulacaoLoja = nave.tripulacao;
       if (acao === 'VENDER') {
         if ((item.valorVenda ?? 0) <= 0) {
           return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
@@ -518,6 +580,36 @@ export function despacharComandoUi(estado, comando) {
         if (item.categoria === 'REPARO' && novoHpCascoLoja >= nave.hpCascoMax) {
           return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
         }
+        if (item.categoria === 'TRIPULANTE') {
+          const vivos = (nave.tripulacao ?? []).filter((t) => t.hpAtual > 0).length;
+          if (vivos >= 6) {
+            return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+          }
+          const especieMap = {
+            TRIPULANTE_POLVO: { especie: 'POLVO', hp: 80 },
+            TRIPULANTE_ARRAIA: { especie: 'ARRAIA', hp: 70 },
+            TRIPULANTE_BAIACU: { especie: 'BAIACU', hp: 150 },
+            TRIPULANTE_CARANGUEJO: { especie: 'CARANGUEJO', hp: 110 },
+          }[item.id];
+          if (especieMap) {
+            novaTripulacaoLoja = [
+              ...(nave.tripulacao ?? []),
+              {
+                id: `trip-loja-${(nave.tripulacao ?? []).length + 1}`,
+                especie: especieMap.especie,
+                hpAtual: especieMap.hp,
+                hpMax: especieMap.hp,
+                camaraAtualId: 3,
+                camaraDestinoId: null,
+                progressoNadoSeg: 0.0,
+                acopladoBulbo: false,
+                inflado: false,
+                atordoadoSeg: 0.0,
+                localizacao: 'NAVE_JOGADOR',
+              },
+            ];
+          }
+        }
         novaCarteiraLoja[chaveMoeda] -= preco;
         if (item.id === 'INSUMO_COMBUSTIVEL') novaCarteiraLoja.combustivel += 1;
         if (item.id === 'INSUMO_MUNICAO') novaCarteiraLoja.municao += 1;
@@ -534,6 +626,7 @@ export function despacharComandoUi(estado, comando) {
           naveJogador: {
             ...nave,
             hpCascoAtual: novoHpCascoLoja,
+            tripulacao: novaTripulacaoLoja,
           },
         },
       });
@@ -552,16 +645,25 @@ export function despacharComandoUi(estado, comando) {
         }
         novosOrgaos.push(orgao.id);
       } else if (p.acao === 'REMOVER') {
-        novosOrgaos = novosOrgaos.filter((id) => id !== orgao.id);
+        const idxRemover = novosOrgaos.indexOf(orgao.id);
+        if (idxRemover === -1) {
+          return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+        }
+        novosOrgaos.splice(idxRemover, 1);
       } else {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
 
+      const penalidadeOrgaosSeg = novosOrgaos.reduce((acc, idOrg) => {
+        const specOrg = CATALOGO_ORGAOS_52.find((o) => o.id === idOrg);
+        return acc + Number(specOrg?.penalidadeRecargaSeg ?? 0);
+      }, 0);
+
       const novasArmas = nave.armasAtivas.map((s, idx) =>
         idx === p.slotIndex
           ? s.arma !== undefined
-            ? { ...s, arma: { ...s.arma, orgaosEnxertados: novosOrgaos } }
-            : { ...s, orgaosEnxertados: novosOrgaos }
+            ? { ...s, arma: { ...s.arma, orgaosEnxertados: novosOrgaos, penalidadeOrgaosSeg } }
+            : { ...s, orgaosEnxertados: novosOrgaos, penalidadeOrgaosSeg }
           : s
       );
       const novaNave = recalcularFoilEPesoNave({

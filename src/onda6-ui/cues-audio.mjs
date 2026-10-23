@@ -124,7 +124,7 @@ export function avaliarCuesSonorosAtivos(
   }
 
   // 8. CUE_POWER_SURGE_CHEFE
-  if (alvoAtu?.ultimoPowerSurgeDisparado) {
+  if (alvoAtu?.ultimoPowerSurgeDisparado || alvoAtu?.powerSurgeDisparadoNoTick) {
     cuesAtivos.push(CATALOGO_8_CUES_SONOROS_85C[7]);
   }
 

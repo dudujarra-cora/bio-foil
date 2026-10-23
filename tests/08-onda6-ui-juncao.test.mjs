@@ -321,4 +321,12 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
   assert.equal(resCompra.aceito, true);
   assert.equal(resCompra.estado.economia.sucata, 27);
   assert.equal(resCompra.estado.economia.combustivel, 13);
+
+  // ENXERTAR_ORGAO com ELETRO_PLACA_ARRAIA aplica penalidadeOrgaosSeg = 2.0s
+  const resEnxertoEletro = despacharComandoUi(estadoMapa, {
+    tipo: 'ENXERTAR_ORGAO',
+    payload: { orgaoId: 'ELETRO_PLACA_ARRAIA', slotIndex: 0, acao: 'ENCAIXAR' },
+  });
+  assert.equal(resEnxertoEletro.aceito, true);
+  assert.equal(resEnxertoEletro.estado.naveJogador.armasAtivas[0].arma.penalidadeOrgaosSeg, 2);
 });

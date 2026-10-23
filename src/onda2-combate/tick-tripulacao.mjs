@@ -163,7 +163,16 @@ export function inspecionarSalaAlvo(estado, salaId) {
     });
   }
 
-  if (alvo.canalVisibilidadeSonar === 'NEGADO_SONAR') {
+  const camCortex = (estado?.naveJogador?.camaras ?? []).find((c) => c.id === 2);
+  const cortexInoperante =
+    camCortex !== undefined &&
+    Math.max(
+      0,
+      Number(camCortex.barrasIntegridade ?? camCortex.integridade ?? 1) -
+        Number(camCortex.danoIonizado ?? camCortex.barrasIonizadas ?? 0)
+    ) <= 0;
+
+  if (alvo.canalVisibilidadeSonar === 'NEGADO_SONAR' || cortexInoperante) {
     return congelarProfundo({
       canalPermissao: 'NEGADO_SONAR',
       status: 'SEM_PERMISSAO_VISAO',
@@ -204,9 +213,11 @@ export function inspecionarSalaAlvo(estado, salaId) {
 export function calcularCuraTripulanteHpPorSeg(naveJogador, camara) {
   if (camara.aguaKg <= 0) return 0.0;
   const camaraBranquial = naveJogador.camaras.find((c) => c.id === 3);
+  const ionBrq = Math.max(0, Number(camaraBranquial?.danoIonizado ?? camaraBranquial?.barrasIonizadas ?? 0));
+  const energiaBrq = Math.max(0, Number(camaraBranquial?.barrasEnergiaAlocada ?? camaraBranquial?.energiaAlocada ?? 0) - ionBrq);
   const barrasBranquial =
-    camaraBranquial && camaraBranquial.barrasIntegridade >= 1
-      ? Math.min(3, Math.max(0, camaraBranquial.barrasEnergiaAlocada))
+    camaraBranquial && Number(camaraBranquial.barrasIntegridade ?? camaraBranquial.integridade ?? 0) >= 1
+      ? Math.min(3, energiaBrq)
       : 0;
 
   if (camara.id === 3) {
@@ -336,9 +347,17 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25) {
       }
     }
 
-    // 3. Reparo na câmara atual (se não estiver inflado nem nadando)
+    // 3. Reparo na câmara atual (se não estiver inflado, nadando ou em combate corpo-a-corpo com invasor)
+    const temInvasorVivoNaSala = (nave.invasoresInimigos ?? []).some(
+      (inv) => inv.camaraAtualId === camara.id && inv.hpAtual > 0
+    );
+    if (temInvasorVivoNaSala) {
+      trip.acopladoBulbo = false;
+      continue;
+    }
     if (trip.inflado) continue;
     const multReparo = calcularMultiplicadorReparoEfetivo(trip.especie, camara.aguaKg);
+    const maxBarrasSistema = Number(camara.nivelMaxBarras ?? camara.barrasNivelMax ?? camara.nivelMax ?? 0);
 
     if (camara.curtoCircuitoAtivo) {
       const multCurto =
@@ -351,13 +370,14 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25) {
         camara.progressoReparoCurtoSeg = 0.0;
         camara.progressoDanoCurtoSeg = 0.0;
       }
-    } else if (camara.barrasIntegridade < camara.nivelMaxBarras) {
+    } else if (camara.barrasIntegridade < maxBarrasSistema) {
       camara.progressoReparoSistemaSeg = arredondar4(camara.progressoReparoSistemaSeg + dtSeg * multReparo);
       if (camara.progressoReparoSistemaSeg >= CONSTANTES_TRIPULACAO.TEMPO_REPARO_SISTEMA_BASE_SEG) {
         camara.progressoReparoSistemaSeg = arredondar4(
           camara.progressoReparoSistemaSeg - CONSTANTES_TRIPULACAO.TEMPO_REPARO_SISTEMA_BASE_SEG
         );
         camara.barrasIntegridade += 1;
+        camara.integridade = camara.barrasIntegridade;
       }
     } else if (camara.rombosCasco > 0 || camara.brechaAtiva) {
       if ((camara.rombosCasco ?? 0) <= 0 && camara.brechaAtiva) {

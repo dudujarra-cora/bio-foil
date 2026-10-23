@@ -105,8 +105,13 @@ export function resolverImpactoNoAlvo(estado, evento) {
   }
 
   // Aplica dano de casco, dano de sistema e dano antipessoal (15 HP por ponto de dano de sistema)
-  const danoCasco = Number(evento.danoCasco ?? 1);
-  const danoSistema = Number(evento.danoSistema ?? danoCasco);
+  const orgaos = evento.orgaosEnxertados ?? [];
+  const temGlandulaBaiacu = orgaos.includes('GLANDULA_BAIACU') || orgaos.includes('GLANDULA_VENENO_BAIACU');
+  const temDenteLeviata = orgaos.includes('DENTE_LEVIATA') || orgaos.includes('DENTE_SERRILHADO_LEVIATA');
+  const danoCascoBruto = Number(evento.danoCasco ?? 1);
+  const danoCasco = Math.max(0, danoCascoBruto - (temGlandulaBaiacu ? 1 : 0));
+  const bonusSistemaSemEscudo = temDenteLeviata && Number(alvo.camadasBarreiraAtivas ?? 0) === 0 ? 1 : 0;
+  const danoSistema = Number(evento.danoSistema ?? danoCascoBruto) + bonusSistemaSemEscudo;
   alvo.hpCascoAtual = Math.max(0, alvo.hpCascoAtual - danoCasco);
   alvo.ultimoDanoFonte = 'DISPARO_EXTERNO';
   sala.integridadeAtual = Math.max(0, sala.integridadeAtual - danoSistema);
@@ -122,21 +127,49 @@ export function resolverImpactoNoAlvo(estado, evento) {
   }
 
   // Rombo e inundação (Falha Encontrada 2: sala superior só inunda se tiver BEXIGA_PRESSAO; sala submersa abre rombo submerso)
-  const orgaos = evento.orgaosEnxertados ?? [];
   if (orgaos.includes('BEXIGA_ALTA_PRESSAO')) {
-    sala.aguaKg = Math.min(27.5, (sala.aguaKg ?? 0.0) + 15.0);
+    if (alvo.classeAlvo === 'BARCO_HUMANO') {
+      sala.aguaKg = Math.min(27.5, (sala.aguaKg ?? 0.0) + 15.0);
+    } else {
+      alvo.reducaoEsquivaBexigaSeg = 5.0;
+      alvo.penalidadeEsquivaBexigaSeg = 5.0;
+      alvo.esquivaEfetivaPct = Math.max(0, Number(alvo.esquivaBasePct ?? 20) - 15);
+    }
+    for (const t of sala.tripulantes ?? []) {
+      if (t.hpAtual > 0) t.atordoadoSeg = 2.0;
+    }
   }
   if (evento.abreRombo && sala.submersa && alvo.classeAlvo === 'BARCO_HUMANO') {
     sala.rombosSubmersos = (sala.rombosSubmersos ?? 0) + 1;
   }
 
-  // Órgãos de enxerto: Eletro-Placa (respeita Isolamento Residual de 5s!) e Bolsa de Tinta
+  // Órgãos de enxerto: Eletro-Placa (respeita Isolamento Residual de 5s!), Bolsa de Tinta, Glândula de Baiacu e Termofílica
   if (orgaos.includes('ELETRO_PLACA_ARRAIA') && Number(sala.isolamentoResidualChoqueSeg ?? 0) === 0) {
     sala.paralisiaIonSeg = 6.0;
     sala.tempoRestanteIonSeg = 6.0;
   }
   if (orgaos.includes('BOLSA_TINTA_ABISSAL')) {
     sala.cegoTintaSeg = 8.0;
+    sala.cegueiraTintaSeg = 8.0;
+  }
+  if (temGlandulaBaiacu) {
+    sala.venenoToxinaSeg = 10.0;
+    for (const t of sala.tripulantes ?? []) {
+      if (t.hpAtual > 0) t.venenoToxinaSeg = 10.0;
+    }
+  }
+  if (orgaos.includes('GLANDULA_TERMOFILICA')) {
+    sala.fervuraTermofilicaSeg = 8.0;
+  }
+
+  if (Array.isArray(alvo.tripulacaoInimiga)) {
+    const porId = new Map();
+    for (const s of alvo.salasOuOrgaos ?? []) {
+      for (const t of s.tripulantes ?? []) porId.set(t.id, t);
+    }
+    alvo.tripulacaoInimiga = alvo.tripulacaoInimiga.map((h) =>
+      porId.has(h.id) ? { ...h, hpAtual: porId.get(h.id).hpAtual } : h
+    );
   }
 
   // MUT-O3-02: Se um DISPARO_EXTERNO zerou o casco inimigo, a explosão mata animais aliados que ainda estavam a bordo!

@@ -97,6 +97,14 @@ export function avancarTickIaInimiga(estado, dtSeg = 0.25) {
   alvo.classeAlvo = alvo.classeAlvo ?? alvo.classeInimigo ?? 'BARCO_HUMANO';
   alvo.classeInimigo = alvo.classeAlvo;
 
+  const bexigaSeg = Math.max(Number(alvo.reducaoEsquivaBexigaSeg ?? 0), Number(alvo.penalidadeEsquivaBexigaSeg ?? 0));
+  if (bexigaSeg > 0) {
+    const novoBexiga = Math.max(0.0, arredondar4(bexigaSeg - dtSeg));
+    alvo.reducaoEsquivaBexigaSeg = novoBexiga;
+    alvo.penalidadeEsquivaBexigaSeg = novoBexiga;
+    alvo.esquivaEfetivaPct = novoBexiga > 0 ? Math.max(0, Number(alvo.esquivaBasePct ?? 20) - 15) : Number(alvo.esquivaBasePct ?? 20);
+  }
+
   let salasExaminadas = 0;
   const salaMotor = alvo.salasOuOrgaos.find((s) => /MOTOR|MAQUINAS|PROPULSAO|REATOR/i.test(s.nome));
   const bombaPoraoOperacional =
@@ -107,9 +115,12 @@ export function avancarTickIaInimiga(estado, dtSeg = 0.25) {
     sala.integridadeAtual = sala.integridadeAtual ?? sala.integridade ?? sala.integridadeMax ?? sala.barrasMax ?? 1;
     sala.integridade = sala.integridadeAtual;
 
-    // 1. Timers de cegueira por tinta e paralisia por choque/íon + isolamento residual de 5s
-    if (sala.cegoTintaSeg > 0) {
-      sala.cegoTintaSeg = Math.max(0.0, arredondar4(sala.cegoTintaSeg - dtSeg));
+    // 1. Timers de cegueira por tinta, paralisia por choque/íon + isolamento residual de 5s, veneno e fervura termofílica
+    const cegoSeg = Math.max(Number(sala.cegoTintaSeg ?? 0), Number(sala.cegueiraTintaSeg ?? 0));
+    if (cegoSeg > 0) {
+      const novoCego = Math.max(0.0, arredondar4(cegoSeg - dtSeg));
+      sala.cegoTintaSeg = novoCego;
+      sala.cegueiraTintaSeg = novoCego;
     }
     const ionSeg = Math.max(Number(sala.paralisiaIonSeg ?? 0), Number(sala.tempoRestanteIonSeg ?? 0));
     if (ionSeg > 0) {
@@ -121,6 +132,27 @@ export function avancarTickIaInimiga(estado, dtSeg = 0.25) {
       }
     } else if (sala.isolamentoResidualChoqueSeg > 0) {
       sala.isolamentoResidualChoqueSeg = Math.max(0.0, arredondar4(sala.isolamentoResidualChoqueSeg - dtSeg));
+    }
+    if ((sala.venenoToxinaSeg ?? 0) > 0) {
+      sala.venenoToxinaSeg = Math.max(0.0, arredondar4(sala.venenoToxinaSeg - dtSeg));
+      for (const t of sala.tripulantes ?? []) {
+        if (t.hpAtual > 0) {
+          t.hpAtual = Math.max(0.0, arredondar4(t.hpAtual - 6.0 * dtSeg));
+        }
+      }
+    }
+    if ((sala.fervuraTermofilicaSeg ?? 0) > 0) {
+      const novoFerv = Math.max(0.0, arredondar4(sala.fervuraTermofilicaSeg - dtSeg));
+      sala.fervuraTermofilicaSeg = novoFerv;
+      for (const t of sala.tripulantes ?? []) {
+        if (t.hpAtual > 0) {
+          t.hpAtual = Math.max(0.0, arredondar4(t.hpAtual - 5.0 * dtSeg));
+        }
+      }
+      if (novoFerv === 0 && sala.integridadeAtual > 0) {
+        sala.integridadeAtual -= 1;
+        sala.integridade = sala.integridadeAtual;
+      }
     }
 
     // 2. Hidráulica interna de Barcos Humanos (rombo submerso +5.0 kg/s vs Bomba de Porão -1.0 kg/s)

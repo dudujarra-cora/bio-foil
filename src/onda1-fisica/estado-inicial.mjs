@@ -101,8 +101,8 @@ export const ARQUITETURAS_INICIAIS = Object.freeze({
     sistemasNivelMax: { 1: 3, 2: 1, 3: 1, 4: 2, 5: 2, 6: 4, 7: 0, 8: 1 },
     energiaInicialAlocada: { 1: 3, 2: 0, 3: 0, 4: 0, 5: 2, 6: 0, 7: 0, 8: 1 },
     subsistemasEnxertados: { 7: null, 8: 'GLANDULA_TINTA_FURTIVA' },
-    armasIniciais: ['CANHAO_ARPAO_CABO', 'EMISSOR_ACUSTICO_I'],
-    orgaosIniciaisPorSlot: { 0: ['GLANDULA_BAIACU'], 1: [] },
+    armasIniciais: ['EMISSOR_ACUSTICO_I', 'CANHAO_ARPAO_CABO'],
+    orgaosIniciaisPorSlot: { 0: [], 1: ['GLANDULA_BAIACU'] },
     tripulacaoInicial: [
       { id: 'trip-polvo-1', especie: 'POLVO', camaraAtualId: 2, acopladoBulbo: true },
       { id: 'trip-caranguejo-1', especie: 'CARANGUEJO', camaraAtualId: 5, acopladoBulbo: true },
@@ -198,6 +198,8 @@ export function criarEstadoInicialPartida(arg1 = {}, arg2 = 'CARCACA_ALFA') {
     const chassiId = arq.armasIniciais[slotIndex] ?? null;
     if (!chassiId) return { slotIndex, arma: null };
     const spec = CATALOGO_ARMAS_BASE_PESO[chassiId];
+    const orgaosSlot = [...(arq.orgaosIniciaisPorSlot[slotIndex] ?? [])];
+    const penalidadeOrgaosSeg = orgaosSlot.filter((id) => id === 'ELETRO_PLACA_ARRAIA').length * 2.0;
     return {
       slotIndex,
       arma: {
@@ -208,10 +210,11 @@ export function criarEstadoInicialPartida(arg1 = {}, arg2 = 'CARCACA_ALFA') {
         energiaCusto: spec.energiaCusto,
         energiaAlocada: spec.energiaCusto,
         tempoRecargaBaseSeg: spec.tempoRecargaBaseSeg,
+        penalidadeOrgaosSeg,
         progressoRecargaSeg: 0.0,
         municaoCusto: spec.municaoCusto,
         soquetesMax: spec.soquetesMax,
-        orgaosEnxertados: [...(arq.orgaosIniciaisPorSlot[slotIndex] ?? [])],
+        orgaosEnxertados: orgaosSlot,
         salaAlvoId: null,
         trincaSalasBeam: null,
       },
@@ -234,6 +237,17 @@ export function criarEstadoInicialPartida(arg1 = {}, arg2 = 'CARCACA_ALFA') {
 
   const barrasBonusArraias = tripulacao.filter((t) => t.especie === 'ARRAIA').length;
   const barrasDisponiveis = arq.reatorCompradoInicial + barrasBonusArraias;
+
+  const pesoArmasIniciaisKg = armasAtivas.reduce((acc, s) => {
+    if (!s.arma) return acc;
+    return acc + s.arma.pesoBaseKg + (s.arma.orgaosEnxertados?.length ?? 0) * 5.0;
+  }, 0);
+  const pesoTotalInicialKg = arq.pesoChassiKg + 100.0 + pesoArmasIniciaisKg;
+  const patamaresMastro = [0, 50, 100, 150, 200, 240, 280, 330];
+  const sustentacaoInicialKg =
+    (patamaresMastro[arq.sistemasNivelMax[6] ?? 4] ?? 200) +
+    (arq.energiaInicialAlocada[5] ?? 2) * 30.0 +
+    arq.bonusSustentacaoMastroKg;
 
   const estado = {
     meta: {
@@ -260,6 +274,8 @@ export function criarEstadoInicialPartida(arg1 = {}, arg2 = 'CARCACA_ALFA') {
       hpCascoAtual: arq.hpCascoMax,
       hpCascoMax: arq.hpCascoMax,
       pesoChassiKg: arq.pesoChassiKg,
+      pesoTotalKg: pesoTotalInicialKg,
+      sustentacaoAtualKg: sustentacaoInicialKg,
       bonusSustentacaoMastroKg: arq.bonusSustentacaoMastroKg,
       nivelBlindagem: 0,
       reator: {
@@ -279,9 +295,9 @@ export function criarEstadoInicialPartida(arg1 = {}, arg2 = 'CARCACA_ALFA') {
       recargaPulsoEnzimasSeg: 0.0,
       furtividadeAtivaSeg: 0.0,
       recargaFurtividadeSeg: 0.0,
-      camadasBarreiraAtivas: arq.sistemasNivelMax[4] >= 2 ? 1 : 0,
+      camadasBarreiraAtivas: Math.floor((arq.energiaInicialAlocada[4] ?? 0) / 2),
       barreira: {
-        bolhasAtuais: arq.sistemasNivelMax[4] >= 2 ? 1 : 0,
+        bolhasAtuais: Math.floor((arq.energiaInicialAlocada[4] ?? 0) / 2),
         bolhasMax: Math.floor((arq.sistemasNivelMax[4] ?? 0) / 2),
       },
       progressoRegenBarreiraSeg: 0.0,

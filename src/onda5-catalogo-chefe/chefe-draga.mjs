@@ -197,6 +197,24 @@ export function tentarAbordagemContraAlvo(estado, tripulantesIds, salaAlvoId, op
   });
 }
 
+function extrairTripulacaoInimigaSincronizada(alvo) {
+  const porIdNasSalas = new Map();
+  for (const s of alvo?.salasOuOrgaos ?? []) {
+    for (const t of s.tripulantes ?? []) {
+      porIdNasSalas.set(t.id, t);
+    }
+  }
+  const baseLista = alvo?.tripulacaoInimiga ?? [...porIdNasSalas.values()];
+  return baseLista.map((t) => {
+    const naSala = porIdNasSalas.get(t.id);
+    if (!naSala) return { ...t };
+    return {
+      ...t,
+      hpAtual: Math.min(Number(t.hpAtual ?? 100), Number(naSala.hpAtual ?? 100)),
+    };
+  });
+}
+
 /**
  * Assinatura Pura N1 #4: Transiciona da Fase N para a Fase N+1 da Draga Continental,
  * executando o Atracar Automático entre Fases (resgata todos os tripulantes aliados com
@@ -227,7 +245,7 @@ export function transicionarFaseChefeDraga(estado) {
   // 2. Cria o estado da próxima fase preservando apenas os humanos sobreviventes
   const novoAlvoChefe = criarEstadoChefeDraga(
     proximaFase,
-    estado.alvoCombate?.tripulacaoInimiga ?? []
+    extrairTripulacaoInimigaSincronizada(estado.alvoCombate)
   );
 
   return clonarProfundoCongelado({
@@ -257,7 +275,8 @@ export function avancarTickChefeDraga(estado, dtSeg = 1.0, opcoesDebug = {}) {
     camaras: estado.naveJogador.camaras.map((c) => ({ ...c })),
   };
   let salas = alvo.salasOuOrgaos.map((s) => ({ ...s }));
-  const humanosVivos = (alvo.tripulacaoInimiga ?? []).filter((t) => t.hpAtual > 0);
+  const tripulacaoSincronizada = extrairTripulacaoInimigaSincronizada(alvo);
+  const humanosVivos = tripulacaoSincronizada.filter((t) => t.hpAtual > 0);
   const iaBackupAtiva = humanosVivos.length === 0;
 
   // 1. IA de Backup: se 0 humanos vivos, auto-repara 1 barra em todas as salas danificadas a cada 15.0s
@@ -266,10 +285,18 @@ export function avancarTickChefeDraga(estado, dtSeg = 1.0, opcoesDebug = {}) {
     progressoReparoIaBackupSeg = Math.round((progressoReparoIaBackupSeg + dtSeg) * 1000) / 1000;
     if (progressoReparoIaBackupSeg >= INTERVALO_AUTO_REPARO_IA_BACKUP_SEG) {
       progressoReparoIaBackupSeg -= INTERVALO_AUTO_REPARO_IA_BACKUP_SEG;
-      salas = salas.map((s) => ({
-        ...s,
-        integridade: Math.min(s.barrasMax, s.integridade + 1),
-      }));
+      salas = salas.map((s) => {
+        const baseInt = Math.min(
+          Number(s.integridade ?? s.barrasMax),
+          Number(s.integridadeAtual ?? s.integridade ?? s.barrasMax)
+        );
+        const novaInt = Math.min(s.barrasMax, baseInt + 1);
+        return {
+          ...s,
+          integridade: novaInt,
+          integridadeAtual: novaInt,
+        };
+      });
     }
   }
 
@@ -290,6 +317,14 @@ export function avancarTickChefeDraga(estado, dtSeg = 1.0, opcoesDebug = {}) {
       alarmeFervuraAtivoSeg = tempoFaltando;
     } else {
       alarmeFervuraAtivoSeg = 0;
+    }
+  }
+
+  if ((nave.tempoRestanteArrastoSeg ?? 0) > 0) {
+    const novoArrastoSeg = Math.max(0, Math.round((nave.tempoRestanteArrastoSeg - dtSeg) * 1000) / 1000);
+    nave.tempoRestanteArrastoSeg = novoArrastoSeg;
+    if (novoArrastoSeg === 0) {
+      nave.pesoVirtualArrastoKg = 0;
     }
   }
 

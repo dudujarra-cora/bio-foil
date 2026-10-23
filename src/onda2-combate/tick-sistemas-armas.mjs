@@ -77,7 +77,10 @@ export function calcularTempoRecargaEfetivoArma({
         ? CONSTANTES_SISTEMAS_ARMAS.REDUCAO_RECARGA_OPERADOR_COMUM
         : 0.0;
 
-  const emTouchdownOuSpool = estadoFisico === '2_TOUCHDOWN' || estadoFisico === '3_SPOOL_UP';
+  const emTouchdownOuSpool =
+    estadoFisico === '2_TOUCHDOWN' ||
+    estadoFisico === '3_SPOOL_UP' ||
+    estadoFisico === '5_FURTIVO_AGUA';
   const reducaoTouchdown = emTouchdownOuSpool ? CONSTANTES_SISTEMAS_ARMAS.REDUCAO_RECARGA_TOUCHDOWN : 0.0;
 
   // Hierarquia Nível 3 (MUT-O2-01): soma aditiva 1.0 - reducaoOperador - reducaoTouchdown (nunca multiplicativa!)
@@ -93,6 +96,13 @@ export function calcularTempoRecargaEfetivoArma({
  * Em 2_TOUCHDOWN ou 3_SPOOL_UP (inclusive 5_FURTIVO_AGUA), a esquiva contra projéteis já em voo é SEMPRE 0%!
  */
 export function calcularEsquivaEfetivaNave(naveJogador) {
+  if (naveJogador.estadoFisico === '4_FURTIVO_AR') {
+    return calcularEsquivaEfetivaNave({
+      ...naveJogador,
+      estadoFisico: '1_NO_FOIL',
+      furtividadeAtivaSeg: Math.max(1.0, Number(naveJogador.furtividadeAtivaSeg ?? 0)),
+    });
+  }
   // Hierarquia Nível 2 sobre Nível 3 (MUT-O2-02 / Célula 5A da Matriz 6.2): Touchdown trava esquiva em 0%
   if (naveJogador.estadoFisico !== '1_NO_FOIL') {
     return 0;
@@ -100,7 +110,11 @@ export function calcularEsquivaEfetivaNave(naveJogador) {
 
   const camaraCortex = naveJogador.camaras.find((c) => c.id === 2);
   const camaraSifao = naveJogador.camaras.find((c) => c.id === 5);
-  if (!camaraCortex || camaraCortex.barrasIntegridade <= 0 || !camaraSifao || camaraSifao.barrasEnergiaAlocada <= 0) {
+  const ionCortex = Math.max(0, Number(camaraCortex?.danoIonizado ?? camaraCortex?.barrasIonizadas ?? 0));
+  const intCortexEfetiva = Math.max(0, Number(camaraCortex?.barrasIntegridade ?? camaraCortex?.integridade ?? 0) - ionCortex);
+  const ionSifao = Math.max(0, Number(camaraSifao?.danoIonizado ?? camaraSifao?.barrasIonizadas ?? 0));
+  const barrasSifaoEfetivas = Math.max(0, Number(camaraSifao?.barrasEnergiaAlocada ?? camaraSifao?.energiaAlocada ?? 0) - ionSifao);
+  if (!camaraCortex || intCortexEfetiva <= 0 || !camaraSifao || barrasSifaoEfetivas <= 0) {
     return 0;
   }
 
@@ -117,12 +131,12 @@ export function calcularEsquivaEfetivaNave(naveJogador) {
   // Sem piloto no Córtex Nv. 1, a esquiva cai para 0% (Córtex Nv. 2/3 mantém piloto automático parcial se não tripulado)
   let fatorAutonomo = 1.0;
   if (!pilotoNoCortex) {
-    if (camaraCortex.barrasIntegridade === 2) fatorAutonomo = 0.5;
-    else if (camaraCortex.barrasIntegridade >= 3) fatorAutonomo = 0.8;
+    if (intCortexEfetiva === 2) fatorAutonomo = 0.5;
+    else if (intCortexEfetiva >= 3) fatorAutonomo = 0.8;
     else return 0;
   }
 
-  const barrasSifao = Math.min(5, Math.max(0, camaraSifao.barrasEnergiaAlocada));
+  const barrasSifao = Math.min(5, barrasSifaoEfetivas);
   const esquivaBaseSifao = CONSTANTES_SISTEMAS_ARMAS.ESQUIVA_BASE_SIFAO_POR_BARRA_PCT[barrasSifao] ?? 0;
 
   const operadorNoSifao = naveJogador.tripulacao.some(
@@ -223,10 +237,9 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25) {
 
   // 2. Glândula de Barreira (Câmara 4): 2 barras por camada ativa (descontando barras ionizadas se em choque)
   const camaraBarreira = nave.camaras.find((c) => c.id === 4);
-  const ionBarreiraAtivo = (camaraBarreira?.tempoParalisiaIonSeg ?? camaraBarreira?.tempoRestanteIonSeg ?? 0) > 0;
-  const barrasIonizadasBarreira = ionBarreiraAtivo ? Math.max(0, Number(camaraBarreira?.danoIonizado ?? 0)) : 0;
+  const barrasIonizadasBarreira = Math.max(0, Number(camaraBarreira?.danoIonizado ?? camaraBarreira?.barrasIonizadas ?? 0));
   const maxCamadasBarreira = camaraBarreira
-    ? Math.floor(Math.max(0, camaraBarreira.barrasEnergiaAlocada - barrasIonizadasBarreira) / 2)
+    ? Math.floor(Math.max(0, Number(camaraBarreira.barrasEnergiaAlocada ?? camaraBarreira.energiaAlocada ?? 0) - barrasIonizadasBarreira) / 2)
     : 0;
   if (nave.camadasBarreiraAtivas > maxCamadasBarreira) {
     nave.camadasBarreiraAtivas = maxCamadasBarreira;
@@ -252,12 +265,11 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25) {
 
   // 3. Bomba Branquial (Câmara 3): Oxigênio (-4%/s desligada, +8%/s ligada) e Curto-Circuito por câmara
   const camaraBranquial = nave.camaras.find((c) => c.id === 3);
-  const ionBranquialAtivo = (camaraBranquial?.tempoParalisiaIonSeg ?? camaraBranquial?.tempoRestanteIonSeg ?? 0) > 0;
-  const barrasIonizadasBranquial = ionBranquialAtivo ? Math.max(0, Number(camaraBranquial?.danoIonizado ?? 0)) : 0;
+  const barrasIonizadasBranquial = Math.max(0, Number(camaraBranquial?.danoIonizado ?? camaraBranquial?.barrasIonizadas ?? 0));
   const branquialLigada =
     camaraBranquial &&
-    camaraBranquial.barrasIntegridade >= 1 &&
-    camaraBranquial.barrasEnergiaAlocada - barrasIonizadasBranquial >= 1;
+    Number(camaraBranquial.barrasIntegridade ?? camaraBranquial.integridade ?? 0) >= 1 &&
+    Number(camaraBranquial.barrasEnergiaAlocada ?? camaraBranquial.energiaAlocada ?? 0) - barrasIonizadasBranquial >= 1;
 
   for (const camara of nave.camaras) {
     // Timers de Choque/Íon e Isolamento Residual Pós-Choque (5.0s)
@@ -347,6 +359,40 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25) {
       arma.tempoRecargaBaseSeg,
       arredondar4(arma.progressoRecargaSeg + dtSeg * fatorVelocidadeRecarga)
     );
+  }
+
+  // 5. Carga de Salto de Fuga (Seção 8.5.A e Matriz 6.2 Linha G: 20.0s base, 15.0s c/ operador no Sifão, 0.5x em Touchdown/Spool-up)
+  const camaraCortex = nave.camaras.find((c) => c.id === 2);
+  const camaraSifao = nave.camaras.find((c) => c.id === 5);
+  const ionCortex = Math.max(0, Number(camaraCortex?.danoIonizado ?? camaraCortex?.barrasIonizadas ?? 0));
+  const intCortexEfetiva = Math.max(0, Number(camaraCortex?.barrasIntegridade ?? camaraCortex?.integridade ?? 0) - ionCortex);
+  const ionSifao = Math.max(0, Number(camaraSifao?.danoIonizado ?? camaraSifao?.barrasIonizadas ?? 0));
+  const eneSifaoEfetiva = Math.max(0, Number(camaraSifao?.barrasEnergiaAlocada ?? camaraSifao?.energiaAlocada ?? 0) - ionSifao);
+  const pilotoCortexAtivo =
+    intCortexEfetiva >= 2 ||
+    nave.tripulacao.some(
+      (t) =>
+        t.localizacao === 'NAVE_JOGADOR' &&
+        t.hpAtual > 0 &&
+        t.camaraAtualId === 2 &&
+        t.camaraDestinoId === null &&
+        t.acopladoBulbo === true &&
+        !t.inflado
+    );
+  if (intCortexEfetiva >= 1 && eneSifaoEfetiva >= 1 && pilotoCortexAtivo) {
+    const operadorSifaoAtivo = nave.tripulacao.some(
+      (t) =>
+        t.localizacao === 'NAVE_JOGADOR' &&
+        t.hpAtual > 0 &&
+        t.camaraAtualId === 5 &&
+        t.camaraDestinoId === null &&
+        t.acopladoBulbo === true &&
+        !t.inflado
+    );
+    const multOperadorSifao = operadorSifaoAtivo ? 20.0 / 15.0 : 1.0;
+    const multEstadoFisico = nave.estadoFisico === '1_NO_FOIL' ? 1.0 : 0.5;
+    const taxaFuga = multOperadorSifao * multEstadoFisico;
+    nave.progressoFugaSeg = Math.min(20.0, arredondar4((nave.progressoFugaSeg ?? 0.0) + dtSeg * taxaFuga));
   }
 
   return congelarProfundo(proximo);

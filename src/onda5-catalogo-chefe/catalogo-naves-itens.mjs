@@ -547,6 +547,7 @@ export function avancarTickBiomaEColmeiaViva(estado, dtSeg = 1.0, opcoesDebug = 
   let hpCascoAtual = nave.hpCascoAtual;
   let tempoTouchdownContinuoSeg = nave.tempoTouchdownContinuoSeg ?? 0;
   let regeneracoesColmeiaNestaLuta = nave.regeneracoesColmeiaNestaLuta ?? 0;
+  let corrosoesMastroTouchdown = nave.corrosoesMastroTouchdown ?? 0;
   let tempoChuvaAcidaAcumuladoSeg = nave.tempoChuvaAcidaAcumuladoSeg ?? 0;
   let camaras = nave.camaras.map((c) => ({ ...c }));
 
@@ -554,17 +555,22 @@ export function avancarTickBiomaEColmeiaViva(estado, dtSeg = 1.0, opcoesDebug = 
     tempoTouchdownContinuoSeg = Math.round((tempoTouchdownContinuoSeg + dtSeg) * 1000) / 1000;
     tempoChuvaAcidaAcumuladoSeg = 0; // Lavou o casco no mar
 
-    // Setor 7: Corrosão do Mastro se ficar mais de 8.0s contínuos em Touchdown
+    // Setor 7: Corrosão do Mastro se ficar mais de 8.0s contínuos em Touchdown (1 barra a cada ciclo de 8.0s)
     if (estado.mapaSetorial?.setorNumero === 7 && tempoTouchdownContinuoSeg > 8.0) {
-      camaras = camaras.map((c) =>
-        c.id === 6
-          ? {
-              ...c,
-              barrasIntegridade: Math.max(0, (c.barrasIntegridade ?? c.integridade ?? 4) - 1),
-              integridade: Math.max(0, (c.integridade ?? c.barrasIntegridade ?? 4) - 1),
-            }
-          : c
-      );
+      const marcosCorrosao = Math.floor(tempoTouchdownContinuoSeg / 8.0);
+      if (marcosCorrosao > corrosoesMastroTouchdown) {
+        const danoMastro = marcosCorrosao - corrosoesMastroTouchdown;
+        corrosoesMastroTouchdown = marcosCorrosao;
+        camaras = camaras.map((c) =>
+          c.id === 6
+            ? {
+                ...c,
+                barrasIntegridade: Math.max(0, (c.barrasIntegridade ?? c.integridade ?? 4) - danoMastro),
+                integridade: Math.max(0, (c.integridade ?? c.barrasIntegridade ?? 4) - danoMastro),
+              }
+            : c
+        );
+      }
     }
 
     // Colmeia-Viva: +1 HP a cada 12.0s contínuos em Touchdown, máx +2 HP por luta, SOMENTE com inimigo vivo (MUT-O5-04)
@@ -585,6 +591,7 @@ export function avancarTickBiomaEColmeiaViva(estado, dtSeg = 1.0, opcoesDebug = 
     }
   } else {
     tempoTouchdownContinuoSeg = 0;
+    corrosoesMastroTouchdown = 0;
     // Setor 6 (ou nó PER_1_CHUVA_ACIDA): Chuva Ácida a cada 15.0s em 1_NO_FOIL
     if (estado.mapaSetorial?.setorNumero === 6 || estado.meta?.perigoAmbientalId === 'PER_1_CHUVA_ACIDA') {
       tempoChuvaAcidaAcumuladoSeg = Math.round((tempoChuvaAcidaAcumuladoSeg + dtSeg) * 1000) / 1000;
@@ -602,6 +609,7 @@ export function avancarTickBiomaEColmeiaViva(estado, dtSeg = 1.0, opcoesDebug = 
       hpCascoAtual,
       tempoTouchdownContinuoSeg,
       regeneracoesColmeiaNestaLuta,
+      corrosoesMastroTouchdown,
       tempoChuvaAcidaAcumuladoSeg,
       camaras,
     },

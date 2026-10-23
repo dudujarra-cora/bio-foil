@@ -113,8 +113,9 @@ export function calcularSustentacaoFoil(naveJogador) {
   }
   const camaraSifao = naveJogador.camaras.find((c) => c.id === 5);
   const camaraMastro = naveJogador.camaras.find((c) => c.id === 6);
-  const barrasSifao = Math.max(0, Number(camaraSifao?.barrasEnergiaAlocada ?? 0));
-  const barrasMastro = Math.max(0, Math.min(7, Number(camaraMastro?.barrasIntegridade ?? 0)));
+  const ionSifao = Math.max(0, Number(camaraSifao?.danoIonizado ?? camaraSifao?.barrasIonizadas ?? 0));
+  const barrasSifao = Math.max(0, Number(camaraSifao?.barrasEnergiaAlocada ?? camaraSifao?.energiaAlocada ?? 0) - ionSifao);
+  const barrasMastro = Math.max(0, Math.min(7, Number(camaraMastro?.barrasIntegridade ?? camaraMastro?.integridade ?? 0)));
 
   if (barrasSifao === 0 || barrasMastro === 0) {
     return 0.0;
@@ -260,7 +261,9 @@ export function avancarTickFisicaHidraulica(estado, dtSeg = 0.25) {
   const proximo = structuredClone(estado);
   const nave = proximo.naveJogador;
   const camaraBranquial = nave.camaras.find((c) => c.id === 3);
-  const branquialAtiva = Number(camaraBranquial?.barrasEnergiaAlocada ?? 0) >= 1 && Number(camaraBranquial?.barrasIntegridade ?? 0) >= 1;
+  const ionBrq = Math.max(0, Number(camaraBranquial?.danoIonizado ?? camaraBranquial?.barrasIonizadas ?? 0));
+  const energiaEfetivaBrq = Math.max(0, Number(camaraBranquial?.barrasEnergiaAlocada ?? camaraBranquial?.energiaAlocada ?? 0) - ionBrq);
+  const branquialAtiva = energiaEfetivaBrq >= 1 && Number(camaraBranquial?.barrasIntegridade ?? camaraBranquial?.integridade ?? 0) >= 1;
 
   // 1. Verificar antes do fluxo se perda de Sifão/Mastro ou excesso de peso já derrubou a nave neste instante
   const pesoPreTick = calcularPesoTotalNave(nave);
