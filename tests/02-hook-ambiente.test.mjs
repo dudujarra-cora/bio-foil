@@ -18,10 +18,14 @@ import {
   CATALOGO_RECURSOS_MCP,
   auditarAmbienteN5Secao5,
   avaliarPoliticaAgenteMcp,
+  consultarHudSessaoMcp,
   criarServidorHttpMcp,
+  executarAcaoJogoMcp,
   executarMutacoesL6Mcp,
   executarPortoesMcp,
+  gerenciarSessoesJogoMcp,
   iniciarCenarioBiofoilMcp,
+  iniciarPartidaJogavelMcp,
   iniciarTransporteStdio,
   inspecionarAlvoL3Mcp,
   inspecionarCodigo14Leis,
@@ -29,6 +33,7 @@ import {
   lerRecursoMcp,
   obterPromptMcp,
   processarMensagemJsonRpc,
+  renderizarHudAsciiBiofoil,
   simularPassoAgenteMcp,
 } from '../scripts/mcp-testes-agentes.mjs';
 import { copiarProjeto, primeiraLinhaDeFalha } from '../scripts/rodar-mutacoes.mjs';
@@ -253,16 +258,24 @@ test('Seção 5 + L5 + N3 + N4: hooks contêm o unset no topo; tripwires de 6 á
   );
 });
 
-test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos, 2 prompts, stdio real e HTTP c/ DNS Rebinding', async () => {
+test('MCP para Testes e Jogo Bio-Foil (L1/L2/L3/L4/L6/N4): 12 ferramentas, 4 recursos, 3 prompts, Modo Jogo Interativo e HTTP c/ DNS Rebinding', async () => {
   console.log(
-    `[N4] MCP Testes de Agentes examinado: ${CATALOGO_FERRAMENTAS_MCP.length} ferramentas, ${CATALOGO_RECURSOS_MCP.length} recursos, ${CATALOGO_PROMPTS_MCP.length} prompts`
+    `[N4] MCP Testes e Jogo examinado: ${CATALOGO_FERRAMENTAS_MCP.length} ferramentas, ${CATALOGO_RECURSOS_MCP.length} recursos, ${CATALOGO_PROMPTS_MCP.length} prompts`
   );
-  assert.equal(CATALOGO_FERRAMENTAS_MCP.length, 8, 'O servidor MCP deve expor exatamente 8 ferramentas agent_test_*');
-  assert.equal(CATALOGO_RECURSOS_MCP.length, 3, 'O servidor MCP deve expor os 3 recursos canônicos');
-  assert.equal(CATALOGO_PROMPTS_MCP.length, 2, 'O servidor MCP deve expor os 2 prompts de auditoria');
+  assert.equal(
+    CATALOGO_FERRAMENTAS_MCP.length,
+    12,
+    'O servidor MCP deve expor 12 ferramentas (8 agent_test_* + 4 biofoil_jogar_*)'
+  );
+  assert.equal(CATALOGO_RECURSOS_MCP.length, 4, 'O servidor MCP deve expor os 4 recursos canônicos');
+  assert.equal(CATALOGO_PROMPTS_MCP.length, 3, 'O servidor MCP deve expor os 3 prompts canônicos');
 
-  for (const tool of CATALOGO_FERRAMENTAS_MCP) {
-    assert.ok(tool.name.startsWith('agent_test_'), `Ferramenta ${tool.name} deve usar prefixo agent_test_`);
+  const ferramentasTeste = CATALOGO_FERRAMENTAS_MCP.filter((t) => t.name.startsWith('agent_test_'));
+  const ferramentasJogar = CATALOGO_FERRAMENTAS_MCP.filter((t) => t.name.startsWith('biofoil_jogar_'));
+  assert.equal(ferramentasTeste.length, 8);
+  assert.equal(ferramentasJogar.length, 4);
+
+  for (const tool of ferramentasTeste) {
     assert.equal(tool.annotations.readOnlyHint, true);
     assert.equal(tool.annotations.destructiveHint, false);
     assert.equal(tool.annotations.idempotentHint, true);
@@ -285,11 +298,11 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
   assert.deepEqual(processarMensagemJsonRpc({ jsonrpc: '2.0', id: 2, method: 'ping' }).result, {});
   assert.equal(
     processarMensagemJsonRpc({ jsonrpc: '2.0', id: 3, method: 'tools/list' }).result.tools.length,
-    8
+    12
   );
   assert.equal(
     processarMensagemJsonRpc({ jsonrpc: '2.0', id: 4, method: 'resources/list' }).result.resources.length,
-    3
+    4
   );
   const resLeis = processarMensagemJsonRpc({
     jsonrpc: '2.0',
@@ -312,9 +325,16 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
     params: { uri: 'biofoil://gdd/ssot-matriz' },
   });
   assert.equal(JSON.parse(resSsot.result.contents[0].text).totalConstantes, 27);
+  const resManualJogo = processarMensagemJsonRpc({
+    jsonrpc: '2.0',
+    id: 71,
+    method: 'resources/read',
+    params: { uri: 'biofoil://jogo/manual-interativo' },
+  });
+  assert.match(resManualJogo.result.contents[0].text, /biofoil_jogar_iniciar_partida/);
   assert.equal(
     processarMensagemJsonRpc({ jsonrpc: '2.0', id: 8, method: 'prompts/list' }).result.prompts.length,
-    2
+    3
   );
   const prompt1 = processarMensagemJsonRpc({
     jsonrpc: '2.0',
@@ -330,6 +350,13 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
     params: { name: 'avaliar_agente_combate_biofoil', arguments: { idArquitetura: 'MANTA_VOLT' } },
   });
   assert.match(prompt2.result.messages[0].content.text, /MANTA_VOLT/);
+  const prompt3 = processarMensagemJsonRpc({
+    jsonrpc: '2.0',
+    id: 11,
+    method: 'prompts/get',
+    params: { name: 'jogar_partida_biofoil', arguments: { idArquitetura: 'COURACA_LIMIAR', seedPartida: 'seed-jogar-1' } },
+  });
+  assert.match(prompt3.result.messages[0].content.text, /COURACA_LIMIAR/);
 
   // 2. Ferramenta 1: agent_test_auditar_ambiente_n5_secao5 + MUT-MCP-01 (core.bare=true) + L3
   const ambOk = auditarAmbienteN5Secao5({ diretorioRaiz: DIRETORIO_RAIZ, limiteCargaMaquina: 99 });
@@ -363,7 +390,7 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
   assert.equal(inspOk.structuredContent.status, 'APROVADO');
   assert.equal(inspOk.structuredContent.arquivosTesteExaminadosN4, 9);
   assert.equal(inspOk.structuredContent.arquivosCodigoTestadosN4, 24);
-  assert.ok(inspOk.structuredContent.funcoesExportadasTestadasN4 >= 139);
+  assert.ok(inspOk.structuredContent.funcoesExportadasTestadasN4 >= 144);
 
   const relatorioTudo = verificarRegraTestesParaTudo(DIRETORIO_RAIZ);
   assert.equal(relatorioTudo.arquivosCodigoExaminados, 24);
@@ -475,6 +502,92 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
   const benchIngenua = avaliarPoliticaAgenteMcp({ estrategia: 'INGENUA_VIOLA_LEIS' });
   assert.equal(benchIngenua.structuredContent.pontuacaoTotal, 0);
 
+  // 5b. Ferramentas 9, 10, 11 e 12 (Domínio C: Modo Jogo Interativo Completo + MUT-MCP-06)
+  const hudTextoDireto = renderizarHudAsciiBiofoil(congelarProfundo(baseCego));
+  assert.match(hudTextoDireto, /CEGO_AGUAS_TURVAS_ABISSAIS/, 'HUD ASCII deve exibir marcador L3 quando sonar cego');
+  assert.doesNotMatch(hudTextoDireto, /0 tripulantes/, 'HUD ASCII nunca deve exibir "0 tripulantes" quando sonar cego');
+
+  const sessaoJogo = iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-teste-jogar',
+    seedPartida: 'seed-jogar-mcp-01',
+    idArquitetura: 'CARCACA_ALFA',
+    setorNumero: 1,
+    faseInicial: 'MAPA',
+  });
+  assert.equal(sessaoJogo.isError, false);
+  assert.equal(sessaoJogo.structuredContent.status, 'PARTIDA_INICIADA');
+  assert.equal(sessaoJogo.structuredContent.faseJogo, 'MAPA');
+
+  const hudConsulta = consultarHudSessaoMcp({ sessaoId: 'sessao-teste-jogar' });
+  assert.equal(hudConsulta.isError, false);
+  assert.ok(hudConsulta.structuredContent.rotasDisponiveisCountN4 >= 1);
+
+  // Testa Loja + Digestão Enzimática 2:1 + Sair da Loja
+  iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-teste-jogar',
+    seedPartida: 'seed-jogar-mcp-01',
+    idArquitetura: 'CARCACA_ALFA',
+    setorNumero: 1,
+    faseInicial: 'LOJA',
+  });
+  const acaoDigestao = executarAcaoJogoMcp({
+    sessaoId: 'sessao-teste-jogar',
+    acaoEspecial: 'DIGESTAO_ENZIMATICA',
+    moedaOrigemDigestao: 'SUCATA',
+    lotesDigestao: 2,
+  });
+  assert.equal(acaoDigestao.structuredContent.recursosAtuais.sucata, 26);
+  assert.equal(acaoDigestao.structuredContent.recursosAtuais.biomassa, 17);
+
+  const acaoSairLoja = executarAcaoJogoMcp({
+    sessaoId: 'sessao-teste-jogar',
+    acaoEspecial: 'SAIR_DA_LOJA',
+  });
+  assert.equal(acaoSairLoja.structuredContent.faseJogo, 'MAPA');
+
+  // Testa Combate + Coleta de Saque de Vitória (MUT-MCP-06)
+  const partidaCombate = iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-combate-vitoria',
+    seedPartida: 'seed-combate-vitoria',
+    idArquitetura: 'CARCACA_ALFA',
+    setorNumero: 1,
+    faseInicial: 'COMBATE',
+    classeInimigoInicial: 'BARCO_HUMANO',
+  });
+  const sucataInicialCombate = partidaCombate.structuredContent.estado.economia.sucata; // 30
+  // Liga a Bomba Branquial (Câmara 3) para manter O2 em 100%, mira as 2 armas na Sala 2 e avança ticks até destruir o casco (8 HP -> +12 Sucata no Setor 1)
+  const acaoVitoria = executarAcaoJogoMcp({
+    sessaoId: 'sessao-combate-vitoria',
+    comandos: [
+      { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 4, deltaBarras: -1 } },
+      { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 3, deltaBarras: 1 } },
+      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 0, salaAlvoId: 2 } },
+      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 2 } },
+    ],
+    passosTick: 200,
+    dtSeg: 0.5,
+  });
+  assert.equal(acaoVitoria.structuredContent.vitoria.encerrado, true);
+  assert.equal(acaoVitoria.structuredContent.faseJogo, 'MAPA');
+  assert.equal(
+    acaoVitoria.structuredContent.recursosAtuais.sucata,
+    sucataInicialCombate + 12,
+    '[MUT-MCP-06 / Modo Jogo] executarAcaoJogoMcp deve creditar o saque de vitória (+12 Sucata Bruta no Setor 1) na carteira ao vencer combate'
+  );
+
+  // Gerenciamento de sessões: LISTAR, EXPORTAR_REPLAY e REMOVER
+  const listaSessoes = gerenciarSessoesJogoMcp({ acao: 'LISTAR' });
+  assert.ok(listaSessoes.structuredContent.sessoesAtivasN4 >= 2);
+  const replaySessao = gerenciarSessoesJogoMcp({
+    acao: 'EXPORTAR_REPLAY',
+    sessaoId: 'sessao-combate-vitoria',
+  });
+  assert.equal(replaySessao.structuredContent.comandosReplayCountN4, 4);
+  const remocao1 = gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: 'sessao-teste-jogar' });
+  assert.equal(remocao1.structuredContent.removida, true);
+  const remocao2 = gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: 'sessao-combate-vitoria' });
+  assert.equal(remocao2.structuredContent.removida, true);
+
   // Validação de erros e schema
   assert.equal(invocarFerramentaMcp('ferramenta_inexistente').isError, true);
   assert.equal(
@@ -511,7 +624,7 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
     });
     assert.equal(respOk.status, 200);
     const jsonOk = await respOk.json();
-    assert.equal(jsonOk.result.tools.length, 8);
+    assert.equal(jsonOk.result.tools.length, 12);
 
     const respRebinding = await fetch(`http://127.0.0.1:${porta}/mcp`, {
       method: 'POST',

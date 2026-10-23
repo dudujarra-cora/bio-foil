@@ -16,6 +16,12 @@
  *   6. agent_test_simular_passo_agente
  *   7. agent_test_inspecionar_alvo_l3
  *   8. agent_test_avaliar_politica_agente
+ *
+ * Domínio C — Modo Jogo Interativo Completo (Jogar Bio-Foil do Setor 1 ao Setor 8 via MCP):
+ *   9. biofoil_jogar_iniciar_partida
+ *  10. biofoil_jogar_executar_acao
+ *  11. biofoil_jogar_consultar_hud
+ *  12. biofoil_jogar_gerenciar_sessoes
  */
 
 import fs from 'node:fs';
@@ -37,11 +43,26 @@ import { congelarProfundo, criarEstadoInicialPartida } from '../src/onda1-fisica
 import { calcularPesoTotalNave, calcularSustentacaoFoil } from '../src/onda1-fisica/tick-hidraulica-foil.mjs';
 import { inspecionarSalaAlvo, avancarTickCombateCompleto } from '../src/onda2-combate/tick-tripulacao.mjs';
 import { criarAlvoSetor1Canonico, avancarTickIaInimiga } from '../src/onda3-inimigos/ia-barco-monstro.mjs';
-import { avaliarCondicaoDeVitoria } from '../src/onda3-inimigos/abordagem-vitoria.mjs';
+import { avaliarCondicaoDeVitoria, resolverImpactoNoAlvo } from '../src/onda3-inimigos/abordagem-vitoria.mjs';
 import { gerarMapaSetorial } from '../src/onda4-mapa/gerador-poisson.mjs';
-import { gerarEstoqueLojaForja } from '../src/onda5-catalogo-chefe/catalogo-naves-itens.mjs';
-import { criarEstadoChefeDraga, avancarTickChefeDraga } from '../src/onda5-catalogo-chefe/chefe-draga.mjs';
+import { CATALOGO_TEMPLATES_EVENTOS_45A } from '../src/onda4-mapa/eventos-nos.mjs';
+import {
+  CATALOGO_LOJA_56B,
+  calcularAtributosInimigoSetor,
+  avancarTickBiomaEColmeiaViva,
+  converterMoedaDigestaoEnzimatica,
+  gerarEstoqueLojaForja,
+} from '../src/onda5-catalogo-chefe/catalogo-naves-itens.mjs';
+import {
+  criarEstadoChefeDraga,
+  avancarTickChefeDraga,
+  transicionarFaseChefeDraga,
+} from '../src/onda5-catalogo-chefe/chefe-draga.mjs';
 import { ESQUEMA_15_COMANDOS_85A, despacharComandoUi } from '../src/onda6-ui/despacho-comandos.mjs';
+import {
+  criarPerfilInicial,
+  atualizarPerfilComMetricasRun,
+} from '../src/onda6-ui/persistencia-perfil.mjs';
 import { projetarViewModelWireframe } from '../src/onda6-ui/presenter-wireframe.mjs';
 import { avaliarCuesSonorosAtivos } from '../src/onda6-ui/cues-audio.mjs';
 import { carregarMutacoes, executarMutacoes } from './rodar-mutacoes.mjs';
@@ -886,7 +907,774 @@ export function avaliarPoliticaAgenteMcp(params = {}, opcoesDebug = {}) {
 }
 
 /**
- * Catálogo completo das 8 ferramentas MCP com JSON Schema estrito e anotações MCP.
+ * ============================================================================
+ * DOMÍNIO C — MODO JOGO INTERATIVO COMPLETO (`biofoil_jogar_*`)
+ * Permite a qualquer agente ou humano jogar uma run completa do Setor 1 ao 8.
+ * ============================================================================
+ */
+const SESSOES_JOGO_MCP = new Map();
+
+function sincronizarCarteiraPartida(estado) {
+  const padrao = { sucata: 30, biomassa: 15, combustivel: 12, municao: 8 };
+  const eco = estado.economia ?? {};
+  const rec = estado.recursos ?? {};
+  return {
+    sucata: Number(eco.sucata ?? rec.sucata ?? padrao.sucata),
+    biomassa: Number(eco.biomassa ?? rec.biomassa ?? padrao.biomassa),
+    combustivel: Number(eco.combustivel ?? rec.combustivel ?? padrao.combustivel),
+    municao: Number(eco.municao ?? rec.municao ?? padrao.municao),
+  };
+}
+
+function criarAlvoEscaladoPorSetor(setorNumero = 1, classePreferida = 'BARCO_HUMANO') {
+  const s = Math.max(1, Math.min(8, Number(setorNumero)));
+  if (s === 8 || classePreferida === 'CHEFE_DRAGA') {
+    return structuredClone(criarEstadoChefeDraga(1));
+  }
+  const base = structuredClone(
+    criarAlvoSetor1Canonico(classePreferida === 'MONSTRO_MARINHO' ? 'MONSTRO_MARINHO' : 'BARCO_HUMANO')
+  );
+  const esc = calcularAtributosInimigoSetor(s);
+  if (classePreferida === 'MONSTRO_MARINHO') {
+    base.hpCascoAtual = esc.monstroHp;
+    base.hpCascoMax = esc.monstroHp;
+    base.esquivaBasePct = esc.monstroEsquivaPct;
+    base.esquivaEfetivaPct = esc.monstroEsquivaPct;
+  } else {
+    base.hpCascoAtual = esc.barcoHp;
+    base.hpCascoMax = esc.barcoHp;
+    base.camadasBarreiraAtivas = esc.barcoBarreiraBolhas;
+    base.barreiraBolhasAtual = esc.barcoBarreiraBolhas;
+    base.barreiraBolhasMax = esc.barcoBarreiraBolhas;
+    base.esquivaBasePct = esc.barcoEsquivaPct;
+    base.esquivaEfetivaPct = esc.barcoEsquivaPct;
+  }
+  return base;
+}
+
+/**
+ * Renderiza o HUD Tático 16:9 em ASCII/Markdown a partir do GameState e do ViewModel 16:9,
+ * obedecendo estritamente à Lei L3 (nunca exibir "0 tripulantes" quando o sonar estiver cego).
+ */
+export function renderizarHudAsciiBiofoil(estado, opcoesDebug = {}) {
+  const vm = projetarViewModelWireframe(estado, opcoesDebug);
+  const top = vm.barraSuperior;
+  const term = vm.termometroSustentacao;
+  const rec = sincronizarCarteiraPartida(estado);
+  const setor = estado.mapaSetorial?.setorNumero ?? 1;
+  const relogio = estado.mapaSetorial?.relogioSetorHoras ?? 0;
+  const frente = estado.mapaSetorial?.frenteCorporacaoMn ?? 0;
+  const margemKg = term.sustentacaoAtualKg - term.pesoTotalKg;
+
+  const formatarCamaraBox = (idCam) => {
+    const c = vm.camaras.find((x) => x.id === idCam);
+    if (!c) return `[#${idCam}]`;
+    const valv = c.iconeCadeadoVisivel ? 'CADEADO' : c.valvulaExternaAberta ? 'ABERTA' : 'FECH';
+    const alertas = [
+      c.brechaAtiva ? `ROMBO(${c.rombosCasco})` : '',
+      c.curtoCircuitoAtivo ? 'CURTO!' : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const tripStr = c.tripulantesPresentes
+      .map((t) => `${t.especie}(${t.hpAtual}${t.inflado ? ',INFLADO' : ''})`)
+      .join(',') || 'vazia';
+    return `[#${c.id} ${c.nome} | ${c.aguaKg}kg | E:${c.barrasEnergiaAlocada}/${c.barrasIntegridade} | V:${valv}${alertas ? ` | ${alertas}` : ''} | ${tripStr}]`;
+  };
+
+  const linhasGrade = [
+    `  Andar 1: ${formatarCamaraBox(1)}  ||  ${formatarCamaraBox(7)}`,
+    `  Andar 2: ${formatarCamaraBox(2)}  ||  ${formatarCamaraBox(3)}`,
+    `  Andar 3: ${formatarCamaraBox(4)}  ||  ${formatarCamaraBox(5)}`,
+    `  Andar 4: ${formatarCamaraBox(6)}  ||  ${formatarCamaraBox(8)}`,
+  ];
+
+  const armasStr = vm.caixaArmas
+    .map(
+      (s) =>
+        `Slot ${s.slotIndex}: ${s.ocupado ? `${s.chassiId} (E:${s.energiaCusto}, Org:[${s.orgaosEnxertados.join(',')}], Rec:${s.progressoRecargaSeg}s)` : 'VAZIO'}`
+    )
+    .join(' | ');
+
+  const secaoContextual = [];
+  if (estado.meta.faseJogo === 'COMBATE' && vm.painelAlvo.presente) {
+    const pa = vm.painelAlvo;
+    secaoContextual.push(
+      `=== PAINEL DO ALVO INIMIGO: ${pa.nomeAlvo} (${pa.classeAlvo}) ===`,
+      `  Casco Alvo: ${pa.hpCascoAtual}/${pa.hpCascoMax} | Barreira: ${pa.barreiraBolhas} bolha(s) | Esquiva: ${pa.esquivaPct}% | Blindagem Térmica: ${pa.blindagemTermicaExternaPts} pts`,
+      ...pa.salasInspecionadas.map(
+        (s) =>
+          `  - Sala/Órgão #${s.salaId}: canal=${s.canalPermissao} | status=${s.status} | leitura=${s.textoTripulacao}`
+      )
+    );
+  } else if (estado.meta.faseJogo === 'MAPA') {
+    const noAtualId = estado.mapaSetorial?.noAtualId ?? 'NO_0_ENTRADA';
+    const rotas = (estado.mapaSetorial?.rotas ?? []).filter((r) => r.origemId === noAtualId);
+    secaoContextual.push(
+      `=== MAPA SETORIAL (Setor ${setor} | Nó Atual: ${noAtualId}) ===`,
+      ...(rotas.length > 0
+        ? rotas.map((r) => {
+            const noDest = (estado.mapaSetorial?.nos ?? []).find((n) => n.id === r.destinoId);
+            return `  -> Destino: ${r.destinoId} (${noDest?.tipoNo ?? 'COMBATE'}, dist=${r.distanciaEfetivaMn} MN, corrente=${r.correnteza ?? 'NORMAL'}${noDest?.tPrazoHoras ? `, prazo SOS=${noDest.tPrazoHoras}h` : ''})`;
+          })
+        : ['  (Nenhuma rota de saída a partir deste nó — use acaoEspecial="AVANCAR_PROXIMO_SETOR")'])
+    );
+  } else if (estado.meta.faseJogo === 'EVENTO') {
+    const noEv =
+      estado.mapaSetorial?.eventoAtivoNo ??
+      (estado.mapaSetorial?.nos ?? []).find((n) => n.id === estado.mapaSetorial?.noAtualId);
+    const tpl = CATALOGO_TEMPLATES_EVENTOS_45A.find((t) => t.id === noEv?.idTemplateEvento);
+    secaoContextual.push(
+      `=== ENCONTRO DE EVENTO (${noEv?.id ?? 'NO_EVENTO'} — ${tpl?.nome ?? noEv?.tipoNo ?? 'SOS'}) ===`,
+      `  Template: ${tpl?.id ?? 'PADRAO'} | Requisito Blue Option (B): ${tpl?.requisitoBlueOption ?? 'N/A'}`,
+      `  Opções: [A] Arriscar (STREAM_2) | [B] Blue Option | [C] Recuar`
+    );
+  } else if (estado.meta.faseJogo === 'LOJA') {
+    const est = estado.estoqueLojaAtual;
+    secaoContextual.push(
+      `=== RECIFE-FORJA SIMBIÓTICO (LOJA — Setor ${setor}) ===`,
+      `  Oferta Arma: ${est?.armaOferta?.id ?? 'N/A'} (${est?.armaOferta?.precoCompra ?? 0} Sucata)`,
+      `  Oferta Órgão: ${est?.orgaoOferta?.id ?? 'N/A'} (${est?.orgaoOferta?.precoCompra ?? 0} Biomassa)`,
+      `  Oferta Tripulante: ${est?.tripulanteOfertaId ?? 'N/A'}`,
+      `  Insumos/Serviços: INSUMO_COMBUSTIVEL (3 Sucata), INSUMO_MUNICAO (4 Sucata), REPARO_CASCO_1HP, ou acaoEspecial="DIGESTAO_ENZIMATICA" (2:1) / "SAIR_DA_LOJA"`
+    );
+  } else if (estado.meta.faseJogo === 'FIM_DE_RUN') {
+    secaoContextual.push(
+      `=== FIM DE RUN (${estado.meta.resultadoRun ?? 'ENCERRADA'}) ===`,
+      `  Casco Final: ${top.hpCascoAtual}/${top.hpCascoMax} | Setor Alcançado: ${setor}`
+    );
+  }
+
+  return [
+    `╔══════════════════════════════════════════════════════════════════════════════╗`,
+    `║ BIO-FOIL HUD 16:9 | Fase: ${estado.meta.faseJogo} | Estado: ${top.rotuloEstado} (${top.estadoFisico}) | Setor ${setor}/8 ║`,
+    `╚══════════════════════════════════════════════════════════════════════════════╝`,
+    `[BARRA SUPERIOR] Casco: ${top.hpCascoAtual}/${top.hpCascoMax} HP | Barreira: ${top.barreiraBolhas} bolha(s) | Sucata: ${rec.sucata} | Biomassa: ${rec.biomassa} | Combustível: ${rec.combustivel} | Munição: ${rec.municao} | Relógio: ${relogio}h (Frente Corp.: ${frente} MN)`,
+    `[TERMÔMETRO FOIL] Sustentação S_atual: ${term.sustentacaoAtualKg} kg vs Peso P_total: ${term.pesoTotalKg} kg (Margem: ${margemKg >= 0 ? `+${margemKg}` : margemKg} kg) | ${term.botaoDrenarTudo.atalho}: ${term.botaoDrenarTudo.statusValvula}`,
+    `[CORTE 2x4 CÂMARAS — NAVE ${estado.naveJogador.idArquitetura}]`,
+    ...linhasGrade,
+    `[ARMAS DORSAIS (4 SLOTS)] ${armasStr}`,
+    ...secaoContextual,
+  ].join('\n');
+}
+
+/**
+ * 9. Ferramenta Domínio C: Iniciar ou reiniciar uma partida interativa jogável do Bio-Foil.
+ */
+export function iniciarPartidaJogavelMcp(params = {}) {
+  const sessaoId = String(params.sessaoId ?? 'partida-principal');
+  const seedPartida = String(params.seedPartida ?? 'biofoil-play-seed-001');
+  const idArquitetura = String(params.idArquitetura ?? 'CARCACA_ALFA');
+  const setorNumero = Math.min(8, Math.max(1, Number(params.setorNumero ?? 1)));
+  const faseInicial = String(params.faseInicial ?? 'MAPA');
+  const classeInimigoInicial = String(params.classeInimigoInicial ?? 'BARCO_HUMANO');
+  const formato = params.response_format ?? 'markdown';
+
+  const base = structuredClone(criarEstadoInicialPartida({ seedPartida, setorNumero }, idArquitetura));
+  const mapa = gerarMapaSetorial(seedPartida, setorNumero);
+  base.mapaSetorial = {
+    ...base.mapaSetorial,
+    ...structuredClone(mapa),
+    setorNumero,
+    noAtualId: mapa.nos[0]?.id ?? 'NO_0_ENTRADA',
+  };
+
+  if (faseInicial === 'COMBATE') {
+    base.meta.faseJogo = 'COMBATE';
+    base.alvoCombate = criarAlvoEscaladoPorSetor(
+      setorNumero,
+      setorNumero === 8 ? 'CHEFE_DRAGA' : classeInimigoInicial
+    );
+  } else if (faseInicial === 'LOJA') {
+    base.meta.faseJogo = 'LOJA';
+    base.alvoCombate.ativo = false;
+    base.estoqueLojaAtual = structuredClone(
+      gerarEstoqueLojaForja(seedPartida, setorNumero, base.mapaSetorial.noAtualId)
+    );
+  } else {
+    base.meta.faseJogo = 'MAPA';
+    base.alvoCombate.ativo = false;
+  }
+
+  const estado = congelarProfundo(base);
+  const sessaoExistente = SESSOES_JOGO_MCP.get(sessaoId);
+  const perfilBase = sessaoExistente?.perfil ?? criarPerfilInicial();
+  const metricasRun = congelarProfundo({
+    barcosCapturadosIntactosNestaRun: 0,
+    orgaosIntactosExtraidosNestaRun: 0,
+    setorNumeroAlcanceMaxNestaRun: setorNumero,
+  });
+  const perfil = atualizarPerfilComMetricasRun(perfilBase, {
+    setorNumero,
+    setorNumeroAlcanceMaxNestaRun: setorNumero,
+  });
+
+  const registroSessao = congelarProfundo({
+    sessaoId,
+    criadaEmTurno: 0,
+    turnoAtual: 0,
+    seedPartida,
+    idArquitetura,
+    estado,
+    perfil,
+    metricasRun,
+    historicoComandos: [],
+  });
+  SESSOES_JOGO_MCP.set(sessaoId, registroSessao);
+
+  const hudAscii = renderizarHudAsciiBiofoil(estado);
+  const viewModel = projetarViewModelWireframe(estado);
+  const comandosPermitidos = ESQUEMA_15_COMANDOS_85A
+    .filter((c) => c.fasesPermitidas.includes(estado.meta.faseJogo))
+    .map((c) => c.tipo);
+
+  const dados = {
+    canalPermissao: 'AUTORIZADO',
+    status: 'PARTIDA_INICIADA',
+    sessaoId,
+    turnoAtual: 0,
+    faseJogo: estado.meta.faseJogo,
+    setorNumero,
+    idArquitetura,
+    comandosPermitidosCountN4: comandosPermitidos.length,
+    comandosPermitidos,
+    hudAscii,
+    metricasRun,
+    perfil,
+    estado,
+    viewModel,
+  };
+
+  return formatarSaidaFerramenta(dados, hudAscii, formato, false);
+}
+
+/**
+ * 10. Ferramenta Domínio C: Executar ação de jogo (comandos 8.5.A, travessia de mapa, loja, eventos, ticks e saque de vitória).
+ */
+export function executarAcaoJogoMcp(params = {}, opcoesDebug = {}) {
+  const sessaoId = String(params.sessaoId ?? 'partida-principal');
+  const formato = params.response_format ?? 'markdown';
+  const sessao = SESSOES_JOGO_MCP.get(sessaoId);
+
+  if (!sessao) {
+    return formatarSaidaFerramenta(
+      {
+        canalPermissao: 'AUTORIZADO',
+        status: 'NAO_ENCONTRADO',
+        marcadorExplicito: 'SESSAO_JOGO_NAO_ENCONTRADA',
+        sessaoId,
+      },
+      `### Erro: Sessão \`${sessaoId}\` não encontrada. Chame \`biofoil_jogar_iniciar_partida\` primeiro.`,
+      formato,
+      true
+    );
+  }
+
+  let estadoAtual = sessao.estado;
+  const estadoAnterior = estadoAtual;
+  let metricasRun = { ...sessao.metricasRun };
+  let perfilAtual = sessao.perfil;
+  const historicoNovos = [];
+  const resultadosComandos = [];
+  const eventosTransicao = [];
+
+  // 1. Ações especiais de conveniência fora dos 15 comandos (Digestão 2:1, Sair da Loja, Avançar Setor)
+  if (params.acaoEspecial) {
+    const acaoEsp = String(params.acaoEspecial);
+    if (acaoEsp === 'DIGESTAO_ENZIMATICA') {
+      if (estadoAtual.meta.faseJogo !== 'LOJA') {
+        resultadosComandos.push({
+          tipo: 'DIGESTAO_ENZIMATICA',
+          aceito: false,
+          marcadorRejeicao: 'REJEITADO_FASE_INVALIDA',
+        });
+      } else {
+        const moedaOrigem = String(params.moedaOrigemDigestao ?? 'SUCATA');
+        const lotes = Math.max(1, Number(params.lotesDigestao ?? 1));
+        const carteira = sincronizarCarteiraPartida(estadoAtual);
+        try {
+          const convertida = converterMoedaDigestaoEnzimatica(carteira, moedaOrigem, lotes);
+          const clone = structuredClone(estadoAtual);
+          clone.economia = { ...clone.economia, ...convertida };
+          clone.recursos = { ...clone.recursos, ...convertida };
+          estadoAtual = congelarProfundo(clone);
+          resultadosComandos.push({
+            tipo: 'DIGESTAO_ENZIMATICA',
+            aceito: true,
+            marcadorRejeicao: null,
+          });
+          eventosTransicao.push(`DIGESTAO_2_PARA_1:${moedaOrigem}x${lotes}`);
+        } catch {
+          resultadosComandos.push({
+            tipo: 'DIGESTAO_ENZIMATICA',
+            aceito: false,
+            marcadorRejeicao: 'PRECONDICAO_NAO_ATENDIDA',
+          });
+        }
+      }
+    } else if (acaoEsp === 'SAIR_DA_LOJA') {
+      if (estadoAtual.meta.faseJogo === 'LOJA') {
+        const clone = structuredClone(estadoAtual);
+        clone.meta.faseJogo = 'MAPA';
+        estadoAtual = congelarProfundo(clone);
+        resultadosComandos.push({ tipo: 'SAIR_DA_LOJA', aceito: true, marcadorRejeicao: null });
+        eventosTransicao.push('TR_5B_SAIR_LOJA');
+      } else {
+        resultadosComandos.push({
+          tipo: 'SAIR_DA_LOJA',
+          aceito: false,
+          marcadorRejeicao: 'REJEITADO_FASE_INVALIDA',
+        });
+      }
+    } else if (acaoEsp === 'AVANCAR_PROXIMO_SETOR') {
+      const novoSetor = Math.min(8, (estadoAtual.mapaSetorial?.setorNumero ?? 1) + 1);
+      const clone = structuredClone(estadoAtual);
+      const novoMapa = gerarMapaSetorial(clone.meta.seedPartida, novoSetor);
+      clone.mapaSetorial = {
+        ...clone.mapaSetorial,
+        ...structuredClone(novoMapa),
+        setorNumero: novoSetor,
+        noAtualId: novoMapa.nos[0]?.id ?? 'NO_0_ENTRADA',
+        relogioHoras: 0,
+        relogioSetorHoras: 0,
+        frenteCorporacaoMn: 0,
+      };
+      if (novoSetor === 8) {
+        clone.meta.faseJogo = 'COMBATE';
+        clone.alvoCombate = structuredClone(criarEstadoChefeDraga(1));
+        eventosTransicao.push('TR_8_CHEGADA_SETOR_8_DRAGA_FASE_1');
+      } else {
+        clone.meta.faseJogo = 'MAPA';
+        clone.alvoCombate.ativo = false;
+        eventosTransicao.push(`TR_8_TROCAR_SETOR:${novoSetor}`);
+      }
+      metricasRun.setorNumeroAlcanceMaxNestaRun = Math.max(
+        metricasRun.setorNumeroAlcanceMaxNestaRun,
+        novoSetor
+      );
+      estadoAtual = congelarProfundo(clone);
+      resultadosComandos.push({ tipo: 'AVANCAR_PROXIMO_SETOR', aceito: true, marcadorRejeicao: null });
+    }
+  }
+
+  // 2. Despacho dos comandos atômicos da Seção 8.5.A
+  const comandos = Array.isArray(params.comandos) ? params.comandos : [];
+  for (const cmdBruto of comandos) {
+    let cmd = cmdBruto;
+    if (cmd.tipo === 'ESCOLHER_OPCAO_EVENTO' && !cmd.payload?.noMapa) {
+      const noAtual =
+        estadoAtual.mapaSetorial?.eventoAtivoNo ??
+        (estadoAtual.mapaSetorial?.nos ?? []).find(
+          (n) => n.id === estadoAtual.mapaSetorial?.noAtualId
+        );
+      if (noAtual) {
+        cmd = {
+          ...cmd,
+          payload: {
+            ...(cmd.payload ?? {}),
+            noMapa: noAtual,
+            idEvento: noAtual.idTemplateEvento,
+            categoriaEvento: noAtual.tipoNo,
+          },
+        };
+      }
+    }
+
+    const res = despacharComandoUi(estadoAtual, cmd);
+    estadoAtual = res.estado;
+    resultadosComandos.push({
+      tipo: cmd.tipo,
+      aceito: res.aceito,
+      marcadorRejeicao: res.marcadorRejeicao,
+      cueEmitido: res.cueEmitido,
+    });
+    historicoNovos.push({
+      turno: sessao.turnoAtual + 1,
+      comando: cmd,
+      aceito: res.aceito,
+    });
+
+    // Se VIAJAR_NO_MAPA foi aceito, engatilha o encontro do nó de destino automaticamente
+    if (res.aceito && cmd.tipo === 'VIAJAR_NO_MAPA') {
+      const idDest = cmd.payload?.idNoDestino ?? cmd.idNoDestino;
+      const noDest = (estadoAtual.mapaSetorial?.nos ?? []).find((n) => n.id === idDest);
+      const setorAtual = estadoAtual.mapaSetorial?.setorNumero ?? 1;
+      const clone = structuredClone(estadoAtual);
+
+      if (noDest?.tipoNo === 'SAIDA') {
+        if (setorAtual < 8) {
+          const proxSetor = setorAtual + 1;
+          const novoMapa = gerarMapaSetorial(clone.meta.seedPartida, proxSetor);
+          clone.mapaSetorial = {
+            ...clone.mapaSetorial,
+            ...structuredClone(novoMapa),
+            setorNumero: proxSetor,
+            noAtualId: novoMapa.nos[0]?.id ?? 'NO_0_ENTRADA',
+            relogioHoras: 0,
+            relogioSetorHoras: 0,
+            frenteCorporacaoMn: 0,
+          };
+          metricasRun.setorNumeroAlcanceMaxNestaRun = Math.max(
+            metricasRun.setorNumeroAlcanceMaxNestaRun,
+            proxSetor
+          );
+          if (proxSetor === 8) {
+            clone.meta.faseJogo = 'COMBATE';
+            clone.alvoCombate = structuredClone(criarEstadoChefeDraga(1));
+            eventosTransicao.push('TR_8_CHEGADA_SETOR_8_DRAGA_FASE_1');
+          } else {
+            clone.meta.faseJogo = 'MAPA';
+            eventosTransicao.push(`TR_8_TROCAR_SETOR:${proxSetor}`);
+          }
+        }
+      } else if (noDest?.engolidoCorporacao || noDest?.sosExpirado || noDest?.tipoNo === 'COMBATE') {
+        clone.meta.faseJogo = 'COMBATE';
+        const classeAlvo =
+          noDest?.classeInimigo ?? (idDest.includes('MONSTRO') ? 'MONSTRO_MARINHO' : 'BARCO_HUMANO');
+        clone.alvoCombate = criarAlvoEscaladoPorSetor(setorAtual, classeAlvo);
+        eventosTransicao.push(`TR_1_INICIAR_NO_COMBATE:${idDest}`);
+      } else if (noDest?.tipoNo === 'LOJA') {
+        clone.meta.faseJogo = 'LOJA';
+        clone.alvoCombate.ativo = false;
+        clone.estoqueLojaAtual = structuredClone(
+          gerarEstoqueLojaForja(clone.meta.seedPartida, setorAtual, idDest)
+        );
+        eventosTransicao.push(`TR_5A_ENTRAR_LOJA:${idDest}`);
+      } else if (
+        noDest?.tipoNo === 'SOS' ||
+        noDest?.tipoNo === 'EXPLORACAO' ||
+        noDest?.tipoNo === 'PERIGO'
+      ) {
+        clone.meta.faseJogo = 'EVENTO';
+        clone.alvoCombate.ativo = false;
+        clone.mapaSetorial.eventoAtivoNo = structuredClone(noDest);
+        eventosTransicao.push(`TR_2_ABRIR_EVENTO_NO:${idDest}`);
+      }
+      estadoAtual = congelarProfundo(clone);
+    }
+
+    // Se ESCOLHER_OPCAO_EVENTO levou a COMBATE, instancia o inimigo do encontro
+    if (res.aceito && cmd.tipo === 'ESCOLHER_OPCAO_EVENTO') {
+      if (estadoAtual.meta.faseJogo === 'COMBATE' && !estadoAtual.alvoCombate?.ativo) {
+        const clone = structuredClone(estadoAtual);
+        const setorAtual = clone.mapaSetorial?.setorNumero ?? 1;
+        clone.alvoCombate = criarAlvoEscaladoPorSetor(setorAtual, 'BARCO_HUMANO');
+        estadoAtual = congelarProfundo(clone);
+        eventosTransicao.push('TR_3_EVENTO_PARA_COMBATE');
+      } else if (estadoAtual.meta.faseJogo === 'MAPA') {
+        eventosTransicao.push('TR_4_EVENTO_PARA_MAPA');
+      }
+    }
+  }
+
+  // 3. Avanço de ticks reais se estiver em COMBATE
+  const passosTick = Math.min(200, Math.max(0, Number(params.passosTick ?? 0)));
+  const dtSeg = Math.min(5.0, Math.max(0.05, Number(params.dtSeg ?? 0.25)));
+  let ticksExecutados = 0;
+
+  for (let i = 0; i < passosTick; i += 1) {
+    if (estadoAtual.meta.faseJogo !== 'COMBATE') break;
+    ticksExecutados += 1;
+    estadoAtual = avancarTickCombateCompleto(estadoAtual, dtSeg);
+    estadoAtual = avancarTickBiomaEColmeiaViva(estadoAtual, dtSeg);
+
+    // Dispara armas dorsais carregadas que tenham salaAlvoId definida
+    for (let idxSlot = 0; idxSlot < (estadoAtual.naveJogador.armasAtivas ?? []).length; idxSlot += 1) {
+      const slot = estadoAtual.naveJogador.armasAtivas[idxSlot];
+      const arma = slot?.arma !== undefined ? slot.arma : slot;
+      if (
+        arma &&
+        arma.salaAlvoId !== null &&
+        arma.salaAlvoId !== undefined &&
+        Number(arma.progressoRecargaSeg ?? 0) >= Number(arma.tempoRecargaBaseSeg ?? 9)
+      ) {
+        estadoAtual = resolverImpactoNoAlvo(estadoAtual, {
+          tipo: 'DISPARO_ARMA',
+          salaAlvoId: arma.salaAlvoId,
+          chassiId: arma.chassiId ?? arma.id,
+          danoCasco: arma.danoCasco ?? 1,
+          danoSistema: arma.danoSistema ?? 1,
+          abreRombo: Number(arma.chanceFuroPct ?? 0) > 0,
+          municaoCusto: arma.municaoCusto ?? arma.municao ?? 0,
+          orgaosEnxertados: arma.orgaosEnxertados ?? [],
+        });
+        const cloneRec = structuredClone(estadoAtual);
+        const sClone = cloneRec.naveJogador.armasAtivas[idxSlot];
+        if (sClone?.arma) sClone.arma.progressoRecargaSeg = 0.0;
+        else if (sClone) sClone.progressoRecargaSeg = 0.0;
+        estadoAtual = congelarProfundo(cloneRec);
+      }
+    }
+
+    if (estadoAtual.alvoCombate?.ativo) {
+      if (estadoAtual.alvoCombate.faseChefe) {
+        estadoAtual = avancarTickChefeDraga(estadoAtual, dtSeg);
+      } else {
+        estadoAtual = avancarTickIaInimiga(estadoAtual, dtSeg);
+      }
+    }
+
+    if (avaliarCondicaoDeVitoria(estadoAtual).encerrado) break;
+  }
+
+  // 4. Verifica derrota do jogador ou condição de vitória em combate
+  let vitoria = { encerrado: false, modalidade: null, recompensa: null, animaisResgatadosIds: [] };
+  if (estadoAtual.meta.faseJogo === 'COMBATE') {
+    const aliadosVivos = (estadoAtual.naveJogador.tripulacao ?? []).filter((t) => t.hpAtual > 0).length;
+    if (estadoAtual.naveJogador.hpCascoAtual <= 0 || aliadosVivos === 0) {
+      const clone = structuredClone(estadoAtual);
+      clone.meta.faseJogo = 'FIM_DE_RUN';
+      clone.meta.resultadoRun = 'DERROTA_PERMADEATH';
+      clone.alvoCombate.ativo = false;
+      estadoAtual = congelarProfundo(clone);
+      eventosTransicao.push('TR_7A_DERROTA_EM_COMBATE');
+    } else {
+      vitoria = avaliarCondicaoDeVitoria(estadoAtual);
+      if (vitoria.encerrado) {
+        const faseChefe = estadoAtual.alvoCombate?.faseChefe ?? null;
+        if (faseChefe === 1 || faseChefe === 2) {
+          estadoAtual = transicionarFaseChefeDraga(estadoAtual);
+          eventosTransicao.push(`TR_9_PROXIMA_FASE_CHEFE:${faseChefe}->${faseChefe + 1}`);
+        } else if (faseChefe === 3) {
+          const clone = structuredClone(estadoAtual);
+          clone.meta.faseJogo = 'FIM_DE_RUN';
+          clone.meta.resultadoRun = 'VITORIA_FINAL_DRAGA';
+          clone.alvoCombate.ativo = false;
+          estadoAtual = congelarProfundo(clone);
+          eventosTransicao.push('TR_7B_VITORIA_FINAL');
+        } else {
+          const clone = structuredClone(estadoAtual);
+          const carteira = sincronizarCarteiraPartida(clone);
+          if (opcoesDebug.ignorarSaquePosVitoria !== true && vitoria.recompensa) {
+            carteira.sucata += Number(vitoria.recompensa.sucata ?? 0);
+            carteira.biomassa += Number(vitoria.recompensa.biomassa ?? 0);
+            carteira.combustivel += Number(vitoria.recompensa.combustivel ?? 0);
+            carteira.municao += Number(vitoria.recompensa.municao ?? 0);
+          }
+          clone.economia = { ...clone.economia, ...carteira };
+          clone.recursos = { ...clone.recursos, ...carteira };
+          clone.meta.faseJogo = 'MAPA';
+          clone.alvoCombate.ativo = false;
+          // Resgata tripulantes a bordo do inimigo de volta para a Câmara 7
+          clone.naveJogador.tripulacao = clone.naveJogador.tripulacao
+            .filter((t) => t.hpAtual > 0)
+            .map((t) =>
+              t.localizacao === 'BORDO_INIMIGO'
+                ? { ...t, localizacao: 'NAVE_JOGADOR', camaraAtualId: 7, salaInimigaId: null }
+                : t
+            );
+          if (vitoria.modalidade === 'CAPTURA_INTACTA') {
+            metricasRun.barcosCapturadosIntactosNestaRun += 1;
+          }
+          if (vitoria.modalidade === 'ABATE_CIRURGICO') {
+            metricasRun.orgaosIntactosExtraidosNestaRun += 1;
+          }
+          estadoAtual = congelarProfundo(clone);
+          eventosTransicao.push(`TR_6_ENCERRAR_COMBATE_VIVO:${vitoria.modalidade}`);
+        }
+      }
+    }
+  }
+
+  const setorAtual = estadoAtual.mapaSetorial?.setorNumero ?? 1;
+  perfilAtual = atualizarPerfilComMetricasRun(perfilAtual, {
+    setorNumero: setorAtual,
+    vitoriaCombate: vitoria.encerrado,
+    danoCascoCausadoAoInimigoNestaLuta:
+      vitoria.modalidade === 'CAPTURA_INTACTA' || vitoria.modalidade === 'ABATE_CIRURGICO' ? 0 : 10,
+    ...metricasRun,
+  });
+
+  const novoTurno = sessao.turnoAtual + 1;
+  const novaSessao = congelarProfundo({
+    ...sessao,
+    turnoAtual: novoTurno,
+    estado: estadoAtual,
+    perfil: perfilAtual,
+    metricasRun,
+    historicoComandos: [...sessao.historicoComandos, ...historicoNovos],
+  });
+  SESSOES_JOGO_MCP.set(sessaoId, novaSessao);
+
+  const cuesAtivos = avaliarCuesSonorosAtivos(
+    estadoAnterior,
+    estadoAtual,
+    resultadosComandos[resultadosComandos.length - 1] ?? null
+  );
+  const hudAscii = renderizarHudAsciiBiofoil(estadoAtual);
+  const viewModel = projetarViewModelWireframe(estadoAtual);
+
+  const dados = {
+    canalPermissao: 'AUTORIZADO',
+    status: 'OK',
+    sessaoId,
+    turnoAtual: novoTurno,
+    faseJogo: estadoAtual.meta.faseJogo,
+    comandosProcessadosN4: resultadosComandos.length,
+    ticksAvancadosN4: ticksExecutados,
+    resultadosComandos,
+    eventosTransicao,
+    vitoria,
+    cuesAtivosIds: cuesAtivos.map((c) => c.id),
+    recursosAtuais: sincronizarCarteiraPartida(estadoAtual),
+    metricasRun,
+    perfil: perfilAtual,
+    hudAscii,
+    estado: estadoAtual,
+    viewModel,
+  };
+
+  return formatarSaidaFerramenta(dados, hudAscii, formato, false);
+}
+
+/**
+ * 11. Ferramenta Domínio C: Consultar o HUD 16:9, rotas do mapa, loja e comandos disponíveis da sessão ativa.
+ */
+export function consultarHudSessaoMcp(params = {}) {
+  const sessaoId = String(params.sessaoId ?? 'partida-principal');
+  const formato = params.response_format ?? 'markdown';
+  const sessao = SESSOES_JOGO_MCP.get(sessaoId);
+
+  if (!sessao) {
+    return formatarSaidaFerramenta(
+      {
+        canalPermissao: 'AUTORIZADO',
+        status: 'NAO_ENCONTRADO',
+        marcadorExplicito: 'SESSAO_JOGO_NAO_ENCONTRADA',
+        sessaoId,
+      },
+      `### Erro: Sessão \`${sessaoId}\` não encontrada.`,
+      formato,
+      true
+    );
+  }
+
+  const estado = sessao.estado;
+  const hudAscii = renderizarHudAsciiBiofoil(estado);
+  const viewModel = projetarViewModelWireframe(estado);
+  const comandosPermitidos = ESQUEMA_15_COMANDOS_85A
+    .filter((c) => c.fasesPermitidas.includes(estado.meta.faseJogo))
+    .map((c) => c.tipo);
+  const noAtualId = estado.mapaSetorial?.noAtualId ?? 'NO_0_ENTRADA';
+  const rotasSaindo = (estado.mapaSetorial?.rotas ?? []).filter((r) => r.origemId === noAtualId);
+
+  const dados = {
+    canalPermissao: 'AUTORIZADO',
+    status: 'OK',
+    sessaoId,
+    turnoAtual: sessao.turnoAtual,
+    faseJogo: estado.meta.faseJogo,
+    setorNumero: estado.mapaSetorial?.setorNumero ?? 1,
+    noAtualId,
+    rotasDisponiveisCountN4: rotasSaindo.length,
+    rotasDisponiveis: rotasSaindo,
+    comandosPermitidosCountN4: comandosPermitidos.length,
+    comandosPermitidos,
+    catalogoLojaDisponivel: estado.meta.faseJogo === 'LOJA' ? CATALOGO_LOJA_56B : [],
+    recursosAtuais: sincronizarCarteiraPartida(estado),
+    metricasRun: sessao.metricasRun,
+    perfil: sessao.perfil,
+    hudAscii,
+    viewModel,
+  };
+
+  return formatarSaidaFerramenta(dados, hudAscii, formato, false);
+}
+
+/**
+ * 12. Ferramenta Domínio C: Gerenciar sessões de jogo (LISTAR, EXPORTAR_REPLAY, REMOVER).
+ */
+export function gerenciarSessoesJogoMcp(params = {}) {
+  const acao = String(params.acao ?? 'LISTAR');
+  const sessaoId = String(params.sessaoId ?? 'partida-principal');
+  const formato = params.response_format ?? 'markdown';
+
+  if (acao === 'REMOVER') {
+    const existia = SESSOES_JOGO_MCP.delete(sessaoId);
+    const dados = {
+      canalPermissao: 'AUTORIZADO',
+      status: 'OK',
+      acao: 'REMOVER',
+      sessaoId,
+      removida: existia,
+      sessoesAtivasN4: SESSOES_JOGO_MCP.size,
+    };
+    return formatarSaidaFerramenta(
+      dados,
+      `### Sessão \`${sessaoId}\` ${existia ? 'removida' : 'já inexistente'} (ativas: \`${SESSOES_JOGO_MCP.size}\`)`,
+      formato,
+      false
+    );
+  }
+
+  if (acao === 'EXPORTAR_REPLAY') {
+    const sessao = SESSOES_JOGO_MCP.get(sessaoId);
+    if (!sessao) {
+      return formatarSaidaFerramenta(
+        {
+          canalPermissao: 'AUTORIZADO',
+          status: 'NAO_ENCONTRADO',
+          marcadorExplicito: 'SESSAO_JOGO_NAO_ENCONTRADA',
+          sessaoId,
+        },
+        `### Erro: Sessão \`${sessaoId}\` não encontrada para exportar replay.`,
+        formato,
+        true
+      );
+    }
+    const dados = {
+      canalPermissao: 'AUTORIZADO',
+      status: 'OK',
+      acao: 'EXPORTAR_REPLAY',
+      sessaoId,
+      seedPartida: sessao.seedPartida,
+      idArquitetura: sessao.idArquitetura,
+      turnosExecutadosN4: sessao.turnoAtual,
+      comandosReplayCountN4: sessao.historicoComandos.length,
+      historicoComandos: sessao.historicoComandos,
+      logDeterministicoMotor: sessao.estado.logDeterministico ?? [],
+    };
+    return formatarSaidaFerramenta(
+      dados,
+      `### Replay Determinístico da Sessão \`${sessaoId}\` (\`${sessao.historicoComandos.length}\` comandos em \`${sessao.turnoAtual}\` turnos)`,
+      formato,
+      false
+    );
+  }
+
+  const lista = [...SESSOES_JOGO_MCP.values()].map((s) => ({
+    sessaoId: s.sessaoId,
+    seedPartida: s.seedPartida,
+    idArquitetura: s.idArquitetura,
+    turnoAtual: s.turnoAtual,
+    faseJogo: s.estado.meta.faseJogo,
+    setorNumero: s.estado.mapaSetorial?.setorNumero ?? 1,
+    hpCascoAtual: s.estado.naveJogador.hpCascoAtual,
+  }));
+
+  const dados = {
+    canalPermissao: 'AUTORIZADO',
+    status: 'OK',
+    acao: 'LISTAR',
+    sessoesAtivasN4: lista.length,
+    sessoes: lista,
+  };
+
+  const md = [
+    `### Sessões de Jogo Bio-Foil Ativas (\`[N4] total=${lista.length}\`)`,
+    ...(lista.length > 0
+      ? lista.map(
+          (s) =>
+            `- \`${s.sessaoId}\`: \`${s.idArquitetura}\` | Fase: \`${s.faseJogo}\` | Setor \`${s.setorNumero}/8\` | Casco \`${s.hpCascoAtual}\` | Turno \`${s.turnoAtual}\``
+        )
+      : ['- Nenhuma sessão ativa. Inicie uma com `biofoil_jogar_iniciar_partida`.']),
+  ].join('\n');
+
+  return formatarSaidaFerramenta(dados, md, formato, false);
+}
+
+/**
+ * Catálogo completo das 12 ferramentas MCP (4 Domínio A + 4 Domínio B + 4 Domínio C) com JSON Schema estrito.
  */
 export const CATALOGO_FERRAMENTAS_MCP = Object.freeze([
   {
@@ -1098,6 +1886,132 @@ export const CATALOGO_FERRAMENTAS_MCP = Object.freeze([
       openWorldHint: false,
     },
   },
+  {
+    name: 'biofoil_jogar_iniciar_partida',
+    title: 'Jogar Bio-Foil: Iniciar ou Reiniciar Partida Interativa',
+    description:
+      'Inicia uma sessão jogável persistente em memória do Bio-Foil (Setor 1 a 8) com uma das 5 bio-naves, gerando o mapa procedural, o perfil de desbloqueios e o HUD ASCII 16:9.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessaoId: { type: 'string', default: 'partida-principal' },
+        seedPartida: { type: 'string', default: 'biofoil-play-seed-001' },
+        idArquitetura: {
+          type: 'string',
+          enum: ['CARCACA_ALFA', 'MANTA_VOLT', 'COURACA_LIMIAR', 'SOMBRA_ABISSAL', 'COLMEIA_VIVA'],
+          default: 'CARCACA_ALFA',
+        },
+        setorNumero: { type: 'integer', minimum: 1, maximum: 8, default: 1 },
+        faseInicial: {
+          type: 'string',
+          enum: ['MAPA', 'COMBATE', 'LOJA'],
+          default: 'MAPA',
+        },
+        classeInimigoInicial: {
+          type: 'string',
+          enum: ['BARCO_HUMANO', 'MONSTRO_MARINHO', 'CHEFE_DRAGA'],
+          default: 'BARCO_HUMANO',
+        },
+        response_format: { type: 'string', enum: ['markdown', 'json'], default: 'markdown' },
+      },
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: 'biofoil_jogar_executar_acao',
+    title: 'Jogar Bio-Foil: Executar Turno / Comandos Táticos e Avançar Ticks',
+    description:
+      'Executa qualquer combinação dos 15 Comandos Atômicos (8.5.A) e/ou ações especiais (DIGESTAO_ENZIMATICA, SAIR_DA_LOJA, AVANCAR_PROXIMO_SETOR) na sessão ativa, avança o relógio de combate, coleta saque de vitória e retorna o HUD ASCII 16:9 atualizado.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessaoId: { type: 'string', default: 'partida-principal' },
+        comandos: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['tipo'],
+            properties: {
+              tipo: { type: 'string' },
+              payload: { type: 'object' },
+            },
+          },
+          default: [],
+        },
+        acaoEspecial: {
+          type: 'string',
+          enum: ['DIGESTAO_ENZIMATICA', 'SAIR_DA_LOJA', 'AVANCAR_PROXIMO_SETOR'],
+        },
+        moedaOrigemDigestao: {
+          type: 'string',
+          enum: ['SUCATA', 'BIOMASSA'],
+          default: 'SUCATA',
+        },
+        lotesDigestao: { type: 'integer', minimum: 1, maximum: 50, default: 1 },
+        passosTick: { type: 'integer', minimum: 0, maximum: 200, default: 0 },
+        dtSeg: { type: 'number', minimum: 0.05, maximum: 5.0, default: 0.25 },
+        response_format: { type: 'string', enum: ['markdown', 'json'], default: 'markdown' },
+      },
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: 'biofoil_jogar_consultar_hud',
+    title: 'Jogar Bio-Foil: Consultar HUD 16:9, Mapa, Loja e Status da Sessão',
+    description:
+      'Inspeciona sem mutar o estado atual da sessão de jogo, retornando o HUD ASCII 16:9, rotas disponíveis no mapa, ofertas da loja, canal L3 do alvo e progresso de desbloqueio das 5 carcaças.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sessaoId: { type: 'string', default: 'partida-principal' },
+        response_format: { type: 'string', enum: ['markdown', 'json'], default: 'markdown' },
+      },
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: 'biofoil_jogar_gerenciar_sessoes',
+    title: 'Jogar Bio-Foil: Listar Sessões, Exportar Replay ou Remover Sessão',
+    description:
+      'Gerencia as sessões interativas de jogo no servidor MCP: lista partidas em andamento, exporta o replay determinístico de comandos ou encerra/remove uma sessão.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        acao: {
+          type: 'string',
+          enum: ['LISTAR', 'EXPORTAR_REPLAY', 'REMOVER'],
+          default: 'LISTAR',
+        },
+        sessaoId: { type: 'string', default: 'partida-principal' },
+        response_format: { type: 'string', enum: ['markdown', 'json'], default: 'markdown' },
+      },
+      additionalProperties: false,
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
 ]);
 
 export const CATALOGO_RECURSOS_MCP = Object.freeze([
@@ -1119,6 +2033,12 @@ export const CATALOGO_RECURSOS_MCP = Object.freeze([
     description: 'Extração estruturada da Tabela 6.1 e da Matriz de Interações 6.2.',
     mimeType: 'application/json',
   },
+  {
+    uri: 'biofoil://jogo/manual-interativo',
+    name: 'Manual Interativo de Jogo do Bio-Foil via MCP (Comandos, Física de Foil e Táticas)',
+    description: 'Guia prático para jogar Bio-Foil via biofoil_jogar_*, cobrindo os 15 comandos atômicos, estados de voo e vitória.',
+    mimeType: 'text/markdown',
+  },
 ]);
 
 export const CATALOGO_PROMPTS_MCP = Object.freeze([
@@ -1134,6 +2054,14 @@ export const CATALOGO_PROMPTS_MCP = Object.freeze([
     description: 'Roteiro para testar a tomada de decisão de um agente tático no Bio-Foil.',
     arguments: [
       { name: 'idArquitetura', description: 'Carcaça da bio-nave (ex.: CARCACA_ALFA)', required: false },
+    ],
+  },
+  {
+    name: 'jogar_partida_biofoil',
+    description: 'Inicia e conduz uma partida interativa completa de Bio-Foil exibindo o HUD 16:9 a cada turno.',
+    arguments: [
+      { name: 'idArquitetura', description: 'Carcaça escolhida (CARCACA_ALFA, MANTA_VOLT, COURACA_LIMIAR, SOMBRA_ABISSAL, COLMEIA_VIVA)', required: false },
+      { name: 'seedPartida', description: 'Seed determinística da run', required: false },
     ],
   },
 ]);
@@ -1185,7 +2113,7 @@ export function invocarFerramentaMcp(nomeFerramenta, args = {}, opcoesDebug = {}
         marcadorExplicito: 'FERRAMENTA_MCP_INEXISTENTE',
         nomeFerramenta,
       },
-      `### Erro: Ferramenta MCP inexistente: \`${nomeFerramenta}\`. Use \`tools/list\` para ver as 8 ferramentas disponíveis.`,
+      `### Erro: Ferramenta MCP inexistente: \`${nomeFerramenta}\`. Use \`tools/list\` para ver as 12 ferramentas disponíveis.`,
       'markdown',
       true
     );
@@ -1224,6 +2152,14 @@ export function invocarFerramentaMcp(nomeFerramenta, args = {}, opcoesDebug = {}
       return inspecionarAlvoL3Mcp(a, opcoesDebug);
     case 'agent_test_avaliar_politica_agente':
       return avaliarPoliticaAgenteMcp(a, opcoesDebug);
+    case 'biofoil_jogar_iniciar_partida':
+      return iniciarPartidaJogavelMcp(a);
+    case 'biofoil_jogar_executar_acao':
+      return executarAcaoJogoMcp(a, opcoesDebug);
+    case 'biofoil_jogar_consultar_hud':
+      return consultarHudSessaoMcp(a);
+    case 'biofoil_jogar_gerenciar_sessoes':
+      return gerenciarSessoesJogoMcp(a);
     default:
       throw new Error(`Ferramenta não mapeada: ${nomeFerramenta}`);
   }
@@ -1244,6 +2180,23 @@ export function lerRecursoMcp(uri, diretorioRaiz = DIRETORIO_RAIZ_PADRAO) {
     return congelarProfundo({
       contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(ssot, null, 2) }],
     });
+  }
+  if (uri === 'biofoil://jogo/manual-interativo') {
+    const manual = [
+      '# Manual Interativo de Jogo — Bio-Foil (MCP)',
+      '',
+      '## Fluxo para Jogar',
+      '1. `biofoil_jogar_iniciar_partida`: Cria a sessão (`sessaoId`), gera o Setor 1 e exibe o HUD 16:9.',
+      '2. `biofoil_jogar_executar_acao`: Envia `comandos` (da Tabela 8.5.A) e/ou `passosTick` para avançar o combate em tempo real pausável.',
+      '3. `biofoil_jogar_consultar_hud`: Lê o HUD 16:9, rotas do mapa e ofertas da loja sem alterar o estado.',
+      '4. `biofoil_jogar_gerenciar_sessoes`: Lista sessões, exporta replay determinístico ou reinicia partida.',
+      '',
+      '## Regras de Ouro da Física Bio-Hidráulica',
+      '- Mantenha `Sustentação S_atual >= Peso P_total` para voar `1_NO_FOIL` (40% esquiva).',
+      '- Se cair em `2_TOUCHDOWN` (0% esquiva, recarga -25%), as Válvulas Externas travam por pressão hidrostática: infle o Baiacu (`ATIVAR_BAIACU`) para vedar rombos e use a Bomba Branquial.',
+      '- Respeite o limiar de cavitação (`62.5 kg` de água total nas 8 câmaras) ao drenar no ar.',
+    ].join('\n');
+    return congelarProfundo({ contents: [{ uri, mimeType: 'text/markdown', text: manual }] });
   }
   throw new Error(`[MCP Resource] URI não encontrada: ${uri}`);
 }
@@ -1274,6 +2227,22 @@ export function obterPromptMcp(name, args = {}) {
           content: {
             type: 'text',
             text: `Inicie o cenário com agent_test_iniciar_cenario_biofoil (idArquitetura="${arq}"), inspecione o alvo com agent_test_inspecionar_alvo_l3, simule passos com agent_test_simular_passo_agente e rode agent_test_avaliar_politica_agente.`,
+          },
+        },
+      ],
+    });
+  }
+  if (name === 'jogar_partida_biofoil') {
+    const arq = args.idArquitetura ?? 'CARCACA_ALFA';
+    const seed = args.seedPartida ?? 'biofoil-play-seed-001';
+    return congelarProfundo({
+      description: `Jogar partida interativa de Bio-Foil com ${arq} (seed: ${seed})`,
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: `Inicie uma partida jogável com biofoil_jogar_iniciar_partida (idArquitetura="${arq}", seedPartida="${seed}"), mostre o HUD ASCII 16:9 e conduza a jornada pelos setores usando biofoil_jogar_executar_acao e biofoil_jogar_consultar_hud.`,
           },
         },
       ],

@@ -1396,6 +1396,22 @@
         "tests/02-hook-ambiente.test.mjs"
       ],
       "falhaEsperada": "[MUT-MCP-05 / Regra Testes-Para-Tudo] Qualquer função exportada sem teste direto em tests/*.test.mjs deve reprovar"
+    },
+    {
+      "id": "MUT-88",
+      "arquivo": "scripts/mcp-testes-agentes.mjs",
+      "lei": "N1 / L1 (MUT-MCP-06)",
+      "descricao": "Ferramenta interativa biofoil_jogar_executar_acao deixa de creditar o saque de vitória (Sucata/Biomassa/Combustível/Munição) ao encerrar combate",
+      "trocas": [
+        {
+          "buscar": "          if (opcoesDebug.ignorarSaquePosVitoria !== true && vitoria.recompensa) {",
+          "substituir": "          if (false && opcoesDebug.ignorarSaquePosVitoria !== true && vitoria.recompensa) {"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-MCP-06 / Modo Jogo] executarAcaoJogoMcp deve creditar o saque de vitória (+12 Sucata Bruta no Setor 1) na carteira ao vencer combate"
     }
   ]
 }
