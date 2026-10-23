@@ -18,11 +18,24 @@ import { criarAlvoSetor1Canonico } from '../src/onda3-inimigos/ia-barco-monstro.
 import { inspecionarSalaAlvo } from '../src/onda2-combate/tick-tripulacao.mjs';
 import {
   ORCAMENTO_LAYOUT_NATIVO_85C,
+  PALETA_PIXEL_ART_BIOFOIL,
   projetarViewModelWireframe,
+  obterAtlasSpritesNativo,
+  rasterizarSpriteRgba,
+  renderizarViewModelNoCanvas2d,
+  escaparHtmlSeguro,
+  gerarCodigoJsClienteBiofoil,
+  gerarHtmlClienteJogavelBiofoil,
+  iniciarServidorClienteWebBiofoil,
 } from '../src/onda6-ui/presenter-wireframe.mjs';
 import {
   ESQUEMA_15_COMANDOS_85A,
+  COORDENADAS_GRADE_CAMARAS_16A,
   despacharComandoUi,
+  converterCoordenadaTelaParaNativa,
+  obterMapaHitboxesNativo,
+  calcularGhostPreviewTermometro,
+  traduzirInputDomParaComandoUi,
 } from '../src/onda6-ui/despacho-comandos.mjs';
 import {
   CARCACAS_PERFIL_85B,
@@ -32,7 +45,11 @@ import {
 } from '../src/onda6-ui/persistencia-perfil.mjs';
 import {
   CATALOGO_8_CUES_SONOROS_85C,
+  PERFIS_ACUSTICOS_WEB_AUDIO_85C,
   avaliarCuesSonorosAtivos,
+  construirPlanoGrafoWebAudio,
+  aplicarPlanoNoContextoWebAudio,
+  sintetizarBufferPcmCueTatico,
 } from '../src/onda6-ui/cues-audio.mjs';
 import {
   calcularPesoTotalNave as calcularPesoOraculo,
@@ -454,7 +471,7 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
   assert.equal(resTinta.estado.naveJogador.furtividadeAtivaSeg, 8.0);
   assert.equal(resTinta.estado.naveJogador.recargaFurtividadeSeg, 20.0);
 
-  // 6) LANCAR_ABORDAGEM (Couraça-Limiar com Caranguejo na Câmara 7)
+  // 6) LANCAR_ABORDAGEM (Couraça-Limiar com Caranguejo na Câmara 7: Nv 2 inicial = 9s, Nv 1 = 14s, valida IDs duplicados e blindagem térmica > 0)
   const estCouraca = congelarProfundo({
     ...structuredClone(criarEstadoInicialPartida('seed-ab', 'COURACA_LIMIAR')),
     alvoCombate: criarAlvoSetor1Canonico('BARCO_HUMANO'),
@@ -464,16 +481,64 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
     payload: { tripulantesIds: ['trip-caranguejo-1'], salaAlvoId: 1 },
   });
   assert.equal(resAbordOk.aceito, true);
-  assert.equal(resAbordOk.estado.naveJogador.recargaTuboAbordagemSeg, 15.0);
+  assert.equal(resAbordOk.estado.naveJogador.recargaTuboAbordagemSeg, 9.0);
   assert.equal(
     resAbordOk.estado.naveJogador.tripulacao.find((t) => t.id === 'trip-caranguejo-1').localizacao,
     'BORDO_INIMIGO'
   );
+
+  const copiaCouracaNv1 = structuredClone(estCouraca);
+  copiaCouracaNv1.naveJogador.camaras.find((c) => c.id === 7).barrasEnergiaAlocada = 1;
+  const resAbordNv1 = despacharComandoUi(congelarProfundo(copiaCouracaNv1), {
+    tipo: 'LANCAR_ABORDAGEM',
+    payload: { tripulantesIds: ['trip-caranguejo-1'], salaAlvoId: 1 },
+  });
+  assert.equal(resAbordNv1.aceito, true);
+  assert.equal(resAbordNv1.estado.naveJogador.recargaTuboAbordagemSeg, 14.0);
+
+  const resAbordDuplicado = despacharComandoUi(estCouraca, {
+    tipo: 'LANCAR_ABORDAGEM',
+    payload: { tripulantesIds: ['trip-caranguejo-1', 'trip-caranguejo-1'], salaAlvoId: 1 },
+  });
+  assert.equal(resAbordDuplicado.aceito, false);
+
+  const copiaBlindagemTermica = structuredClone(estCouraca);
+  copiaBlindagemTermica.alvoCombate.blindagemTermicaExternaPts = 3;
+  const resAbordBlindagem = despacharComandoUi(congelarProfundo(copiaBlindagemTermica), {
+    tipo: 'LANCAR_ABORDAGEM',
+    payload: { tripulantesIds: ['trip-caranguejo-1'], salaAlvoId: 1 },
+  });
+  assert.equal(resAbordBlindagem.aceito, false);
+
   const resAbordSalaInvalida = despacharComandoUi(estCouraca, {
     tipo: 'LANCAR_ABORDAGEM',
     payload: { tripulantesIds: ['trip-caranguejo-1'], salaAlvoId: 99 },
   });
   assert.equal(resAbordSalaInvalida.aceito, false);
+
+  // Validação de slotIndex negativo/não-inteiro e salaAlvoId inexistente em MIRAR_ARMA e ENXERTAR_ORGAO
+  assert.equal(
+    despacharComandoUi(estBeamTorp, { tipo: 'MIRAR_ARMA', payload: { slotIndex: -1, salaAlvoId: 1 } }).aceito,
+    false
+  );
+  assert.equal(
+    despacharComandoUi(estBeamTorp, { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 999 } }).aceito,
+    false
+  );
+  assert.equal(
+    despacharComandoUi(estBeamTorp, {
+      tipo: 'MIRAR_ARMA',
+      payload: { slotIndex: 0, trincaSalasIds: [1, 2, 999] },
+    }).aceito,
+    false
+  );
+  assert.equal(
+    despacharComandoUi(estadoLoja, {
+      tipo: 'ENXERTAR_ORGAO',
+      payload: { orgaoId: 'ELETRO_PLACA_ARRAIA', slotIndex: -1, acao: 'INSTALAR' },
+    }).aceito,
+    false
+  );
 
   // 7) ESCOLHER_OPCAO_EVENTO (Opções A, B e C em fase EVENTO)
   const estEvento = congelarProfundo({
@@ -494,7 +559,7 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
   assert.equal(resEvCPerigo.aceito, false);
   assert.equal(resEvCPerigo.marcadorRejeicao, 'BLOQUEADO_COMBATE_OBRIGATORIO');
 
-  // 8) COMPRAR_OU_VENDER_LOJA (compra de reparo, compra de tripulante e venda de arma/órgão) e ENXERTAR_ORGAO (REMOVER)
+  // 8) COMPRAR_OU_VENDER_LOJA (aceita tanto payload.operacao quanto payload.acao) e ENXERTAR_ORGAO (REMOVER)
   const copiaLojaRica = structuredClone(estadoLoja);
   copiaLojaRica.economia.sucata = 200;
   copiaLojaRica.economia.biomassa = 200;
@@ -503,7 +568,7 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
 
   const resReparoLoja = despacharComandoUi(estLojaRica, {
     tipo: 'COMPRAR_OU_VENDER_LOJA',
-    payload: { itemOuSistemaId: 'REPARO_CASCO_1HP', acao: 'COMPRAR' },
+    payload: { itemOuSistemaId: 'REPARO_CASCO_1HP', operacao: 'COMPRAR' },
   });
   assert.equal(resReparoLoja.aceito, true);
   assert.equal(resReparoLoja.estado.naveJogador.hpCascoAtual, 26);
@@ -517,7 +582,7 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
 
   const resVendaLoja = despacharComandoUi(estLojaRica, {
     tipo: 'COMPRAR_OU_VENDER_LOJA',
-    payload: { itemOuSistemaId: 'EMISSOR_ACUSTICO_I', acao: 'VENDER' },
+    payload: { itemOuSistemaId: 'EMISSOR_ACUSTICO_I', operacao: 'VENDER' },
   });
   assert.equal(resVendaLoja.aceito, true);
   assert.equal(resVendaLoja.estado.economia.sucata, 217);
@@ -565,12 +630,29 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
   );
   assert.equal(avaliarPredicadoDesbloqueio('a <= 5 && b > 1 && c < 10', { a: 5, b: 2, c: 9 }), true);
 
-  // Cobertura completa de CUE_SPOOL_UP_DECOLAGEM, rejeições de ATIVAR_BAIACU / LANCAR_ABORDAGEM, gerenciarPersistenciaTransicao inválida e debug L3 do presenter
+  // Cobertura completa de CUE_SPOOL_UP_DECOLAGEM (tanto por comando MERGULHO_TATICO(false) quanto em andamento), rejeições e debug L3
+  const passoRetornoSpool = despacharComandoUi(resMergulho.estado, {
+    tipo: 'MERGULHO_TATICO',
+    payload: { recolherFoil: false },
+  });
+  assert.equal(passoRetornoSpool.cueEmitido, 'CUE_SPOOL_UP_DECOLAGEM');
+  const cuesRetornoSpool = avaliarCuesSonorosAtivos(resMergulho.estado, passoRetornoSpool.estado, passoRetornoSpool);
+  assert.ok(cuesRetornoSpool.some((c) => c.id === 'CUE_SPOOL_UP_DECOLAGEM'));
+
   const estSpool = structuredClone(estadoMapa);
   estSpool.naveJogador.estadoFisico = '3_SPOOL_UP';
   estSpool.naveJogador.progressoSpoolUpSeg = 1.5;
   const cuesSpool = avaliarCuesSonorosAtivos(estadoMapa, congelarProfundo(estSpool));
   assert.ok(cuesSpool.some((c) => c.id === 'CUE_SPOOL_UP_DECOLAGEM'));
+
+  const vmCouraca = projetarViewModelWireframe(estCouraca);
+  assert.equal(vmCouraca.idCarcaca, 'COURACA_LIMIAR');
+  const frameCouraca = renderizarViewModelNoCanvas2d(vmCouraca);
+  assert.equal(
+    frameCouraca.larguraAsaSubmersaDesenhadaPx,
+    88,
+    '[MUT-O6-06 / Atlas Sprites] A asa submersa da COURACA_LIMIAR no Atlas deve ter o dobro da largura padrão (88 px = 2x 44 px)'
+  );
 
   const resBaiacuInv = despacharComandoUi(estCouraca, {
     tipo: 'ATIVAR_BAIACU',
@@ -607,3 +689,598 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
   });
   assert.equal(vmVazado.painelAlvo.salasInspecionadas[0].textoTripulacao, '0 tripulantes');
 });
+
+test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas 960x540 -> 1080p, Motor WebAudio 400 Hz, Atlas de Sprites Pixel Art e Servidor HTTP Seguro', async () => {
+  // === ITEM 3: Atlas de Sprites Pixel Art na Grade Nativa (960x540, câmara 50x35 px) ===
+  const atlas = obterAtlasSpritesNativo();
+  assert.equal(Object.isFrozen(atlas), true);
+  assert.equal(Object.keys(PALETA_PIXEL_ART_BIOFOIL).length, 12, '[N4] Examinadas: 12 cores RGBA canônicas na paleta hi-bit');
+  assert.equal(atlas.carcacas.length, 5, '[N4] Examinadas: 5 carcaças no Atlas Nativo');
+  assert.equal(atlas.aliados.length, 5, '[N4] Examinados: 5 sprites de aliados (4 espécies + Baiacu normal/inflado)');
+  assert.equal(atlas.invasores.length, 3, '[N4] Examinados: 3 invasores no Atlas Nativo');
+  assert.equal(atlas.armas.length, 7, '[N4] Examinadas: 7 armas no Atlas Nativo');
+  assert.equal(atlas.orgaos.length, 6, '[N4] Examinados: 6 órgãos enxertáveis no Atlas Nativo');
+
+  // Asserções literais L4 (Vol. 01 Seção 1.5 e Vol. 05 Seção 5.2)
+  assert.equal(atlas.aliados.find((a) => a.id === 'ARRAIA').dps, 8, 'Arraia deve ter exatamente 8 DPS (Seção 1.5)');
+  assert.equal(atlas.aliados.find((a) => a.id === 'CARANGUEJO').dps, 12, 'Caranguejo deve ter exatamente 12 DPS (Seção 1.5)');
+  assert.equal(
+    atlas.orgaos.find((o) => o.id === 'GLANDULA_BAIACU').efeito,
+    'veneno -6 HP/s por 10s',
+    'Glândula de Baiacu deve ter veneno -6 HP/s por 10s (Seção 5.2)'
+  );
+
+  const couraca = atlas.carcacas.find((c) => c.id === 'COURACA_LIMIAR');
+  const alfa = atlas.carcacas.find((c) => c.id === 'CARCACA_ALFA');
+  assert.equal(
+    couraca.larguraAsaSubmersaPx,
+    88,
+    '[MUT-O6-06 / Atlas Sprites] A asa submersa da COURACA_LIMIAR no Atlas deve ter o dobro da largura padrão (88 px = 2x 44 px)'
+  );
+  assert.equal(couraca.larguraAsaSubmersaPx, alfa.larguraAsaSubmersaPx * 2);
+  assert.equal(couraca.temTuboAbordagemFrontal, true);
+  assert.equal(atlas.carcacas.find((c) => c.id === 'SOMBRA_ABISSAL').temNevoaTinta, true);
+  assert.equal(atlas.carcacas.find((c) => c.id === 'COLMEIA_VIVA').temPoliposBioluminescentes, true);
+
+  const atlasMutAsa = obterAtlasSpritesNativo({ reduzirAsaCouracaLimiar: true });
+  assert.equal(atlasMutAsa.carcacas.find((c) => c.id === 'COURACA_LIMIAR').larguraAsaSubmersaPx, 44);
+
+  // Rasterização RGBA: silhueta própria com exterior transparente ('.'), contorno 1px ('#') e 26/26 hashes FNV-1a únicos
+  const hashesSprites = new Set();
+  let totalSpritesExaminados = 0;
+  for (const cat of ['carcacas', 'aliados', 'invasores', 'armas', 'orgaos']) {
+    for (const item of atlas[cat]) {
+      const rast = rasterizarSpriteRgba(cat, item.id);
+      assert.equal(rast.cabeNaCamaraNativa50x35, true, `Sprite ${cat}/${item.id} excede 50x35 px`);
+      assert.ok(rast.pixelsTransparentes > 0, `Sprite ${cat}/${item.id} deve ter silhueta recortada com pixels transparentes '.'`);
+      assert.ok(rast.pixelsContorno1px > 0 && rast.pixelsPreenchimento > 0);
+      assert.ok(rast.hashFnv1aRgba > 0);
+      assert.equal(rast.bytesRgba.length, rast.largura * rast.altura * 4);
+      hashesSprites.add(rast.hashFnv1aRgba);
+      totalSpritesExaminados += 1;
+    }
+  }
+  assert.equal(totalSpritesExaminados, 26, '[N4] Examinados: 26 sprites totais no Atlas Nativo');
+  assert.equal(hashesSprites.size, 26, 'Todos os 26 sprites do Atlas devem ter silhuetas e hashes FNV-1a estritamente únicos');
+  assert.equal(
+    rasterizarSpriteRgba('orgaos', 'BEXIGA_ALTA_PRESSAO').idSprite,
+    'BEXIGA_PRESSAO_ABISSAL',
+    'Deve aceitar busca tanto pelo id do Atlas quanto pelo idCatalogo52'
+  );
+  assert.throws(() => rasterizarSpriteRgba('aliados', 'TUBARAO_FANTASMA'), /\[SPRITE_INEXISTENTE_NO_ATLAS\]/);
+  assert.throws(() => rasterizarSpriteRgba('categoria_invalida', 'POLVO'), /\[SPRITE_INEXISTENTE_NO_ATLAS\]/);
+
+  // === ITEM 1: Renderizador Canvas 2D (960x540 -> 1920x1080) e Hitboxes/Input DOM ===
+  assert.equal(Object.keys(COORDENADAS_GRADE_CAMARAS_16A).length, 8, '[N4] Examinadas: 8 coordenadas de câmara na grade 2x4');
+  const estadoBase = congelarProfundo({
+    ...criarEstadoInicialPartida('seed-canvas-01', 'CARCACA_ALFA'),
+    alvoCombate: criarAlvoSetor1Canonico('BARCO_HUMANO'),
+  });
+  const vmNoFoil = projetarViewModelWireframe(estadoBase, { idHitboxHover: 'SISTEMA_SIF' });
+  assert.equal(vmNoFoil.termometroSustentacao.ghostPreview.ativo, true);
+  assert.equal(vmNoFoil.termometroSustentacao.ghostPreview.sustentacaoProjetadaKg, 230);
+
+  // Verifica que todas as 8 câmaras têm coordenadas (coluna, andar) numéricas válidas e distintas
+  const coordsCamarasSet = new Set();
+  for (const cam of vmNoFoil.camaras) {
+    assert.equal(Number.isInteger(cam.coluna), true);
+    assert.equal(Number.isInteger(cam.andar), true);
+    coordsCamarasSet.add(`${cam.coluna},${cam.andar}`);
+  }
+  assert.equal(coordsCamarasSet.size, 8, 'As 8 câmaras devem ocupar 8 posições distintas na grade 2x4');
+
+  const chamadasCtx = [];
+  const ctxRealSimulado = {
+    imageSmoothingEnabled: true,
+    fillStyle: '',
+    strokeStyle: '',
+    fillRect(x, y, w, h) {
+      assert.equal(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(h), true, 'Proibido NaN em fillRect');
+      chamadasCtx.push({ op: 'fillRect', x, y, w, h });
+    },
+    strokeRect(x, y, w, h) {
+      assert.equal(Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(w) && Number.isFinite(h), true, 'Proibido NaN em strokeRect');
+      chamadasCtx.push({ op: 'strokeRect', x, y, w, h });
+    },
+    fillText(t, x, y) {
+      assert.equal(Number.isFinite(x) && Number.isFinite(y), true, 'Proibido NaN em fillText');
+      chamadasCtx.push({ op: 'fillText', t, x, y });
+    },
+  };
+
+  const frameNoFoil = renderizarViewModelNoCanvas2d(vmNoFoil, ctxRealSimulado);
+  assert.equal(ctxRealSimulado.imageSmoothingEnabled, false, 'Canvas 2D deve desativar suavização bilinear (pixelated)');
+  assert.equal(frameNoFoil.gradeCamarasTopoY, 156);
+  assert.equal(frameNoFoil.linhaDaguaY, 330);
+  assert.equal(frameNoFoil.larguraAsaSubmersaDesenhadaPx, 44);
+  assert.equal(frameNoFoil.spritesDesenhados.length, 3, 'Deve desenhar os 3 tripulantes iniciais da Carcaça Alfa');
+  assert.ok(chamadasCtx.length > 200, 'Deve desenhar HUD, câmaras, água, válvulas, armas, quilha/asa e pixels dos sprites no Canvas');
+
+  // Verifica que 2 tripulantes na mesma câmara (Slot 0 e Slot 1) são desenhados lado a lado sem sobreposição e que curto-circuito/hipóxia aparecem
+  const copia2MesmaSala = structuredClone(estadoBase);
+  copia2MesmaSala.naveJogador.tripulacao[0].camaraAtualId = 4; // Polvo + Arraia juntos na Câmara 4
+  copia2MesmaSala.naveJogador.camaras.find((c) => c.id === 4).curtoCircuitoAtivo = true;
+  copia2MesmaSala.naveJogador.camaras.find((c) => c.id === 4).oxigenioPct = 15;
+  const vm2MesmaSala = projetarViewModelWireframe(congelarProfundo(copia2MesmaSala));
+  const frame2MesmaSala = renderizarViewModelNoCanvas2d(vm2MesmaSala, null);
+  const spritesCam4 = frame2MesmaSala.spritesDesenhados.filter((s) => s.camaraId === 4);
+  assert.equal(spritesCam4.length, 2);
+  assert.notEqual(spritesCam4[0].x, spritesCam4[1].x, 'Dois tripulantes na mesma câmara devem ocupar X distintos (Slot 0 e Slot 1)');
+
+  // Infla o Baiacu e derruba a bio-nave em 2_TOUCHDOWN -> parede entre 2º e 3º andar deve cair exatamente na LINHA_DAGUA_Y = 330
+  const passoInflar = despacharComandoUi(estadoBase, {
+    tipo: 'ATIVAR_BAIACU',
+    payload: { tripulanteId: 'trip-baiacu-1', inflado: true },
+  });
+  const passoMergulho = despacharComandoUi(passoInflar.estado, {
+    tipo: 'MERGULHO_TATICO',
+    payload: { recolherFoil: true },
+  });
+  const vmTouchdown = projetarViewModelWireframe(passoMergulho.estado);
+  const frameTouchdown = renderizarViewModelNoCanvas2d(vmTouchdown, null);
+  assert.equal(
+    frameTouchdown.paredeEntre2e3AndarY,
+    330,
+    '[MUT-O6-04 / Canvas 960x540] Em 2_TOUCHDOWN, a grade das 8 câmaras no Canvas deve descer 100 px nativos (parede 2º/3º andar na LINHA_DAGUA_Y = 330)'
+  );
+  assert.ok(frameTouchdown.spritesDesenhados.some((s) => s.idSprite === 'BAIACU_INFLADO'));
+
+  const frameMutIgnoraQueda = renderizarViewModelNoCanvas2d(vmTouchdown, null, {
+    ignorarQuedaTouchdownNoCanvas: true,
+  });
+  assert.equal(frameMutIgnoraQueda.paredeEntre2e3AndarY, 230);
+
+  // Conversão de coordenadas de tela (1080p, 4K com letterboxing horizontal e vertical, e proteção contra NaN/Infinity/rect inválido)
+  const coord1080p = converterCoordenadaTelaParaNativa(960, 540, { left: 0, top: 0, width: 1920, height: 1080 });
+  assert.equal(coord1080p.dentroDoCanvas, true);
+  assert.equal(coord1080p.xNativo, 480);
+  assert.equal(coord1080p.yNativo, 270);
+
+  const coordLetterboxX = converterCoordenadaTelaParaNativa(10, 540, { left: 0, top: 0, width: 2200, height: 1080 });
+  assert.equal(coordLetterboxX.dentroDoCanvas, false);
+
+  const coordLetterboxY = converterCoordenadaTelaParaNativa(960, 10, { left: 0, top: 0, width: 1920, height: 1400 });
+  assert.equal(coordLetterboxY.dentroDoCanvas, false);
+
+  const coordNaN = converterCoordenadaTelaParaNativa(Number.NaN, 100, { left: 0, top: 0, width: 1920, height: 1080 });
+  assert.equal(coordNaN.dentroDoCanvas, false);
+  assert.equal(coordNaN.xNativo, 0);
+  const coordRectZero = converterCoordenadaTelaParaNativa(100, 100, { left: 0, top: 0, width: 0, height: -10 });
+  assert.equal(coordRectZero.dentroDoCanvas, false);
+
+  // Tradutor de Teclado, Hover Ghost Preview e Cliques de Mouse em Hitboxes Nativas (todas as 8 câmaras e 8 válvulas)
+  assert.equal(
+    traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'Space' }, estadoBase, vmNoFoil, { pausaTaticaAtiva: false })
+      .pausaTaticaAtiva,
+    true
+  );
+  assert.equal(
+    traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyV' }, estadoBase, vmNoFoil).resultadoMotor.aceito,
+    true
+  );
+  assert.equal(
+    traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyM' }, estadoBase, vmNoFoil).resultadoMotor.estado
+      .naveJogador.estadoFisico,
+    '2_TOUCHDOWN'
+  );
+  assert.equal(
+    traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyF' }, estadoBase, vmNoFoil).resultadoMotor.aceito,
+    false
+  );
+  assert.equal(
+    traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'Digit2' }, estadoBase, vmNoFoil).slotArmaSelecionado,
+    1
+  );
+  assert.equal(
+    traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyZ' }, estadoBase, vmNoFoil).reconhecido,
+    false
+  );
+  assert.equal(
+    traduzirInputDomParaComandoUi(
+      { tipoEvento: 'CLICK', clientX: -50, clientY: -50, retanguloCanvas: { left: 0, top: 0, width: 960, height: 540 } },
+      estadoBase,
+      vmNoFoil
+    ).foraDoCanvas,
+    true
+  );
+  assert.equal(
+    traduzirInputDomParaComandoUi(
+      { tipoEvento: 'CLICK', clientX: 550, clientY: 100, retanguloCanvas: { left: 0, top: 0, width: 960, height: 540 } },
+      estadoBase,
+      vmNoFoil
+    ).reconhecido,
+    false
+  );
+
+  const hitboxes = obterMapaHitboxesNativo(vmNoFoil);
+  const clicarHitbox = (id, extras = {}, ctxUi = {}) => {
+    const hb = hitboxes.find((h) => h.idHitbox === id);
+    return traduzirInputDomParaComandoUi(
+      {
+        tipoEvento: 'CLICK',
+        clientX: hb.x + 2,
+        clientY: hb.y + 2,
+        retanguloCanvas: { left: 0, top: 0, width: 960, height: 540 },
+        ...extras,
+      },
+      estadoBase,
+      vmNoFoil,
+      ctxUi
+    );
+  };
+
+  // Verifica que clicar em cada uma das 8 câmaras (1..8) e das 8 válvulas externas (1..8) acerta seu próprio ID sem colisão!
+  for (let idCam = 1; idCam <= 8; idCam += 1) {
+    const resCam = clicarHitbox(`CAMARA_${idCam}`);
+    assert.equal(resCam.hitboxAtingida, `CAMARA_${idCam}`);
+    assert.equal(resCam.comandoMotor.payload.camaraDestinoId, idCam);
+
+    const resValv = clicarHitbox(`VALVULA_CAMARA_${idCam}`);
+    assert.equal(resValv.hitboxAtingida, `VALVULA_CAMARA_${idCam}`);
+    assert.equal(resValv.comandoMotor.payload.camaraId, idCam);
+  }
+
+  assert.equal(clicarHitbox('BTN_DRENAR_TUDO').comandoMotor.tipo, 'DRENAR_TUDO');
+  assert.equal(clicarHitbox('BTN_MERGULHO_TATICO').comandoMotor.tipo, 'MERGULHO_TATICO');
+  assert.equal(clicarHitbox('SISTEMA_SIF', { shiftKey: true }).comandoMotor.payload.deltaBarras, -1);
+  assert.equal(clicarHitbox('SISTEMA_SIF', { shiftKey: false }).comandoMotor.payload.deltaBarras, 1);
+  assert.equal(clicarHitbox('SALA_ALVO_1', {}, { slotArmaSelecionado: 0, trincaSalasBeam: null }).comandoMotor.tipo, 'MIRAR_ARMA');
+  assert.equal(clicarHitbox('ARMA_SLOT_1').acaoLocalUi, 'SELECIONAR_SLOT_ARMA');
+  assert.equal(clicarHitbox('TRIPULANTE_CARD_trip-arraia-1').acaoLocalUi, 'SELECIONAR_TRIPULANTE');
+  assert.equal(clicarHitbox('TRIPULANTE_CARD_trip-arraia-1').tripulanteSelecionadoId, 'trip-arraia-1');
+
+  // Ghost Preview via MOUSEMOVE sobre válvula, botão Drenar Tudo (cavitação < 62.5 kg), Sifão e hitbox fora de água/Sifão
+  const hbValv1 = hitboxes.find((h) => h.idHitbox === 'VALVULA_CAMARA_1');
+  const hoverValv1 = traduzirInputDomParaComandoUi(
+    { tipoEvento: 'MOUSEMOVE', clientX: hbValv1.x + 2, clientY: hbValv1.y + 2, retanguloCanvas: { left: 0, top: 0, width: 960, height: 540 } },
+    estadoBase,
+    vmNoFoil
+  );
+  assert.equal(hoverValv1.acaoLocalUi, 'ATUALIZAR_GHOST_PREVIEW');
+  assert.equal(hoverValv1.ghostPreview.pesoProjetadoKg, 212.5);
+  const ghostDrenarTudo = calcularGhostPreviewTermometro(estadoBase, 'BTN_DRENAR_TUDO');
+  assert.equal(ghostDrenarTudo.pesoProjetadoKg, 125);
+  assert.equal(
+    ghostDrenarTudo.sustentacaoProjetadaKg,
+    135,
+    'Drenar todas as 8 câmaras (0 kg de água < 62.5 kg) deve descontar -125 kg de cavitação (62.5 * 2.0 kg/kg) na sustentação projetada (260 -> 135 kg)'
+  );
+  assert.equal(
+    calcularGhostPreviewTermometro(estadoBase, 'CAMARA_1').ativo,
+    false,
+    'Hover em hitbox que não altera água nem Sifão deve ter Ghost Preview inativo'
+  );
+  assert.equal(calcularGhostPreviewTermometro(estadoBase, null).ativo, false);
+
+  // Verifica novas primitivas visuais do Canvas 2D: TERMOMETRO_GHOST_LINHA, ARMA_DORSAL_PIXEL_0, ARMA_RECARGA_0, ARMA_SOQUETE_0_0 e TRIPULANTE_CARD_*
+  assert.ok(frameNoFoil.comandosDesenho.some((c) => c.camada === 'TERMOMETRO_GHOST_LINHA'));
+  assert.ok(frameNoFoil.comandosDesenho.some((c) => c.camada === 'ARMA_DORSAL_PIXEL_0'));
+  assert.ok(frameNoFoil.comandosDesenho.some((c) => c.camada === 'ARMA_RECARGA_0'));
+  assert.ok(frameNoFoil.comandosDesenho.some((c) => c.camada === 'ARMA_SOQUETE_0_0'));
+  assert.ok(frameNoFoil.comandosDesenho.some((c) => c.camada === 'TRIPULANTE_CARD_trip-polvo-1'));
+
+  // === ITEM 2: Motor WebAudio Tático + BiquadFilterNode 400 Hz + Síntese PCM com 4 Formas de Onda ===
+  assert.equal(Object.keys(PERFIS_ACUSTICOS_WEB_AUDIO_85C).length, 8);
+  const planoNoFoil = construirPlanoGrafoWebAudio(estadoBase, estadoBase, null);
+  assert.equal(planoNoFoil.filtroSubaquaticoMaster.frequenciaCorteHz, 20000);
+  assert.equal(planoNoFoil.filtroSubaquaticoMaster.ativoSubmerso, false);
+
+  const estSpoolDeriva = structuredClone(passoMergulho.estado);
+  estSpoolDeriva.naveJogador.estadoFisico = '3_SPOOL_UP';
+  estSpoolDeriva.naveJogador.progressoSpoolUpSeg = 1.0;
+  estSpoolDeriva.naveJogador.spoolUpPosDeriva = true;
+  estSpoolDeriva.alvoCombate.alarmeFervuraAtivoSeg = 4.0;
+  estSpoolDeriva.alvoCombate.ultimoPowerSurgeDisparado = { fase: 3, tick: 10 };
+  const estadoCongeladoSpoolDeriva = congelarProfundo(estSpoolDeriva);
+  const planoSubmerso = construirPlanoGrafoWebAudio(estadoBase, estadoCongeladoSpoolDeriva, {
+    marcadorRejeicao: 'BLOQUEADO_TRAVA_HIDROSTATICA',
+  });
+  assert.equal(
+    planoSubmerso.filtroSubaquaticoMaster.frequenciaCorteHz,
+    400,
+    '[MUT-O6-05 / WebAudio 400Hz] Em 2_TOUCHDOWN/3_SPOOL_UP, o BiquadFilterNode master deve operar em passa-baixa a 400 Hz'
+  );
+  assert.equal(
+    planoSubmerso.nosSintese.find((n) => n.idCue === 'CUE_SPOOL_UP_DECOLAGEM').duracaoSeg,
+    5.0,
+    'Spool-up pós-Deriva deve agendar rampa WebAudio de 5.0s'
+  );
+  assert.equal(
+    planoSubmerso.nosSintese.find((n) => n.idCue === 'CUE_POWER_SURGE_CHEFE').intervaloCicloSurgeSeg,
+    18
+  );
+
+  // CUE_POWER_SURGE_CHEFE não deve re-disparar no tick seguinte se ultimoPowerSurgeDisparado não mudou
+  const cuesMesmoSurge = avaliarCuesSonorosAtivos(estadoCongeladoSpoolDeriva, estadoCongeladoSpoolDeriva, null);
+  assert.equal(
+    cuesMesmoSurge.some((c) => c.id === 'CUE_POWER_SURGE_CHEFE'),
+    false,
+    'CUE_POWER_SURGE_CHEFE deve disparar apenas na transição de um novo Power Surge'
+  );
+
+  const planoMutSemFiltro = construirPlanoGrafoWebAudio(estadoBase, estadoCongeladoSpoolDeriva, null, {
+    ignorarFiltroSubaquatico400Hz: true,
+  });
+  assert.equal(planoMutSemFiltro.filtroSubaquaticoMaster.frequenciaCorteHz, 20000);
+
+  // Execução real sobre AudioContext WebAudio API, guarda de erro e limpeza onended (disconnect)
+  assert.throws(() => aplicarPlanoNoContextoWebAudio(null, planoSubmerso), /\[WebAudio\] Contexto de áudio inválido/);
+  const nosAudioConectados = [];
+  let totalDesconectados = 0;
+  const audioCtxPadrao = {
+    currentTime: 10.0,
+    destination: { id: 'DESTINATION' },
+    createBiquadFilter() {
+      return {
+        type: '',
+        frequency: { setValueAtTime(v, t) { nosAudioConectados.push({ op: 'biquadFreq', v, t }); } },
+        Q: { setValueAtTime(v, t) { nosAudioConectados.push({ op: 'biquadQ', v, t }); } },
+        connect(dest) { nosAudioConectados.push({ op: 'biquadConnect', dest }); },
+      };
+    },
+    createGain() {
+      return {
+        gain: {
+          setValueAtTime(v, t) { nosAudioConectados.push({ op: 'gainSet', v, t }); },
+          linearRampToValueAtTime(v, t) { nosAudioConectados.push({ op: 'gainRamp', v, t }); },
+        },
+        connect(dest) { nosAudioConectados.push({ op: 'gainConnect', dest }); },
+        disconnect() { totalDesconectados += 1; },
+      };
+    },
+    createOscillator() {
+      const noOsc = {
+        type: '',
+        onended: null,
+        frequency: {
+          setValueAtTime(v, t) { nosAudioConectados.push({ op: 'oscSet', v, t }); },
+          linearRampToValueAtTime(v, t) { nosAudioConectados.push({ op: 'oscRamp', v, t }); },
+        },
+        connect(dest) { nosAudioConectados.push({ op: 'oscConnect', dest }); },
+        disconnect() { totalDesconectados += 1; },
+        start(t) { nosAudioConectados.push({ op: 'oscStart', t }); },
+        stop(t) {
+          nosAudioConectados.push({ op: 'oscStop', t });
+          if (typeof noOsc.onended === 'function') noOsc.onended();
+        },
+      };
+      return noOsc;
+    },
+  };
+  const resAudioCtx = aplicarPlanoNoContextoWebAudio(audioCtxPadrao, planoSubmerso);
+  assert.equal(resAudioCtx.aplicado, true);
+  assert.equal(resAudioCtx.frequenciaFiltroAplicadaHz, 400);
+  assert.equal(resAudioCtx.nosAgendados.length, planoSubmerso.nosSintese.length);
+  assert.equal(totalDesconectados, planoSubmerso.nosSintese.length * 2, 'onended deve desconectar cada par OscillatorNode + GainNode');
+
+  // Síntese PCM real com filtro Biquad IIR de 2ª ordem, buffer completo de amostras e as 4 formas de onda (sine, square, sawtooth, triangle)
+  const tiposOndasVistos = new Set();
+  for (const cue of CATALOGO_8_CUES_SONOROS_85C) {
+    const pcmAr = sintetizarBufferPcmCueTatico(cue.id, { submerso: false, sampleRate: 8000, duracaoSinteseSeg: 0.08 });
+    const pcmMar = sintetizarBufferPcmCueTatico(cue.id, { submerso: true, sampleRate: 8000, duracaoSinteseSeg: 0.08 });
+    tiposOndasVistos.add(pcmAr.tipoOscilador);
+    assert.equal(pcmAr.amostrasPcm.length, pcmAr.totalAmostras, 'Buffer PCM sintetizado deve conter todas as totalAmostras sem truncamento');
+    assert.ok(pcmAr.rmsTotal > 0 && pcmMar.rmsTotal > 0);
+    assert.ok(
+      pcmMar.energiaAltaFreqRelativa < pcmAr.energiaAltaFreqRelativa,
+      `Filtro Biquad de 400 Hz deve atenuar altas frequências em ${cue.id}`
+    );
+  }
+  assert.deepEqual([...tiposOndasVistos].sort(), ['sawtooth', 'sine', 'square', 'triangle']);
+  assert.throws(() => sintetizarBufferPcmCueTatico('CUE_INEXISTENTE'), /\[WebAudio PCM\] Cue sonoro desconhecido/);
+
+  // === Segurança HTML/XSS, Script Client-Side /cliente.js e Servidor HTTP Endurecido ===
+  const htmlSeguro = gerarHtmlClienteJogavelBiofoil(estadoBase, { titulo: '<script>alert("xss")</script>' });
+  assert.ok(!htmlSeguro.includes('<script>alert("xss")</script>'), 'Título HTML deve ser escapado contra XSS');
+  assert.ok(htmlSeguro.includes('width="960" height="540"'));
+  assert.ok(htmlSeguro.includes('image-rendering: pixelated'));
+  assert.ok(htmlSeguro.includes('<script src="/cliente.js" defer></script>'), 'HTML deve carregar o script /cliente.js compatível com script-src self');
+
+  const codigoJsCliente = gerarCodigoJsClienteBiofoil();
+  assert.ok(codigoJsCliente.includes("getElementById('biofoil-canvas')"));
+  assert.ok(codigoJsCliente.includes("createBiquadFilter"));
+  assert.ok(codigoJsCliente.includes("fetch('/api/comando'"));
+  assert.ok(codigoJsCliente.includes("fetch('/api/tick'"));
+  assert.ok(codigoJsCliente.includes("frameCanvas.comandosDesenho"));
+
+  await assert.rejects(
+    () => iniciarServidorClienteWebBiofoil({ host: '0.0.0.0' }),
+    /\[SEGURANCA HTTP\] Bind proibido fora de loopback/
+  );
+
+  const srv = await iniciarServidorClienteWebBiofoil({ host: '127.0.0.1', port: 0, maxPayloadBytes: 512 });
+  try {
+    const rHtml = await fetch(`${srv.url}/`);
+    assert.equal(rHtml.status, 200);
+    assert.ok(rHtml.headers.get('content-security-policy')?.includes("default-src 'none'"));
+    assert.equal(rHtml.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(rHtml.headers.get('x-frame-options'), 'DENY');
+    const txtHtml = await rHtml.text();
+    assert.ok(txtHtml.includes('biofoil-canvas'));
+
+    const rJs = await fetch(`${srv.url}/cliente.js`);
+    assert.equal(rJs.status, 200);
+    assert.ok(rJs.headers.get('content-type')?.includes('application/javascript'));
+    const txtJs = await rJs.text();
+    assert.ok(txtJs.includes('imageSmoothingEnabled = false'));
+
+    const rEstado = await fetch(`${srv.url}/api/estado`);
+    assert.equal(rEstado.status, 200);
+    const jsonEstado = await rEstado.json();
+    assert.equal(jsonEstado.viewModel.resolucaoNativa.largura, 960);
+    assert.ok(Array.isArray(jsonEstado.frameCanvas.comandosDesenho));
+
+    // Métodos HTTP não permitidos devem retornar 405 com cabeçalho Allow
+    const r405Get = await fetch(`${srv.url}/api/estado`, { method: 'POST' });
+    assert.equal(r405Get.status, 405);
+    assert.equal(r405Get.headers.get('allow'), 'GET');
+
+    const r405Post = await fetch(`${srv.url}/api/comando`, { method: 'GET' });
+    assert.equal(r405Post.status, 405);
+    assert.equal(r405Post.headers.get('allow'), 'POST');
+
+    // Content-Type inválido deve retornar 415
+    const r415 = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: '{}',
+    });
+    assert.equal(r415.status, 415);
+
+    // Cross-Origin (Origin malicioso ou Sec-Fetch-Site: cross-site) deve retornar 403
+    const r403Origin = await fetch(`${srv.url}/api/estado`, {
+      headers: { Origin: 'http://evil.attacker.com' },
+    });
+    assert.equal(r403Origin.status, 403);
+
+    const r403FetchSite = await fetch(`${srv.url}/api/estado`, {
+      headers: { 'Sec-Fetch-Site': 'cross-site' },
+    });
+    assert.equal(r403FetchSite.status, 403);
+
+    // Prototype Pollution (literal, escapado em Unicode ou aninhado > 12 níveis) e objetos JSON inválidos devem retornar 400
+    const rProto = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"__proto__":{"polluted":true}}',
+    });
+    assert.equal(rProto.status, 400);
+
+    const rProtoUnicode = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{"\\u005f\\u005fproto\\u005f\\u005f":{"polluted":true}}',
+    });
+    assert.equal(rProtoUnicode.status, 400);
+
+    let profundo = { fim: 1 };
+    for (let i = 0; i < 14; i += 1) profundo = { n: profundo };
+    const rProfundo = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profundo),
+    });
+    assert.equal(rProfundo.status, 400);
+
+    const rBodyNull = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'null',
+    });
+    assert.equal(rBodyNull.status, 400);
+
+    const rSemComando = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(rSemComando.status, 400);
+
+    const rCmdDesconhecido = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comando: { tipo: 'COMANDO_INEXISTENTE' } }),
+    });
+    assert.equal(rCmdDesconhecido.status, 400);
+
+    const rDtInvalido = await fetch(`${srv.url}/api/tick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dtSeg: 'invalido' }),
+    });
+    assert.equal(rDtInvalido.status, 400);
+
+    // Round-trip de contextoUi via POST /api/comando (Space, Digit2 e clique em TRIPULANTE_CARD)
+    const rSpace = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventoInput: { tipoEvento: 'KEYDOWN', code: 'Space' }, contextoUi: { pausaTaticaAtiva: false, slotArmaSelecionado: 0, tripulanteSelecionadoId: 'trip-polvo-1' } }),
+    });
+    const jsonSpace = await rSpace.json();
+    assert.equal(jsonSpace.contextoUi.pausaTaticaAtiva, true);
+
+    const rDigit2 = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventoInput: { tipoEvento: 'KEYDOWN', code: 'Digit2' } }),
+    });
+    const jsonDigit2 = await rDigit2.json();
+    assert.equal(jsonDigit2.contextoUi.slotArmaSelecionado, 1);
+
+    const hbCardArraia = hitboxes.find((h) => h.idHitbox === 'TRIPULANTE_CARD_trip-arraia-1');
+    const rCard = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventoInput: {
+          tipoEvento: 'CLICK',
+          clientX: hbCardArraia.x + 2,
+          clientY: hbCardArraia.y + 2,
+          retanguloCanvas: { left: 0, top: 0, width: 960, height: 540 },
+        },
+      }),
+    });
+    const jsonCard = await rCard.json();
+    assert.equal(jsonCard.contextoUi.tripulanteSelecionadoId, 'trip-arraia-1');
+
+    const rCmdDireto = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comando: { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: true } } }),
+    });
+    assert.equal(rCmdDireto.status, 200);
+    const jsonCmdDireto = await rCmdDireto.json();
+    assert.equal(jsonCmdDireto.viewModel.barraSuperior.estadoFisico, '2_TOUCHDOWN');
+    assert.equal(jsonCmdDireto.planoAudio.filtroSubaquaticoMaster.frequenciaCorteHz, 400);
+
+    const rCmdInput = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventoInput: { tipoEvento: 'KEYDOWN', code: 'KeyV' } }),
+    });
+    assert.equal(rCmdInput.status, 200);
+    const jsonCmdInput = await rCmdInput.json();
+    assert.equal(jsonCmdInput.aceito, false);
+    assert.equal(jsonCmdInput.marcadorRejeicao, 'BLOQUEADO_TRAVA_HIDROSTATICA');
+
+    const rTick = await fetch(`${srv.url}/api/tick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dtSeg: 0.25, pausaTaticaAtiva: false }),
+    });
+    assert.equal(rTick.status, 200);
+
+    const rJsonRuim = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{invalido',
+    });
+    assert.equal(rJsonRuim.status, 400);
+
+    const r413 = await fetch(`${srv.url}/api/comando`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lixo: 'A'.repeat(1024) }),
+    });
+    assert.equal(r413.status, 413);
+
+    const r404 = await fetch(`${srv.url}/rota-inexistente`);
+    assert.equal(r404.status, 404);
+
+    // DNS Rebinding com Host malicioso deve retornar 403
+    const codigoRebinding = await new Promise((resolve, reject) => {
+      import('node:http').then(({ default: httpMod }) => {
+        const reqReb = httpMod.request(
+          { host: '127.0.0.1', port: srv.port, path: '/api/estado', method: 'GET', headers: { Host: 'attacker.evil.com' } },
+          (resReb) => resolve(resReb.statusCode)
+        );
+        reqReb.on('error', reject);
+        reqReb.end();
+      });
+    });
+    assert.equal(codigoRebinding, 403);
+  } finally {
+    await srv.fechar();
+  }
+});
+

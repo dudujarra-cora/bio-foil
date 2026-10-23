@@ -302,7 +302,11 @@ export function despacharComandoUi(estado, comando) {
     }
 
     case 'MIRAR_ARMA': {
-      const slot = (nave.armasAtivas ?? [])[p.slotIndex];
+      const listaArmas = nave.armasAtivas ?? [];
+      if (!Number.isInteger(p.slotIndex) || p.slotIndex < 0 || p.slotIndex >= listaArmas.length) {
+        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      }
+      const slot = listaArmas[p.slotIndex];
       const arma = slot?.arma !== undefined ? slot.arma : slot;
       if (!arma) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       const custoEne = Number(arma.energiaCusto ?? arma.energia ?? 1);
@@ -325,9 +329,10 @@ export function despacharComandoUi(estado, comando) {
           return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
         }
       }
-      if (exigeSubmersa && p.salaAlvoId !== undefined && p.salaAlvoId !== null) {
-        const salaAlvo = (estado.alvoCombate?.salasOuOrgaos ?? []).find((s) => s.id === p.salaAlvoId);
-        if (salaAlvo && salaAlvo.submersa === false) {
+      const salasAlvo = estado.alvoCombate?.salasOuOrgaos ?? [];
+      if (p.salaAlvoId !== undefined && p.salaAlvoId !== null && salasAlvo.length > 0) {
+        const salaAlvo = salasAlvo.find((s) => s.id === p.salaAlvoId);
+        if (!salaAlvo || (exigeSubmersa && salaAlvo.submersa === false)) {
           return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
         }
       }
@@ -432,7 +437,9 @@ export function despacharComandoUi(estado, comando) {
         (nave.recargaTuboAbordagemSeg ?? 0) > 0 ||
         !Array.isArray(p.tripulantesIds) ||
         p.tripulantesIds.length < 1 ||
-        p.tripulantesIds.length > 2
+        p.tripulantesIds.length > 2 ||
+        new Set(p.tripulantesIds).size !== p.tripulantesIds.length ||
+        Number(estado.alvoCombate?.blindagemTermicaExternaPts ?? 0) > 0
       ) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
@@ -451,6 +458,7 @@ export function despacharComandoUi(estado, comando) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
       const resAbord = tentarAbordagemContraAlvo(estado, p.tripulantesIds, p.salaAlvoId);
+      const recargaTuboSeg = energiaTubo >= 2 ? 9.0 : 14.0;
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
@@ -459,7 +467,7 @@ export function despacharComandoUi(estado, comando) {
           ...resAbord.estado,
           naveJogador: {
             ...resAbord.estado.naveJogador,
-            recargaTuboAbordagemSeg: 15.0,
+            recargaTuboAbordagemSeg: recargaTuboSeg,
           },
         },
       });
@@ -467,10 +475,17 @@ export function despacharComandoUi(estado, comando) {
 
     case 'MERGULHO_TATICO': {
       const novoEstado = alternarMergulhoTatico(estado, Boolean(p.recolherFoil));
+      const estRes = novoEstado.naveJogador.estadoFisico;
+      const cueMergulho =
+        estRes === '2_TOUCHDOWN'
+          ? 'CUE_ESTOL_TOUCHDOWN'
+          : estRes === '3_SPOOL_UP'
+            ? 'CUE_SPOOL_UP_DECOLAGEM'
+            : null;
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
-        cueEmitido: p.recolherFoil ? 'CUE_ESTOL_TOUCHDOWN' : 'CUE_SPOOL_UP_DECOLAGEM',
+        cueEmitido: cueMergulho,
         estado: novoEstado,
       });
     }
@@ -574,7 +589,7 @@ export function despacharComandoUi(estado, comando) {
       }[p.itemOuSistemaId] ?? p.itemOuSistemaId;
       const item = CATALOGO_LOJA_56B.find((i) => i.id === aliasItem);
       if (!item) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
-      const acao = p.acao ?? 'COMPRAR';
+      const acao = p.operacao ?? p.acao ?? 'COMPRAR';
       const chaveMoeda = item.moeda === 'BIOMASSA' ? 'biomassa' : 'sucata';
       const baseCarteira = extrairCarteiraSincronizada(estado);
       let novaCarteiraLoja = { ...baseCarteira };
@@ -650,8 +665,12 @@ export function despacharComandoUi(estado, comando) {
     }
 
     case 'ENXERTAR_ORGAO': {
+      const listaArmasEnx = nave.armasAtivas ?? [];
+      if (!Number.isInteger(p.slotIndex) || p.slotIndex < 0 || p.slotIndex >= listaArmasEnx.length) {
+        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      }
       const orgao = CATALOGO_ORGAOS_52.find((o) => o.id === p.orgaoId);
-      const slot = (nave.armasAtivas ?? [])[p.slotIndex];
+      const slot = listaArmasEnx[p.slotIndex];
       const arma = slot?.arma !== undefined ? slot.arma : slot;
       if (!orgao || !arma) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
 
@@ -720,3 +739,474 @@ export function despacharComandoUi(estado, comando) {
     }
   }
 }
+
+export const COORDENADAS_GRADE_CAMARAS_16A = Object.freeze({
+  1: Object.freeze({ coluna: 0, andar: 0 }),
+  7: Object.freeze({ coluna: 1, andar: 0 }),
+  2: Object.freeze({ coluna: 0, andar: 1 }),
+  3: Object.freeze({ coluna: 1, andar: 1 }),
+  4: Object.freeze({ coluna: 0, andar: 2 }),
+  5: Object.freeze({ coluna: 1, andar: 2 }),
+  6: Object.freeze({ coluna: 0, andar: 3 }),
+  8: Object.freeze({ coluna: 1, andar: 3 }),
+});
+
+/**
+ * Converte coordenadas de tela (ex.: 1920x1080 Full HD com upscale 2x ou janela com letterboxing 16:9)
+ * para coordenadas inteiras na grade lógica nativa 960x540 (Seção 8.5.C).
+ */
+export function converterCoordenadaTelaParaNativa(
+  clientX,
+  clientY,
+  retanguloCanvas = { left: 0, top: 0, width: 1920, height: 1080 }
+) {
+  const cx = Number(clientX);
+  const cy = Number(clientY);
+  const left = Number(retanguloCanvas?.left ?? 0);
+  const top = Number(retanguloCanvas?.top ?? 0);
+  const width = Number(retanguloCanvas?.width ?? 1920);
+  const height = Number(retanguloCanvas?.height ?? 1080);
+
+  if (
+    !Number.isFinite(cx) ||
+    !Number.isFinite(cy) ||
+    !Number.isFinite(left) ||
+    !Number.isFinite(top) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return clonarProfundoCongelado({
+      dentroDoCanvas: false,
+      xNativo: 0,
+      yNativo: 0,
+      escalaHorizontal: 0,
+      escalaVertical: 0,
+    });
+  }
+
+  // Calcula a caixa ativa 16:9 dentro do retângulo (suporta letterboxing horizontal ou vertical)
+  const razaoAlvo = 960 / 540;
+  const razaoAtual = width / height;
+  let larguraUtil = width;
+  let alturaUtil = height;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  if (razaoAtual > razaoAlvo + 1e-6) {
+    larguraUtil = height * razaoAlvo;
+    offsetX = (width - larguraUtil) / 2;
+  } else if (razaoAtual < razaoAlvo - 1e-6) {
+    alturaUtil = width / razaoAlvo;
+    offsetY = (height - alturaUtil) / 2;
+  }
+
+  const relX = cx - left - offsetX;
+  const relY = cy - top - offsetY;
+  const dentroDoCanvas = relX >= 0 && relX < larguraUtil && relY >= 0 && relY < alturaUtil;
+  const xNativo = Math.max(0, Math.min(959, Math.floor((relX / larguraUtil) * 960)));
+  const yNativo = Math.max(0, Math.min(539, Math.floor((relY / alturaUtil) * 540)));
+
+  return clonarProfundoCongelado({
+    dentroDoCanvas,
+    xNativo,
+    yNativo,
+    escalaHorizontal: Number((larguraUtil / 960).toFixed(4)),
+    escalaVertical: Number((alturaUtil / 540).toFixed(4)),
+  });
+}
+
+/**
+ * Gera o mapa imutável de hitboxes na grade nativa 960x540 a partir do ViewModel (respeitando a queda de +100 px em 2_TOUCHDOWN).
+ */
+export function obterMapaHitboxesNativo(viewModel) {
+  const dy = Number(viewModel.geometria?.deslocamentoVerticalAtualPx ?? 0);
+  const baseGradeX = 240;
+  const baseGradeY = 156 + dy;
+  const hitboxes = [];
+
+  // 1. Botões da Coluna do Termômetro (x = 0..112, y = 36..440)
+  hitboxes.push({
+    idHitbox: 'BTN_MERGULHO_TATICO',
+    tipo: 'BOTAO_TERMOMETRO',
+    x: 8,
+    y: 360,
+    largura: 96,
+    altura: 32,
+    metadados: { acao: 'MERGULHO_TATICO', ativoAtual: Boolean(viewModel.termometroSustentacao?.botaoMergulhoTatico?.ativo) },
+  });
+
+  hitboxes.push({
+    idHitbox: 'BTN_DRENAR_TUDO',
+    tipo: 'BOTAO_TERMOMETRO',
+    x: 8,
+    y: 398,
+    largura: 96,
+    altura: 32,
+    metadados: { acao: 'DRENAR_TUDO', travadoTouchdown: Boolean(viewModel.termometroSustentacao?.botaoDrenarTudo?.travadoTouchdown) },
+  });
+
+  // 2. As 8 Câmaras (50x35 px cada, paredes de 2 px) + 8 Válvulas Externas nas bordas laterais
+  for (const cam of viewModel.camaras ?? []) {
+    const coordPadrao = COORDENADAS_GRADE_CAMARAS_16A[cam.id] ?? { coluna: 0, andar: 0 };
+    const col = Number(cam.coluna ?? coordPadrao.coluna);
+    const andar = Number(cam.andar ?? coordPadrao.andar);
+    const xCam = baseGradeX + 2 + col * (50 + 2);
+    const yCam = baseGradeY + 2 + andar * (35 + 2);
+    const xValvula = col === 0 ? xCam - 12 : xCam + 50 + 2;
+    const yValvula = yCam + 10;
+
+    hitboxes.push({
+      idHitbox: `VALVULA_CAMARA_${cam.id}`,
+      tipo: 'VALVULA_EXTERNA',
+      x: xValvula,
+      y: yValvula,
+      largura: 10,
+      altura: 15,
+      metadados: {
+        camaraId: cam.id,
+        abertaAtual: Boolean(cam.valvulaExternaAberta),
+        travadoTouchdown: Boolean(cam.botaoValvulaDesabilitado),
+      },
+    });
+
+    hitboxes.push({
+      idHitbox: `CAMARA_${cam.id}`,
+      tipo: 'CAMARA_BIONAVE',
+      x: xCam,
+      y: yCam,
+      largura: 50,
+      altura: 35,
+      metadados: {
+        camaraId: cam.id,
+        nome: cam.nome,
+        coluna: col,
+        andar,
+      },
+    });
+  }
+
+  // 3. Os 8 Sistemas/Subsistemas na Barra Inferior (y = 440..540, x = 120..439)
+  (viewModel.caixaSistemas ?? []).forEach((sys, idx) => {
+    hitboxes.push({
+      idHitbox: `SISTEMA_${sys.sigla}`,
+      tipo: 'SISTEMA_RODAPE',
+      x: 120 + idx * 38,
+      y: 448,
+      largura: 34,
+      altura: 80,
+      metadados: {
+        idSistema: sys.id,
+        sigla: sys.sigla,
+        camaraId: sys.camaraId,
+      },
+    });
+  });
+
+  // 4. Os 4 Slots de Armas Ativas na Barra Inferior (y = 440..540, x = 440..679)
+  (viewModel.caixaArmas ?? []).forEach((slot, idx) => {
+    hitboxes.push({
+      idHitbox: `ARMA_SLOT_${idx}`,
+      tipo: 'SLOT_ARMA',
+      x: 440 + idx * 58,
+      y: 448,
+      largura: 54,
+      altura: 80,
+      metadados: {
+        slotIndex: idx,
+        ocupado: Boolean(slot.ocupado),
+        chassiId: slot.chassiId,
+      },
+    });
+  });
+
+  // 5. Cartões de Tripulação na Barra Inferior (y = 448..528, x = 680..955)
+  const tripulantesUnicos = [];
+  for (const cam of viewModel.camaras ?? []) {
+    for (const t of cam.tripulantesPresentes ?? []) {
+      tripulantesUnicos.push({ ...t, camaraId: cam.id });
+    }
+  }
+  tripulantesUnicos.forEach((trip, idx) => {
+    hitboxes.push({
+      idHitbox: `TRIPULANTE_CARD_${trip.id}`,
+      tipo: 'CARD_TRIPULANTE',
+      x: 680 + idx * 45,
+      y: 448,
+      largura: 42,
+      altura: 80,
+      metadados: {
+        tripulanteId: trip.id,
+        especie: trip.especie,
+        camaraId: trip.camaraId,
+      },
+    });
+  });
+
+  // 6. Salas/Órgãos do Painel do Alvo (x = 600..960, y = 120..380)
+  (viewModel.painelAlvo?.salasInspecionadas ?? []).forEach((sala, idx) => {
+    const colAlvo = idx % 2;
+    const linAlvo = Math.floor(idx / 2);
+    hitboxes.push({
+      idHitbox: `SALA_ALVO_${sala.salaId}`,
+      tipo: 'SALA_ALVO',
+      x: 640 + colAlvo * 110,
+      y: 160 + linAlvo * 70,
+      largura: 96,
+      altura: 56,
+      metadados: {
+        salaId: sala.salaId,
+        canalPermissao: sala.canalPermissao,
+        marcadorExplicito: sala.marcadorExplicito,
+      },
+    });
+  });
+
+  return clonarProfundoCongelado(hitboxes);
+}
+
+/**
+ * Calcula a Pré-Visualização Fantasma (Ghost Preview — Seção 2.1) no Termômetro Vertical
+ * ao passar o mouse sobre válvulas externas, botão Drenar Tudo ou barra de energia do Sifão.
+ */
+export function calcularGhostPreviewTermometro(estado, idHitboxHover = null) {
+  const nave = estado.naveJogador;
+  const pesoAtualKg = nave.pesoTotalKg ?? calcularPesoTotalNave(nave);
+  const sustentacaoAtualKg = nave.sustentacaoAtualKg ?? calcularSustentacaoFoil(nave);
+
+  const ehHitboxGhost =
+    idHitboxHover === 'SISTEMA_SIF' ||
+    idHitboxHover === 'BTN_DRENAR_TUDO' ||
+    (typeof idHitboxHover === 'string' && idHitboxHover.startsWith('VALVULA_CAMARA_'));
+
+  if (!ehHitboxGhost) {
+    return clonarProfundoCongelado({
+      ativo: false,
+      alvoHover: null,
+      pesoProjetadoKg: pesoAtualKg,
+      sustentacaoProjetadaKg: sustentacaoAtualKg,
+      causariaQuedaNoMar: false,
+      rotuloFantasma: null,
+    });
+  }
+
+  let naveSimulada = nave;
+  if (idHitboxHover === 'SISTEMA_SIF') {
+    const camSif = nave.camaras.find((c) => c.id === 5);
+    const barraAtu = Number(camSif?.barrasEnergiaAlocada ?? camSif?.energiaAlocada ?? 0);
+    const novaBarra = Math.max(0, barraAtu - 1);
+    naveSimulada = {
+      ...nave,
+      camaras: nave.camaras.map((c) =>
+        c.id === 5 ? { ...c, barrasEnergiaAlocada: novaBarra, energiaAlocada: novaBarra } : c
+      ),
+    };
+  } else if (idHitboxHover === 'BTN_DRENAR_TUDO') {
+    naveSimulada = {
+      ...nave,
+      camaras: nave.camaras.map((c) => ({ ...c, aguaKg: 0.0 })),
+    };
+  } else {
+    const idCam = Number(idHitboxHover.replace('VALVULA_CAMARA_', ''));
+    naveSimulada = {
+      ...nave,
+      camaras: nave.camaras.map((c) => (c.id === idCam ? { ...c, aguaKg: 0.0 } : c)),
+    };
+  }
+
+  const pesoProjetadoKg = calcularPesoTotalNave(naveSimulada);
+  const sustentacaoProjetadaKg = calcularSustentacaoFoil(naveSimulada);
+  const causariaQuedaNoMar =
+    nave.estadoFisico === '1_NO_FOIL' && pesoProjetadoKg > sustentacaoProjetadaKg;
+
+  return clonarProfundoCongelado({
+    ativo: true,
+    alvoHover: idHitboxHover,
+    pesoProjetadoKg: Math.round(pesoProjetadoKg * 100) / 100,
+    sustentacaoProjetadaKg: Math.round(sustentacaoProjetadaKg * 100) / 100,
+    causariaQuedaNoMar,
+    rotuloFantasma: causariaQuedaNoMar ? '[QUEDA NO MAR]' : '[ESTÁVEL NO FOIL]',
+  });
+}
+
+/**
+ * Traduz um evento DOM (teclado, hover ou clique de mouse no Canvas 16:9) num comando atômico da Seção 8.5.A
+ * ou ação de interface (pausa tática / seleção / Ghost Preview) e opcionalmente despacha no motor real.
+ */
+export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, contextoUi = {}) {
+  const tipoEvento = eventoInput?.tipoEvento ?? 'CLICK';
+  const todasAbertas = (estado.naveJogador?.camaras ?? []).every((c) => c.valvulaExternaAberta);
+
+  if (tipoEvento === 'KEYDOWN') {
+    const code = String(eventoInput.code ?? '');
+    if (code === 'Space') {
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: 'ALTERNAR_PAUSA_TATICA',
+        pausaTaticaAtiva: !contextoUi.pausaTaticaAtiva,
+        comandoMotor: null,
+        resultadoMotor: null,
+      });
+    }
+    if (code === 'KeyV') {
+      const comandoMotor = { tipo: 'DRENAR_TUDO', payload: { abrirTodas: !todasAbertas } };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+    if (code === 'KeyM') {
+      const recolher = estado.naveJogador?.estadoFisico === '1_NO_FOIL';
+      const comandoMotor = { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: recolher } };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+    if (code === 'KeyF') {
+      const comandoMotor = { tipo: 'SALTO_FUGA', payload: {} };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+    const mDigito = code.match(/^Digit([1-4])$/);
+    if (mDigito) {
+      const slotIndex = Number(mDigito[1]) - 1;
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: 'SELECIONAR_SLOT_ARMA',
+        slotArmaSelecionado: slotIndex,
+        comandoMotor: null,
+        resultadoMotor: null,
+      });
+    }
+    return clonarProfundoCongelado({
+      reconhecido: false,
+      acaoLocalUi: null,
+      comandoMotor: null,
+      resultadoMotor: null,
+    });
+  }
+
+  const coord = converterCoordenadaTelaParaNativa(
+    eventoInput?.clientX ?? 0,
+    eventoInput?.clientY ?? 0,
+    eventoInput?.retanguloCanvas
+  );
+  if (!coord.dentroDoCanvas) {
+    return clonarProfundoCongelado({
+      reconhecido: false,
+      foraDoCanvas: true,
+      coordenadaNativa: coord,
+      comandoMotor: null,
+      resultadoMotor: null,
+    });
+  }
+
+  const hitboxes = obterMapaHitboxesNativo(viewModel);
+  const hb = hitboxes.find(
+    (h) =>
+      coord.xNativo >= h.x &&
+      coord.xNativo < h.x + h.largura &&
+      coord.yNativo >= h.y &&
+      coord.yNativo < h.y + h.altura
+  );
+
+  if (tipoEvento === 'MOUSEMOVE') {
+    const ghostPreview = calcularGhostPreviewTermometro(estado, hb?.idHitbox ?? null);
+    return clonarProfundoCongelado({
+      reconhecido: Boolean(hb),
+      foraDoCanvas: false,
+      hitboxAtingida: hb?.idHitbox ?? null,
+      acaoLocalUi: 'ATUALIZAR_GHOST_PREVIEW',
+      ghostPreview,
+      coordenadaNativa: coord,
+      comandoMotor: null,
+      resultadoMotor: null,
+    });
+  }
+
+  if (!hb) {
+    return clonarProfundoCongelado({
+      reconhecido: false,
+      foraDoCanvas: false,
+      coordenadaNativa: coord,
+      comandoMotor: null,
+      resultadoMotor: null,
+    });
+  }
+
+  let comandoMotor = null;
+  if (hb.idHitbox === 'BTN_DRENAR_TUDO') {
+    comandoMotor = { tipo: 'DRENAR_TUDO', payload: { abrirTodas: !todasAbertas } };
+  } else if (hb.idHitbox === 'BTN_MERGULHO_TATICO') {
+    const recolher = estado.naveJogador?.estadoFisico === '1_NO_FOIL';
+    comandoMotor = { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: recolher } };
+  } else if (hb.tipo === 'VALVULA_EXTERNA') {
+    comandoMotor = {
+      tipo: 'ALTERNAR_VALVULA',
+      payload: { camaraId: hb.metadados.camaraId, aberta: !hb.metadados.abertaAtual },
+    };
+  } else if (hb.tipo === 'SISTEMA_RODAPE') {
+    const deltaBarras = eventoInput.botaoMouse === 2 || eventoInput.shiftKey === true ? -1 : 1;
+    comandoMotor = {
+      tipo: 'ALOCAR_ENERGIA',
+      payload: { camaraId: hb.metadados.camaraId, deltaBarras },
+    };
+  } else if (hb.tipo === 'CARD_TRIPULANTE') {
+    return clonarProfundoCongelado({
+      reconhecido: true,
+      hitboxAtingida: hb.idHitbox,
+      acaoLocalUi: 'SELECIONAR_TRIPULANTE',
+      tripulanteSelecionadoId: hb.metadados.tripulanteId,
+      coordenadaNativa: coord,
+      comandoMotor: null,
+      resultadoMotor: null,
+    });
+  } else if (hb.tipo === 'CAMARA_BIONAVE') {
+    const tripulanteSelecionadoId =
+      contextoUi.tripulanteSelecionadoId ?? estado.naveJogador?.tripulacao?.[0]?.id ?? 'trip-polvo-1';
+    comandoMotor = {
+      tipo: 'MOVER_TRIPULANTE',
+      payload: { tripulanteId: tripulanteSelecionadoId, camaraDestinoId: hb.metadados.camaraId },
+    };
+  } else if (hb.tipo === 'SALA_ALVO') {
+    const slotIndex = Number(contextoUi.slotArmaSelecionado ?? 0);
+    comandoMotor = {
+      tipo: 'MIRAR_ARMA',
+      payload: {
+        slotIndex,
+        salaAlvoId: hb.metadados.salaId,
+        ...(contextoUi.trincaSalasBeam ? { trincaSalasBeam: contextoUi.trincaSalasBeam } : {}),
+      },
+    };
+  } else {
+    return clonarProfundoCongelado({
+      reconhecido: true,
+      hitboxAtingida: hb.idHitbox,
+      acaoLocalUi: 'SELECIONAR_SLOT_ARMA',
+      slotArmaSelecionado: hb.metadados.slotIndex,
+      coordenadaNativa: coord,
+      comandoMotor: null,
+      resultadoMotor: null,
+    });
+  }
+
+  return clonarProfundoCongelado({
+    reconhecido: true,
+    hitboxAtingida: hb.idHitbox,
+    acaoLocalUi: null,
+    coordenadaNativa: coord,
+    comandoMotor,
+    resultadoMotor: despacharComandoUi(estado, comandoMotor),
+  });
+}
+

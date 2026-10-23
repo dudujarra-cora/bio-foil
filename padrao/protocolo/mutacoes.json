@@ -1412,6 +1412,54 @@
         "tests/02-hook-ambiente.test.mjs"
       ],
       "falhaEsperada": "[MUT-MCP-06 / Modo Jogo] executarAcaoJogoMcp deve creditar o saque de vitória (+12 Sucata Bruta no Setor 1) na carteira ao vencer combate"
+    },
+    {
+      "id": "MUT-89",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "N1 / Seção 8.5.C (MUT-O6-04)",
+      "descricao": "Renderizador Canvas 2D ignora a queda de 100 px nativos em 2_TOUCHDOWN (parede 2º/3º andar deixa de cruzar LINHA_DAGUA_Y = 330)",
+      "trocas": [
+        {
+          "buscar": "  const dy = opcoesDebug.ignorarQuedaTouchdownNoCanvas === true ? 0 : viewModel.geometria.deslocamentoVerticalAtualPx;",
+          "substituir": "  const dy = 0;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-04 / Canvas 960x540] Em 2_TOUCHDOWN, a grade das 8 câmaras no Canvas deve descer 100 px nativos (parede 2º/3º andar na LINHA_DAGUA_Y = 330)"
+    },
+    {
+      "id": "MUT-90",
+      "arquivo": "src/onda6-ui/cues-audio.mjs",
+      "lei": "N1 / Seção 8.5.C (MUT-O6-05)",
+      "descricao": "Motor WebAudio deixa o BiquadFilterNode master em 20000 Hz em vez de aplicar passa-baixa a 400 Hz durante 2_TOUCHDOWN/3_SPOOL_UP",
+      "trocas": [
+        {
+          "buscar": "  const ignorarFiltroSubaquaticoMutacao = opcoesDebug.ignorarFiltroSubaquatico400Hz === true;",
+          "substituir": "  const ignorarFiltroSubaquaticoMutacao = true;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-05 / WebAudio 400Hz] Em 2_TOUCHDOWN/3_SPOOL_UP, o BiquadFilterNode master deve operar em passa-baixa a 400 Hz"
+    },
+    {
+      "id": "MUT-91",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "L4 / Seção 5.4 (MUT-O6-06)",
+      "descricao": "Atlas de Sprites Nativo dá à COURACA_LIMIAR a asa submersa padrão (44 px) em vez do dobro da largura (88 px)",
+      "trocas": [
+        {
+          "buscar": "  const asaCouracaPadraoMutacao = opcoesDebug.reduzirAsaCouracaLimiar === true;",
+          "substituir": "  const asaCouracaPadraoMutacao = true;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-06 / Atlas Sprites] A asa submersa da COURACA_LIMIAR no Atlas deve ter o dobro da largura padrão (88 px = 2x 44 px)"
     }
   ]
 }
