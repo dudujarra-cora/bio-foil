@@ -676,6 +676,54 @@
         "tests/01-portao-gdd.test.mjs"
       ],
       "falhaEsperada": "CUE_ALARME_FERVURA_4S na Seção 8.5.C diverge do alarme de 4.0s e duração de 5.0s da Fase 3 (Vol. 05 / Matriz 6.2)"
+    },
+    {
+      "id": "MUT-43",
+      "arquivo": "09_economia_bestiario_e_comandos.md",
+      "lei": "N1 / N5",
+      "descricao": "PILAR_1_ECONOMIA na Seção 9.1 referencia módulo fora da Árvore de Módulos do Vol. 08 (Seção 8.3)",
+      "trocas": [
+        {
+          "buscar": "| `PILAR_1_ECONOMIA` | 10 Árvores de Upgrade, 20 Itens de Loja e Curva Setores 1..8 | `Vol. 05 (Seção 5.6)` | `src/onda5-catalogo-chefe/catalogo-naves-itens.mjs` |",
+          "substituir": "| `PILAR_1_ECONOMIA` | 10 Árvores de Upgrade, 20 Itens de Loja e Curva Setores 1..8 | `Vol. 05 (Seção 5.6)` | `src/onda5-catalogo-chefe/modulo-fantasma.mjs` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Módulo src/onda5-catalogo-chefe/modulo-fantasma.mjs do pilar PILAR_1_ECONOMIA no Vol. 09 não consta na Árvore de Módulos do Vol. 08 (Seção 8.3)"
+    },
+    {
+      "id": "MUT-44",
+      "arquivo": "09_economia_bestiario_e_comandos.md",
+      "lei": "N1 / L4",
+      "descricao": "TR_7_FIM_DE_PARTIDA na Seção 9.2 deixa de apagar run_save.json (quebra regra de Permadeath da Seção 8.5.B)",
+      "trocas": [
+        {
+          "buscar": "| `TR_7_FIM_DE_PARTIDA` | `COMBATE` | Derrota (`hpCascoAtual <= 0` ou $0\\text{ aliados}$) ou Vitória na Fase 3 (Setor 8) | `FIM_DE_RUN` | **Apaga `run_save.json` (*Permadeath*)** e preserva `profile.json` intacto |",
+          "substituir": "| `TR_7_FIM_DE_PARTIDA` | `COMBATE` | Derrota (`hpCascoAtual <= 0` ou $0\\text{ aliados}$) ou Vitória na Fase 3 (Setor 8) | `FIM_DE_RUN` | **Mantém `run_save.json` ativo** e preserva `profile.json` intacto |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "TR_7_FIM_DE_PARTIDA deve apagar run_save.json (Permadeath) preservando profile.json"
+    },
+    {
+      "id": "MUT-45",
+      "arquivo": "09_economia_bestiario_e_comandos.md",
+      "lei": "L2 / L6",
+      "descricao": "STREAM_2_EVENTO_OPCAO_A na Seção 9.3 troca hash32(seedPartida, ...) por Math.random() impuro",
+      "trocas": [
+        {
+          "buscar": "| `STREAM_2_EVENTO_OPCAO_A` | Paridade $p \\in \\{0, 1\\}$ da Opção A e sorteio de item em *Blue Option* | `hash32(seedPartida, 'EVENTO_NO', setorNumero, noId)` |",
+          "substituir": "| `STREAM_2_EVENTO_OPCAO_A` | Paridade $p \\in \\{0, 1\\}$ da Opção A e sorteio de item em *Blue Option* | `Math.random()` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Stream STREAM_2_EVENTO_OPCAO_A na Seção 9.3 deve usar assinatura pura hash32(seedPartida, ...)"
     }
   ]
 }

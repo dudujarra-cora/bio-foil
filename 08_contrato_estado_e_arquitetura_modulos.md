@@ -153,7 +153,7 @@ Para cumprir a **Lei N5 ("Um dono por arquivo compartilhado")** e a **Lei N6 ("O
 
 ```text
 /Users/dudujarra/Documents/ftl/
-├── 01..08_*.md                          # [Onda 0] 8 Volumes Canônicos do GDD (Congelados)
+├── 01..09_*.md                          # [Onda 0] 9 Volumes Canônicos do GDD (Congelados)
 ├── .github/workflows/portoes.yml        # [Onda 0] CI no servidor: roda o pre-push; a main protegida exige verde
 ├── package.json                         # [Onda 0] Fixa Node >=22.22 <23 (engines) — sem dependências
 ├── padrao/protocolo/

@@ -10,6 +10,7 @@ export const CADEIA_CANONICA_GDD = Object.freeze([
   '06_prova_formal_matriz_e_limites.md',
   '07_plano_mestre_de_testes_14_leis.md',
   '08_contrato_estado_e_arquitetura_modulos.md',
+  '09_economia_bestiario_e_comandos.md',
 ]);
 
 export const CADEIA_CANONICA_TESTES = Object.freeze([
@@ -1599,6 +1600,136 @@ export function avaliarDesbloqueioCarcacas(
     }
   }
   return clonarProfundoCongelado(mapa);
+}
+
+/**
+ * Extrai e audita o Volume 09 (Consolidação Executiva e Rastreabilidade Ondas 1 a 6):
+ *  - 9.1: Matriz Mestre dos 5 Pilares Sênior (GDD <-> src/ <-> tests/ <-> Mutações);
+ *  - 9.2: Máquina de Estados do Ciclo de Vida da Partida (7 transições de meta.faseJogo);
+ *  - 9.3: Particionamento Determinístico de Seeds (5 Streams isolados de hash32).
+ */
+export function extrairConsolidacaoVolume09(conteudoVol09) {
+  const secao91 = conteudoVol09.split('## 9.1.')[1]?.split('## 9.2.')[0] ?? '';
+  const secao92 = conteudoVol09.split('## 9.2.')[1]?.split('## 9.3.')[0] ?? '';
+  const secao93 = conteudoVol09.split('## 9.3.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const secaoContra9 = conteudoVol09.split('# CONTRA-AUDITORIA #9')[1] ?? '';
+
+  const pilares = [];
+  for (const linha of secao91.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID do Pilar') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 7) {
+        pilares.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          escopo: normalizarTexto(cols[1]),
+          fonteGdd: cols[2].replace(/`/g, '').trim(),
+          moduloSrc: cols[3].replace(/`/g, '').trim(),
+          portaoTeste: cols[4].replace(/`/g, '').trim(),
+          invarianteChave: normalizarTexto(cols[5]),
+          mutacoesReais: cols[6]
+            .replace(/`/g, '')
+            .split(',')
+            .map((m) => m.trim())
+            .filter(Boolean),
+        });
+      }
+    }
+  }
+
+  const transicoesCiclo = [];
+  for (const linha of secao92.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID da Transição') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 5) {
+        transicoesCiclo.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          faseOrigem: cols[1].replace(/`/g, '').trim(),
+          gatilho: normalizarTexto(cols[2]),
+          faseDestino: cols[3].replace(/`/g, '').trim(),
+          efeitoPersistencia: normalizarTexto(cols[4]),
+        });
+      }
+    }
+  }
+
+  const streamsPrng = [];
+  for (const linha of secao93.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID do Stream') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 4) {
+        streamsPrng.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          dominio: normalizarTexto(cols[1]),
+          assinaturaChave: cols[2].replace(/`/g, '').trim(),
+          moduloConsumidor: cols[3].replace(/`/g, '').trim(),
+        });
+      }
+    }
+  }
+
+  const temContraAuditoria9Completa =
+    /1\.\s+\*\*Existe efeito borboleta/.test(secaoContra9) &&
+    /2\.\s+\*\*Todos os 5 Pilares Sênior possuem cobertura cruzada/.test(secaoContra9);
+
+  return clonarProfundoCongelado({
+    pilares,
+    transicoesCiclo,
+    streamsPrng,
+    temContraAuditoria9Completa,
+  });
+}
+
+/**
+ * Avalia puramente uma transição da Máquina de Estados do Ciclo de Vida da Partida (Seção 9.2).
+ */
+export function transicionarFaseCicloPartida(consolidacaoVol09, faseAtual, idTransicao) {
+  const tr = consolidacaoVol09.transicoesCiclo.find((t) => t.id === idTransicao);
+  if (!tr) {
+    throw new Error(`[CICLO PARTIDA FALHOU] Transição desconhecida fora da Seção 9.2: "${idTransicao}"`);
+  }
+  if (tr.faseOrigem !== faseAtual) {
+    return clonarProfundoCongelado({
+      aceita: false,
+      faseResultante: faseAtual,
+      apagaRunSavePermadeath: false,
+      preservaProfileJson: true,
+      erro: `TRANSIÇÃO_FASE_ILEGAL:${faseAtual}->${tr.faseDestino}`,
+    });
+  }
+  const apagaRunSavePermadeath = /Apaga run_save\.json \(\*?Permadeath\*?\)/i.test(tr.efeitoPersistencia);
+  return clonarProfundoCongelado({
+    aceita: true,
+    faseResultante: tr.faseDestino,
+    apagaRunSavePermadeath,
+    preservaProfileJson: true,
+    erro: null,
+  });
+}
+
+/**
+ * Função pura FNV-1a 32-bit para o Particionamento Determinístico de Seeds (Seção 9.3).
+ * Isola completamente o sorteio por (seedPartida, dominio, ...coordenadas) sem Math.random().
+ */
+export function calcularHash32StreamDeterministico(seedPartida, dominio, ...coordenadas) {
+  const chave = `${String(seedPartida)}::${String(dominio)}::${coordenadas.map(String).join(':')}`;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < chave.length; i += 1) {
+    h ^= chave.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
 /**

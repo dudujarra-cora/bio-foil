@@ -27,6 +27,9 @@ import {
   extrairComandosPersistenciaOnda6Volume08,
   validarDespachoComando,
   avaliarDesbloqueioCarcacas,
+  extrairConsolidacaoVolume09,
+  transicionarFaseCicloPartida,
+  calcularHash32StreamDeterministico,
   extrairTripulacaoVolume01,
   extrairTopologiaOcupacaoBeamVolume01,
   calcularRotaMinimaCamaras,
@@ -86,12 +89,12 @@ const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url))
  */
 const LISTA_CATRACA = Object.freeze([]);
 
-test('Portão L5 + N4: aplica a cadeia canônica inteira (01..08) na ordem e valida tripwire de diretório', () => {
+test('Portão L5 + N4: aplica a cadeia canônica inteira (01..09) na ordem e valida tripwire de diretório', () => {
   const resultado = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
 
   console.log(`[N4] Arquivos .md examinados na cadeia canônica: ${resultado.arquivosExaminados}`);
   assert.ok(resultado.arquivosExaminados > 0, '[N4] Zero arquivos examinados deve reprovar');
-  assert.equal(resultado.arquivosExaminados, 8, 'Deve examinar exatamente os 8 volumes canônicos (01..08)');
+  assert.equal(resultado.arquivosExaminados, 9, 'Deve examinar exatamente os 9 volumes canônicos (01..09)');
 
   assert.deepEqual(resultado.cadeiaDeclarada, [
     '01_matematica_base_e_auditoria.md',
@@ -102,6 +105,7 @@ test('Portão L5 + N4: aplica a cadeia canônica inteira (01..08) na ordem e val
     '06_prova_formal_matriz_e_limites.md',
     '07_plano_mestre_de_testes_14_leis.md',
     '08_contrato_estado_e_arquitetura_modulos.md',
+    '09_economia_bestiario_e_comandos.md',
   ]);
 
   const vol07 = resultado.volumes[6].conteudo;
@@ -161,7 +165,7 @@ test('Portão L5 + N4: aplica a cadeia canônica inteira (01..08) na ordem e val
     for (const v of resultado.volumes) {
       fs.writeFileSync(path.join(pastaTmp, v.arquivo), v.conteudo, 'utf8');
     }
-    fs.writeFileSync(path.join(pastaTmp, '09_arquivo_intruso_nao_declarado.md'), '# Intruso', 'utf8');
+    fs.writeFileSync(path.join(pastaTmp, '10_arquivo_intruso_nao_declarado.md'), '# Intruso', 'utf8');
     assert.throws(
       () => carregarCadeiaCanonicaGdd(pastaTmp),
       /\[L5 TRIPWIRE FALHOU\]/,
@@ -1567,6 +1571,122 @@ test('Junção N1 + L4 + N4: audita o Action Schema (8.5.A), Persistência profi
     especOnda6.temItem3ContraAuditoria8,
     true,
     'Contra-Auditoria #8 do Vol. 08 deve conter o Item 3 (validação pura de cliques de UI e separação run_save.json vs profile.json)'
+  );
+});
+
+test('Junção N1 + L4 + N4: audita a Consolidação Executiva do Vol. 09 (Matriz dos 5 Pilares 9.1, Máquina de Ciclo 9.2 e Streams PRNG 9.3) contra Vols. 01..08 e mutacoes.json', () => {
+  const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const vol08Texto = cadeia.volumes[7].conteudo;
+  const vol09Texto = cadeia.volumes[8].conteudo;
+
+  const consolidacao = extrairConsolidacaoVolume09(vol09Texto);
+  const mutacoesDeclaradas = JSON.parse(
+    fs.readFileSync(path.join(DIRETORIO_RAIZ, 'padrao', 'protocolo', 'mutacoes.json'), 'utf8')
+  ).mutacoes;
+  const idsMutacoesJson = new Set(mutacoesDeclaradas.map((m) => m.id));
+
+  console.log(
+    `[N4] Vol. 09 examinado: ${consolidacao.pilares.length} pilares sênior, ${consolidacao.transicoesCiclo.length} transições de ciclo, ${consolidacao.streamsPrng.length} streams isolados de PRNG`
+  );
+
+  // 1. Auditoria da Seção 9.1 (5 Pilares Sênior) contra a Árvore de Módulos (Vol. 08 Seção 8.3) e mutacoes.json
+  assert.equal(consolidacao.pilares.length, 5, 'Seção 9.1 do Vol. 09 deve consolidar exatamente os 5 Pilares Sênior');
+  assert.deepEqual(
+    consolidacao.pilares.map((p) => p.id),
+    [
+      'PILAR_1_ECONOMIA',
+      'PILAR_2_CHEFE_BESTIARIO',
+      'PILAR_3_TOPOLOGIA_BEAM',
+      'PILAR_4_EVENTOS_SOS',
+      'PILAR_5_ACTION_SCHEMA_ONDA6',
+    ],
+    'IDs dos 5 Pilares na Seção 9.1 divergem dos canônicos'
+  );
+
+  for (const p of consolidacao.pilares) {
+    const basenameModulo = path.basename(p.moduloSrc);
+    const basenameTeste = path.basename(p.portaoTeste);
+    assert.ok(
+      vol08Texto.includes(basenameModulo),
+      `Módulo ${p.moduloSrc} do pilar ${p.id} no Vol. 09 não consta na Árvore de Módulos do Vol. 08 (Seção 8.3)`
+    );
+    assert.ok(
+      vol08Texto.includes(basenameTeste),
+      `Portão de teste ${p.portaoTeste} do pilar ${p.id} no Vol. 09 não consta na Árvore de Módulos do Vol. 08 (Seção 8.3)`
+    );
+    assert.equal(p.mutacoesReais.length, 3, `Pilar ${p.id} na Seção 9.1 deve listar exatamente 3 mutações reais`);
+    for (const mutId of p.mutacoesReais) {
+      assert.ok(
+        idsMutacoesJson.has(mutId),
+        `Mutação ${mutId} referenciada no pilar ${p.id} (Seção 9.1) não existe em mutacoes.json`
+      );
+    }
+  }
+
+  // 2. Auditoria da Máquina de Estados do Ciclo de Vida da Partida (Seção 9.2)
+  assert.equal(
+    consolidacao.transicoesCiclo.length,
+    7,
+    'Seção 9.2 do Vol. 09 deve especificar exatamente as 7 transições do Ciclo de Vida da Partida'
+  );
+  const trCombate = transicionarFaseCicloPartida(consolidacao, 'MAPA', 'TR_1_INICIAR_NO_COMBATE');
+  assert.equal(trCombate.aceita, true);
+  assert.equal(trCombate.faseResultante, 'COMBATE');
+  assert.equal(trCombate.apagaRunSavePermadeath, false);
+
+  const trFimRun = transicionarFaseCicloPartida(consolidacao, 'COMBATE', 'TR_7_FIM_DE_PARTIDA');
+  assert.equal(trFimRun.aceita, true);
+  assert.equal(trFimRun.faseResultante, 'FIM_DE_RUN');
+  assert.equal(
+    trFimRun.apagaRunSavePermadeath,
+    true,
+    'TR_7_FIM_DE_PARTIDA deve apagar run_save.json (Permadeath) preservando profile.json'
+  );
+  assert.equal(trFimRun.preservaProfileJson, true);
+
+  const trIlegal = transicionarFaseCicloPartida(consolidacao, 'LOJA', 'TR_7_FIM_DE_PARTIDA');
+  assert.equal(trIlegal.aceita, false, 'Transição fora da fase de origem deve ser rejeitada');
+  assert.equal(trIlegal.faseResultante, 'LOJA');
+
+  // 3. Auditoria dos 5 Streams Isolados de PRNG (Seção 9.3: Ausência de Butterfly Effect)
+  assert.equal(
+    consolidacao.streamsPrng.length,
+    5,
+    'Seção 9.3 do Vol. 09 deve especificar exatamente os 5 Streams isolados de PRNG (hash32)'
+  );
+  for (const s of consolidacao.streamsPrng) {
+    assert.ok(
+      s.assinaturaChave.startsWith('hash32(seedPartida,'),
+      `Stream ${s.id} na Seção 9.3 deve usar assinatura pura hash32(seedPartida, ...)`
+    );
+    assert.ok(
+      vol08Texto.includes(path.basename(s.moduloConsumidor)),
+      `Consumidor ${s.moduloConsumidor} do stream ${s.id} não consta na Seção 8.3 do Vol. 08`
+    );
+  }
+
+  // Prova de Isolamento de Domínio (Anti-Butterfly Effect): rolar 1000 ticks de combate nunca altera o hash de um nó SOS
+  const hashEventoAntes = calcularHash32StreamDeterministico('biofoil-seed-01', 'EVENTO_NO', 2, 'NO_SOS_3');
+  const hashesCombate = [];
+  for (let tick = 1; tick <= 20; tick += 1) {
+    hashesCombate.push(calcularHash32StreamDeterministico('biofoil-seed-01', 'COMBATE_TICK', 1, 'NO_1', tick, 0));
+  }
+  const hashEventoDepois = calcularHash32StreamDeterministico('biofoil-seed-01', 'EVENTO_NO', 2, 'NO_SOS_3');
+  assert.equal(
+    hashEventoAntes,
+    hashEventoDepois,
+    'Stream de EVENTO_NO deve ser 100% invariante em relação às rolagens de COMBATE_TICK'
+  );
+  assert.notEqual(
+    calcularHash32StreamDeterministico('biofoil-seed-01', 'EVENTO_NO', 2, 'NO_SOS_3'),
+    calcularHash32StreamDeterministico('biofoil-seed-01', 'LOJA_FORJA', 2, 'NO_SOS_3'),
+    'Domínios distintos (EVENTO_NO vs LOJA_FORJA) com mesma coordenada devem produzir hashes distintos'
+  );
+
+  assert.equal(
+    consolidacao.temContraAuditoria9Completa,
+    true,
+    'Contra-Auditoria #9 do Vol. 09 deve auditar o anti-Butterfly Effect e a cobertura de mutações dos 5 pilares'
   );
 });
 
