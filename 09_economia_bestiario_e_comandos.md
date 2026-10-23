@@ -70,5 +70,5 @@ Para que uma ação lateral do jogador (abrir uma loja, disparar um tiro extra, 
 3. **O que este planejamento ainda NÃO garante (limites declarados)?**
    * As provas econômicas usam a **nave de referência** ($2.0\text{ h}$ por salto). Naves mais rápidas visitam mais nós, e o teto de moeda cresce em proporção (Falha Global 6, item 3).
    * O TTK da Fase 3 é uma **distribuição** (mediana, esperado, P90) sob o arsenal padrão de Setor 8; outras *builds* exigem nova prova.
-   * As Ondas 1 a 6 ainda não existem em código. O `src/oraculos-referencia.mjs` da Onda 0 contém **oráculos de referência** contra os quais os módulos das Ondas serão comparados (teste diferencial); ele não é o produto final.
+   * As Ondas 1 a 6 estão implementadas como motor lógico puro e ViewModel determinístico (`src/onda1-fisica/` a `src/onda6-ui/`, validadas por `tests/03..08` e comparadas contra os oráculos de `src/oraculos-referencia.mjs`); o empacotamento gráfico/sonoro final em navegador (Canvas/WebAudio) consome esse `ViewModel` e os `8 Cues` sem alterar a lógica pura.
    * *Resultado:* planejamento técnico **consistente entre os 9 volumes e auditado pelo portão**, com os limites acima declarados.

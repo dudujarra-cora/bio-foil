@@ -16,6 +16,12 @@ export const CADEIA_CANONICA_GDD = Object.freeze([
 export const CADEIA_CANONICA_TESTES = Object.freeze([
   '01-portao-gdd.test.mjs',
   '02-hook-ambiente.test.mjs',
+  '03-onda1-fisica.test.mjs',
+  '04-onda2-combate.test.mjs',
+  '05-onda3-inimigos.test.mjs',
+  '06-onda4-mapa.test.mjs',
+  '07-onda5-catalogo-chefe.test.mjs',
+  '08-onda6-ui-juncao.test.mjs',
   '09-mutacoes-reais.test.mjs',
 ]);
 

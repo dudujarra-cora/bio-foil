@@ -1668,6 +1668,9 @@ test('Junção N1 + L4 + N5: audita a Consolidação do Vol. 09 (5 Pilares x Ár
   for (const e of arvore) {
     const pasta = e.caminho.match(/onda(\d)-/);
     if (pasta) assert.equal(e.onda, Number(pasta[1]), `Arquivo ${e.caminho} está na pasta da Onda ${pasta[1]} mas declara Onda ${e.onda}`);
+    if (e.caminho !== '01..09_*.md') {
+      assert.equal(fs.existsSync(path.join(DIRETORIO_RAIZ, e.caminho)), true, `Arquivo ${e.caminho} declarado na Árvore 8.3 não existe no disco`);
+    }
   }
 
   // 2. Os 5 pilares: módulo e portão existem na árvore, na mesma Onda, com 3 mutações reais cada

@@ -964,6 +964,358 @@
         "tests/01-portao-gdd.test.mjs"
       ],
       "falhaEsperada": "Velocidade da Frente Extrativista na Seção 4.5.B diverge da SSOT VEL_FRENTE_EXTRATIVISTA (Vol. 06)"
+    },
+    {
+      "id": "MUT-61",
+      "arquivo": "src/onda1-fisica/tick-hidraulica-foil.mjs",
+      "lei": "N1 / L1 (MUT-O1-01)",
+      "descricao": "Mastro sustenta a nave no ar mesmo com 0 barras de energia no Sifão",
+      "trocas": [
+        {
+          "buscar": "  if (barrasSifao === 0 || barrasMastro === 0) {\n    return 0.0;\n  }",
+          "substituir": "  if (barrasMastro === 0) {\n    return 0.0;\n  }"
+        }
+      ],
+      "testes": [
+        "tests/03-onda1-fisica.test.mjs"
+      ],
+      "falhaEsperada": "Com 0 barras de energia no Sifão, a sustentação deve cair para 0 kg (Mastro não sustenta parado)"
+    },
+    {
+      "id": "MUT-62",
+      "arquivo": "src/onda1-fisica/tick-hidraulica-foil.mjs",
+      "lei": "N1 / Matriz 6.2 (MUT-O1-02)",
+      "descricao": "Permite abrir a Válvula Externa quando a nave está em 2_TOUCHDOWN ou 3_SPOOL_UP",
+      "trocas": [
+        {
+          "buscar": "  if (estado.naveJogador.estadoFisico !== '1_NO_FOIL') {\n    const copiaRejeitada = structuredClone(estado);\n    copiaRejeitada.logDeterministico.push({\n      tick: estado.meta.tickAtual,\n      tempoSeg: estado.meta.tempoCombateSeg,\n      tipo: 'COMANDO_REJEITADO',\n      comando: 'ALTERNAR_VALVULA',",
+          "substituir": "  if (false && estado.naveJogador.estadoFisico !== '1_NO_FOIL') {\n    const copiaRejeitada = structuredClone(estado);\n    copiaRejeitada.logDeterministico.push({\n      tick: estado.meta.tickAtual,\n      tempoSeg: estado.meta.tempoCombateSeg,\n      tipo: 'COMANDO_REJEITADO',\n      comando: 'ALTERNAR_VALVULA',"
+        }
+      ],
+      "testes": [
+        "tests/03-onda1-fisica.test.mjs"
+      ],
+      "falhaEsperada": "Válvula Externa não pode abrir em 2_TOUCHDOWN (Trava Hidrostática Automática)"
+    },
+    {
+      "id": "MUT-63",
+      "arquivo": "src/onda1-fisica/tick-hidraulica-foil.mjs",
+      "lei": "N1 / Matriz 6.2 (MUT-O1-03)",
+      "descricao": "Não zera o timer de 3.0s do Spool-up quando o Peso ultrapassa a Sustentação em t = 2.5s",
+      "trocas": [
+        {
+          "buscar": "      nave.estadoFisico = '2_TOUCHDOWN';\n      nave.progressoSpoolUpSeg = 0.0;\n      nave.tempoTouchdownContinuoSeg = arredondar4(nave.tempoTouchdownContinuoSeg + dtSeg);\n      proximo.logDeterministico.push({\n        tick: proximo.meta.tickAtual,\n        tempoSeg: arredondar4(proximo.meta.tempoCombateSeg + dtSeg),\n        tipo: 'SPOOL_UP_ABORTADO',",
+          "substituir": "      nave.estadoFisico = '2_TOUCHDOWN';\n      nave.tempoTouchdownContinuoSeg = arredondar4(nave.tempoTouchdownContinuoSeg + dtSeg);\n      proximo.logDeterministico.push({\n        tick: proximo.meta.tickAtual,\n        tempoSeg: arredondar4(proximo.meta.tempoCombateSeg + dtSeg),\n        tipo: 'SPOOL_UP_ABORTADO',"
+        }
+      ],
+      "testes": [
+        "tests/03-onda1-fisica.test.mjs"
+      ],
+      "falhaEsperada": "Se P_total > S_atual em t=2.5s do Spool-up, o progresso do Spool-up (3.0s) deve ser zerado para 0.0s"
+    },
+    {
+      "id": "MUT-64",
+      "arquivo": "src/onda1-fisica/tick-hidraulica-foil.mjs",
+      "lei": "N1 / L1 (MUT-O1-04)",
+      "descricao": "Remove a penalidade de Cavitação (-2 kg por kg abaixo de 62.5 kg de água interna)",
+      "trocas": [
+        {
+          "buscar": "  return arredondar4(deficit * CONSTANTES_FISICA_HIDRAULICA.PENALIDADE_CAVITACAO_POR_KG);",
+          "substituir": "  return 0.0;"
+        }
+      ],
+      "testes": [
+        "tests/03-onda1-fisica.test.mjs"
+      ],
+      "falhaEsperada": "Com 50 kg de água interna (12.5 kg abaixo de 62.5 kg), a penalidade de cavitação deve ser 25 kg (-2 kg por kg)"
+    },
+    {
+      "id": "MUT-65",
+      "arquivo": "src/onda2-combate/tick-sistemas-armas.mjs",
+      "lei": "N1 / Hierarquia 6.4 (MUT-O2-01)",
+      "descricao": "Multiplica as reduções de recarga ((1 - 0.20) * (1 - 0.25) = 0.60) em vez de somá-las aditivamente (0.55)",
+      "trocas": [
+        {
+          "buscar": "    1.0 - reducaoOperador - reducaoTouchdown",
+          "substituir": "    (1.0 - reducaoOperador) * (1.0 - reducaoTouchdown)"
+        }
+      ],
+      "testes": [
+        "tests/04-onda2-combate.test.mjs"
+      ],
+      "falhaEsperada": "Reduções de recarga (Polvo -20% + Touchdown -25%) devem somar aditivamente para 0.55x (5.5s), nunca multiplicar (6.0s)"
+    },
+    {
+      "id": "MUT-66",
+      "arquivo": "src/onda2-combate/tick-sistemas-armas.mjs",
+      "lei": "N1 / Hierarquia 6.4 (MUT-O2-02)",
+      "descricao": "Permite que a Glândula de Tinta Furtiva conceda +60% de esquiva quando a nave está em 2_TOUCHDOWN",
+      "trocas": [
+        {
+          "buscar": "  if (naveJogador.estadoFisico !== '1_NO_FOIL') {\n    return 0;\n  }",
+          "substituir": "  if (naveJogador.estadoFisico !== '1_NO_FOIL') {\n    return Number(naveJogador.furtividadeAtivaSeg ?? 0) > 0 ? 60 : 0;\n  }"
+        }
+      ],
+      "testes": [
+        "tests/04-onda2-combate.test.mjs"
+      ],
+      "falhaEsperada": "Em 2_TOUCHDOWN (inclusive com Tinta Furtiva ativa), a esquiva contra projéteis em voo deve ser 0% (Hierarquia Nível 2 sobre Nível 3)"
+    },
+    {
+      "id": "MUT-67",
+      "arquivo": "src/onda2-combate/tick-tripulacao.mjs",
+      "lei": "N1 / Limite 6.3 (MUT-O2-03)",
+      "descricao": "Soma o Pulso de Enzimas (+5 HP/s) em cima dos +18 HP/s dentro da própria Bomba Branquial (23 HP/s)",
+      "trocas": [
+        {
+          "buscar": "    return CONSTANTES_SISTEMAS_ARMAS.CURA_LOCAL_BRANQUIAL_POR_BARRA[barrasBranquial] ?? 0.0;",
+          "substituir": "    return (CONSTANTES_SISTEMAS_ARMAS.CURA_LOCAL_BRANQUIAL_POR_BARRA[barrasBranquial] ?? 0.0) + (Number(naveJogador.pulsoEnzimasAtivoSeg ?? 0) > 0 ? 5.0 : 0.0);"
+        }
+      ],
+      "testes": [
+        "tests/04-onda2-combate.test.mjs"
+      ],
+      "falhaEsperada": "Cura na própria Bomba Branquial Nv.3 com Pulso de Enzimas ativo deve ser 18.0 HP/s (sem somar +5 HP/s, preservando Anti-Immortality < 24 DPS)"
+    },
+    {
+      "id": "MUT-68",
+      "arquivo": "src/onda2-combate/tick-tripulacao.mjs",
+      "lei": "N1 / L1 (MUT-O2-04)",
+      "descricao": "Ignora a penalidade de -50% na velocidade de reparo para Polvo/Arraia/Baiacu em sala 0% seca",
+      "trocas": [
+        {
+          "buscar": "  return arredondar4(ficha.multReparoBase * penalidadeSeca);",
+          "substituir": "  return arredondar4(ficha.multReparoBase * 1.0);"
+        }
+      ],
+      "testes": [
+        "tests/04-onda2-combate.test.mjs"
+      ],
+      "falhaEsperada": "Polvo (2.0x base) em sala 0% seca deve ter velocidade de reparo reduzida em -50% (para 1.0x)"
+    },
+    {
+      "id": "MUT-69",
+      "arquivo": "src/onda3-inimigos/abordagem-vitoria.mjs",
+      "lei": "N1 / L1 (MUT-O3-01)",
+      "descricao": "Permite que uma arma sem munição (Canhão de Arpão) atravesse 1 camada ativa de Barreira inimiga",
+      "trocas": [
+        {
+          "buscar": "  if (!consomeMunicao && Number(alvo.camadasBarreiraAtivas ?? 0) > 0) {",
+          "substituir": "  if (false && !consomeMunicao && Number(alvo.camadasBarreiraAtivas ?? 0) > 0) {"
+        }
+      ],
+      "testes": [
+        "tests/05-onda3-inimigos.test.mjs"
+      ],
+      "falhaEsperada": "Arpão sem munição deve consumir 1 bolha da Barreira inimiga"
+    },
+    {
+      "id": "MUT-70",
+      "arquivo": "src/onda3-inimigos/abordagem-vitoria.mjs",
+      "lei": "N1 / Falha Global 2 (MUT-O3-02)",
+      "descricao": "Mata o animal invasor aliado quando o casco inimigo chega a 0 HP por Sabotagem Interna (ignora Naufrágio Controlado)",
+      "trocas": [
+        {
+          "buscar": "      alvo.ultimoDanoFonte = 'SABOTAGEM_INTERNA';",
+          "substituir": "      alvo.ultimoDanoFonte = 'SABOTAGEM_INTERNA';\n      if (alvo.hpCascoAtual === 0) { for (const ali of proximo.naveJogador.tripulacao) { if (ali.localizacao === 'BORDO_INIMIGO') ali.hpAtual = 0; } }"
+        }
+      ],
+      "testes": [
+        "tests/05-onda3-inimigos.test.mjs"
+      ],
+      "falhaEsperada": "Em Naufrágio Controlado por Sabotagem Interna, o animal aliado a bordo NUNCA morre por explosão da nave"
+    },
+    {
+      "id": "MUT-71",
+      "arquivo": "src/onda3-inimigos/abordagem-vitoria.mjs",
+      "lei": "N1 / L1 (MUT-O3-03)",
+      "descricao": "Permite recolher o animal invasor no meio da luta (quebra a regra de Via Única do Tubo Pressurizado)",
+      "trocas": [
+        {
+          "buscar": "      tipo: 'RECOLHIMENTO_NEGADO_VIA_UNICA',",
+          "substituir": "      tipo: 'RECOLHIMENTO_NEGADO_VIA_UNICA',\n      _mut: (copia.naveJogador.tripulacao.forEach((t) => { t.localizacao = 'NAVE_JOGADOR'; })),"
+        }
+      ],
+      "testes": [
+        "tests/05-onda3-inimigos.test.mjs"
+      ],
+      "falhaEsperada": "Não é permitido recolher animal invasor no meio da luta (Via Única até o Atracar)"
+    },
+    {
+      "id": "MUT-72",
+      "arquivo": "src/onda4-mapa/relogio-viagem.mjs",
+      "lei": "N1 / Contra-Auditoria #4 (MUT-O4-01)",
+      "descricao": "Ignora o peso dos itens guardados no Porão de Carga ao calcular a Velocidade de Cruzeiro no mapa",
+      "trocas": [
+        {
+          "buscar": "    opcoesDebug.ignorarPesoPoraoCarga === true",
+          "substituir": "    true || opcoesDebug.ignorarPesoPoraoCarga === true"
+        }
+      ],
+      "testes": [
+        "tests/06-onda4-mapa.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O4-01] O peso dos itens guardados no Porão de Carga deve somar ao Peso de Viagem"
+    },
+    {
+      "id": "MUT-73",
+      "arquivo": "src/onda4-mapa/relogio-viagem.mjs",
+      "lei": "N1 / Contra-Auditoria #4 (MUT-O4-02)",
+      "descricao": "Permite iniciar viagem no mapa com as válvulas abertas e os tanques drenados (sem nivelar em 100 kg)",
+      "trocas": [
+        {
+          "buscar": "    opcoesDebug.ignorarNivelamentoTanques === true\n      ? naveComDescarte\n      : nivelarTanquesAntesDeViajar(naveComDescarte);",
+          "substituir": "    naveComDescarte;"
+        }
+      ],
+      "testes": [
+        "tests/06-onda4-mapa.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O4-02] Iniciar travessia no mapa deve fechar válvulas e estabilizar os 8 tanques em 100.0 kg"
+    },
+    {
+      "id": "MUT-74",
+      "arquivo": "src/onda4-mapa/gerador-poisson.mjs",
+      "lei": "N4 / Seção 4.1 (MUT-O4-03)",
+      "descricao": "Gera um nó intermediário (Coluna 2) com 0 rotas de saída para a direita (beco sem saída)",
+      "trocas": [
+        {
+          "buscar": "  if (opcoesDebug.forcarBecoSemSaidaColuna2 === true) {",
+          "substituir": "  if (true || opcoesDebug.forcarBecoSemSaidaColuna2 === true) {"
+        }
+      ],
+      "testes": [
+        "tests/06-onda4-mapa.test.mjs"
+      ],
+      "falhaEsperada": "tem 0 rotas de saída para a direita (Beco sem saída!)"
+    },
+    {
+      "id": "MUT-75",
+      "arquivo": "src/onda4-mapa/relogio-viagem.mjs",
+      "lei": "N1 / Contra-Auditoria #4 (MUT-O4-04)",
+      "descricao": "Faz o Modo Deriva (0 Combustível) custar 5.0h por salto (> 4.0h), causando softlock antes da saída",
+      "trocas": [
+        {
+          "buscar": "export const MULTIPLICADOR_TEMPO_DERIVA = 2.0;",
+          "substituir": "export const MULTIPLICADOR_TEMPO_DERIVA = 2.5;"
+        }
+      ],
+      "testes": [
+        "tests/06-onda4-mapa.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O4-04] Modo Deriva num salto padrão de 22 MN não pode exceder 4.0h"
+    },
+    {
+      "id": "MUT-76",
+      "arquivo": "src/onda5-catalogo-chefe/catalogo-naves-itens.mjs",
+      "lei": "N1 / Falha Global 1 (MUT-O5-01)",
+      "descricao": "Remove o Isolamento Residual de 5 segundos pós-choque da Eletro-Placa de Arraia (permitindo stunlock infinito)",
+      "trocas": [
+        {
+          "buscar": "      isolamentoResidualChoqueSeg = ignorarIsolamento ? 0 : ISOLAMENTO_RESIDUAL_POS_CHOQUE_SEG;",
+          "substituir": "      isolamentoResidualChoqueSeg = 0;"
+        }
+      ],
+      "testes": [
+        "tests/07-onda5-catalogo-chefe.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O5-01] Ao expirar os 6.0s de choque, a sala deve receber 5.0s de Isolamento Residual Pós-Choque"
+    },
+    {
+      "id": "MUT-77",
+      "arquivo": "src/onda5-catalogo-chefe/chefe-draga.mjs",
+      "lei": "N1 / Seção 5.5 (MUT-O5-02)",
+      "descricao": "Permite que o Tubo Pressurizado atravesse a Blindagem Térmica Externa da Fase 3 antes dos 10 pontos serem destruídos",
+      "trocas": [
+        {
+          "buscar": "  if (!ignorarBlindagem && (alvo?.blindagemTermicaExternaPts ?? 0) > 0) {",
+          "substituir": "  if (false && !ignorarBlindagem && (alvo?.blindagemTermicaExternaPts ?? 0) > 0) {"
+        }
+      ],
+      "testes": [
+        "tests/07-onda5-catalogo-chefe.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O5-02] O Tubo Pressurizado não pode atravessar a Blindagem Térmica Externa antes dos 10 pontos caírem"
+    },
+    {
+      "id": "MUT-78",
+      "arquivo": "src/onda5-catalogo-chefe/chefe-draga.mjs",
+      "lei": "N1 / Falha Global 3 (MUT-O5-03)",
+      "descricao": "Reduz o alarme antecedente da Fervura Oceânica da Fase 3 para 2.0s (< 3.0s de Spool-up)",
+      "trocas": [
+        {
+          "buscar": "  const alarmeAntecedenteConfig =\n    opcoesDebug.alarmeFervuraSegOverride ?? ALARME_ANTECEDENTE_FERVURA_SEG;",
+          "substituir": "  const alarmeAntecedenteConfig = 2.0;"
+        }
+      ],
+      "testes": [
+        "tests/07-onda5-catalogo-chefe.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O5-03] O alarme da Fervura Oceânica deve disparar com 4.0s de antecedência"
+    },
+    {
+      "id": "MUT-79",
+      "arquivo": "src/onda5-catalogo-chefe/catalogo-naves-itens.mjs",
+      "lei": "N1 / Seção 5.4 (MUT-O5-04)",
+      "descricao": "Permite que a Colmeia-Viva regenere mais de +2 HP por luta ou após a morte do inimigo",
+      "trocas": [
+        {
+          "buscar": "      const ignorarTravasColmeia = opcoesDebug.ignorarLimitesRegeneracaoColmeia === true;",
+          "substituir": "      const ignorarTravasColmeia = true;"
+        }
+      ],
+      "testes": [
+        "tests/07-onda5-catalogo-chefe.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O5-04] A Colmeia-Viva jamais pode regenerar mais de +2 HP por luta em Touchdown"
+    },
+    {
+      "id": "MUT-80",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "N1 / Seção 2.2 (MUT-O6-01)",
+      "descricao": "Presenter deixa os botões de Válvula Externa habilitados quando o motor está em 2_TOUCHDOWN",
+      "trocas": [
+        {
+          "buscar": "  const desabilitarTravaValvulaMutacao = opcoesDebug.desabilitarTravaValvulaTouchdown === true;",
+          "substituir": "  const desabilitarTravaValvulaMutacao = true;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-01] Botão [V] DRENAR TUDO deve ficar travado em 2_TOUCHDOWN"
+    },
+    {
+      "id": "MUT-81",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "N4 / Seção 2.2 (MUT-O6-02)",
+      "descricao": "Mistura o Subsistema Tubo Pressurizado dentro da caixa de 4 slots de Armas Ativas",
+      "trocas": [
+        {
+          "buscar": "    opcoesDebug.misturarTuboNaCaixaArmas === true",
+          "substituir": "    true || opcoesDebug.misturarTuboNaCaixaArmas === true"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-02] Jamais misturar o Subsistema Tubo Pressurizado dentro da caixa [ARMAS]"
+    },
+    {
+      "id": "MUT-82",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "L3 / Seção 8.2 (MUT-O6-03)",
+      "descricao": "Exibe \"0 tripulantes\" e [] no Painel do Alvo quando o canal de permissão é NEGADO_SONAR ou NEGADO_TINTA",
+      "trocas": [
+        {
+          "buscar": "      if (opcoesDebug.vazarZeroTripulantesQuandoCegoL3 === true) {",
+          "substituir": "      if (true || opcoesDebug.vazarZeroTripulantesQuandoCegoL3 === true) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-03 / Lei L3] Quando cego por Águas Turvas, tripulantesVisiveis deve ser undefined, nunca []"
     }
   ]
 }
