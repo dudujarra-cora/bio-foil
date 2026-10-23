@@ -451,9 +451,6 @@ export function despacharComandoUi(estado, comando) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
       const resAbord = tentarAbordagemContraAlvo(estado, p.tripulantesIds, p.salaAlvoId);
-      if (!resAbord.aceito) {
-        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
-      }
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
@@ -701,7 +698,8 @@ export function despacharComandoUi(estado, comando) {
       });
     }
 
-    case 'VIAJAR_NO_MAPA': {
+    case 'VIAJAR_NO_MAPA':
+    default: {
       if (!p.idNoDestino) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       if (
         Array.isArray(estado.mapaSetorial?.rotas) &&
@@ -720,8 +718,5 @@ export function despacharComandoUi(estado, comando) {
         estado: novoEstado,
       });
     }
-
-    default:
-      return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
   }
 }

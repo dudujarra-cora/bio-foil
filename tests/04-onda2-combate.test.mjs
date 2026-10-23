@@ -300,4 +300,43 @@ test('Onda 2 (Lei L3 + Junção N1 Simulação Passo 3): Canal L3 de visão do a
   copiaInvasor.naveJogador.tripulacao.find((t) => t.id === 'trip-polvo-1').hpAtual = 5;
   const estMorte = avancarTickTripulacao(congelarProfundo(copiaInvasor), 1.0);
   assert.equal(estMorte.naveJogador.tripulacao.find((t) => t.id === 'trip-polvo-1').hpAtual, 0);
+
+  // 6) Guardas Lei L2, calcularEsquivaEfetivaNave (4_FURTIVO_AR, piloto autônomo Nv2/3, sifão 0), operador em Artilharia + arma desenergizada e calcularRotaCamarasBionave
+  assert.throws(() => avancarTickSistemasEArmas(structuredClone(base), 0.25), /\[Lei L2\]/);
+  assert.throws(() => avancarTickTripulacao(structuredClone(base), 0.25), /\[Lei L2\]/);
+  assert.deepEqual(calcularRotaCamarasBionave(2, 2), { saltos: 0, rota: [2] });
+  assert.throws(() => calcularRotaCamarasBionave(2, 99), /Câmara inválida/);
+
+  const naveFurtivaAr = structuredClone(base.naveJogador);
+  naveFurtivaAr.estadoFisico = '4_FURTIVO_AR';
+  assert.equal(calcularEsquivaEfetivaNave(naveFurtivaAr), 100);
+
+  const naveSemPiloto = structuredClone(base.naveJogador);
+  naveSemPiloto.tripulacao = [];
+  naveSemPiloto.camaras.find((c) => c.id === 2).barrasIntegridade = 1;
+  assert.equal(calcularEsquivaEfetivaNave(naveSemPiloto), 0, 'Córtex Nv.1 sem piloto dá 0% esquiva');
+  naveSemPiloto.camaras.find((c) => c.id === 2).barrasIntegridade = 2;
+  assert.equal(calcularEsquivaEfetivaNave(naveSemPiloto), 12, 'Córtex Nv.2 autônomo preserva 50% da esquiva base (floor(25*0.5)=12)');
+  naveSemPiloto.camaras.find((c) => c.id === 2).barrasIntegridade = 3;
+  assert.equal(calcularEsquivaEfetivaNave(naveSemPiloto), 20, 'Córtex Nv.3 autônomo preserva 80% da esquiva base (floor(25*0.8)=20)');
+  naveSemPiloto.camaras.find((c) => c.id === 5).barrasEnergiaAlocada = 0;
+  assert.equal(calcularEsquivaEfetivaNave(naveSemPiloto), 0, 'Sifão com 0 barras dá 0% esquiva');
+
+  const copiaOpArt = structuredClone(base);
+  copiaOpArt.naveJogador.tripulacao[0].camaraAtualId = 1;
+  copiaOpArt.naveJogador.tripulacao[0].acopladoBulbo = true;
+  copiaOpArt.naveJogador.armasAtivas[0].arma.energiaAlocada = 0;
+  copiaOpArt.naveJogador.armasAtivas[0].arma.progressoRecargaSeg = 3.0;
+  copiaOpArt.naveJogador.camadasBarreiraAtivas = 2;
+  copiaOpArt.naveJogador.camaras.find((c) => c.id === 4).barrasEnergiaAlocada = 0;
+  const aposArmaZero = avancarTickSistemasEArmas(congelarProfundo(copiaOpArt), 0.25);
+  assert.equal(aposArmaZero.naveJogador.armasAtivas[0].arma.progressoRecargaSeg, 0.0);
+  assert.equal(aposArmaZero.naveJogador.camadasBarreiraAtivas, 0);
+
+  const copiaBrechaSemRombo = structuredClone(base);
+  const cam2Brecha = copiaBrechaSemRombo.naveJogador.camaras.find((c) => c.id === 2);
+  cam2Brecha.rombosCasco = 0;
+  cam2Brecha.brechaAtiva = true;
+  const aposBrechaNorm = avancarTickTripulacao(congelarProfundo(copiaBrechaSemRombo), 0.25);
+  assert.equal(aposBrechaNorm.naveJogador.camaras.find((c) => c.id === 2).rombosCasco, 1);
 });

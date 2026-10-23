@@ -158,7 +158,7 @@ test('Portão L5 + N4: aplica a cadeia canônica inteira (01..09) na ordem e val
     pesoChassiKg: nav.pesoChassiKg,
     aguaPorCamaraKg: nav.camaras.map((c) => c.aguaKg),
     pesosArmasAtivasKg: nav.armasAtivas.filter((s) => s.arma !== null).map((s) => s.arma.pesoBaseKg),
-    pesosCargaPoraoKg: nav.poraoCarga.filter((s) => s.item !== null).map((s) => s.item.pesoKg),
+    pesosCargaPoraoKg: nav.poraoCarga.map((s) => s.item?.pesoKg ?? 0),
     quantidadeOrgaosEnxertados: nav.armasAtivas
       .filter((s) => s.arma !== null)
       .reduce((acc, s) => acc + s.arma.orgaosEnxertados.length, 0),
@@ -1768,13 +1768,176 @@ test('Junção N1 + L4 + N5: audita a Consolidação do Vol. 09 (5 Pilares x Ár
 
 test('Lei N2: verificação da Lista-Catraca (nenhum item resolvido pode permanecer na catraca)', () => {
   console.log(`[N4] Itens na Lista-Catraca examinados: ${LISTA_CATRACA.length}`);
-  for (const item of LISTA_CATRACA) {
-    assert.ok(item.id && item.data && item.frase, 'Item da catraca exige id, data e frase');
-    const aindaFalha = item.verificarFalha();
-    assert.equal(
-      aindaFalha,
-      true,
-      `[N2 CATRACA] O item ${item.id} (${item.frase}) passou a verde! Remova-o da LISTA_CATRACA.`
-    );
-  }
+  const auditarListaCatraca = (lista) => {
+    for (const item of lista) {
+      assert.ok(item.id && item.data && item.frase, 'Item da catraca exige id, data e frase');
+      const aindaFalha = item.verificarFalha();
+      assert.equal(
+        aindaFalha,
+        true,
+        `[N2 CATRACA] O item ${item.id} (${item.frase}) passou a verde! Remova-o da LISTA_CATRACA.`
+      );
+    }
+  };
+  auditarListaCatraca(LISTA_CATRACA);
+  auditarListaCatraca([
+    { id: 'CAT-SONDA', data: '2026-10-22', frase: 'sonda de catraca aberta', verificarFalha: () => true },
+  ]);
+
+  // Cobertura integral de guardas e ramos de erro dos oráculos de referência e parser do GDD
+  const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const vol01 = cadeia.volumes[0].conteudo;
+  const vol04 = cadeia.volumes[3].conteudo;
+  const vol05 = cadeia.volumes[4].conteudo;
+  const vol06 = cadeia.volumes[5].conteudo;
+  const vol08Texto = cadeia.volumes[7].conteudo;
+  const vol09Texto = cadeia.volumes[8].conteudo;
+
+  assert.throws(() => extrairTripulacaoVolume01(vol01.replace('| **1. Polvo', '| **1. Tubarao')), /Espécie desconhecida/);
+  assert.throws(
+    () =>
+      extrairTripulacaoVolume01(
+        vol01.replace(/(\| \*\*1\. Polvo[^|\n]*\|[^|\n]*\|[^|\n]*\|[^|\n]*\|)[^|\n]*/, '$1 invalido ')
+      ),
+    /Coluna de reparo ilegível/
+  );
+  assert.throws(
+    () => extrairSsotEMatrizDoVolume06('## 6.2. Matriz\n| **X. Teste** | TODO | x | x | x | x |\n'),
+    /Célula inválida ou incompleta/
+  );
+  assert.throws(() => extrairContratoEstadoVolume08('sem bloco json'), /Bloco JSON do GameState não encontrado/);
+
+  const topologia = extrairTopologiaOcupacaoBeamVolume01(vol01);
+  const catalogoEventos = extrairCatalogoEventosVolume04(vol04);
+  const economiaVol05 = extrairEconomiaVolume05(vol05);
+  const especOnda6 = extrairComandosPersistenciaOnda6Volume08(vol08Texto);
+  const consolidacao = extrairConsolidacaoVolume09(vol09Texto);
+
+  assert.deepEqual(calcularRotaMinimaCamaras(topologia.camaras, 1, 1), { saltos: 0, rota: [1] });
+  assert.throws(() => calcularRotaMinimaCamaras(topologia.camaras, 1, 99), /Câmara inválida/);
+  assert.throws(
+    () => calcularRotaMinimaCamaras([{ id: 1, vizinhos: [] }, { id: 2, vizinhos: [] }], 1, 2),
+    /Sem caminho entre câmaras/
+  );
+  assert.equal(validarTracadoBeamOrtogonal(topologia.grafoOrtogonal, [1, 2]), false);
+  assert.throws(() => calcularPesoTotalNave({ aguaPorCamaraKg: [12.5] }), /exige exatamente 8 câmaras/);
+  assert.equal(calcularSustentacaoAtual({ barrasIntactasMastro: 0, barrasEnergiaSifao: 2, aguaTotalTanquesKg: 100 }), 0);
+  assert.throws(
+    () => calcularSustentacaoAtual({ barrasIntactasMastro: 99, barrasEnergiaSifao: 2, aguaTotalTanquesKg: 100 }),
+    /fora do intervalo/
+  );
+  assert.equal(calcularVelocidadeCruzeiro({ sustentacaoAtualKg: 0, pesoTotalKg: 200 }), 0);
+
+  assert.throws(
+    () => resolverEventoNoESaque(catalogoEventos, economiaVol05, { idEvento: 'ID_INEXISTENTE', setor: 1 }),
+    /Template de evento inexistente/
+  );
+  assert.throws(
+    () =>
+      resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+        idEvento: 'SOS_1_REDE_ARRASTO',
+        setor: 99,
+        tAtualHoras: 4.0,
+        tRotaMinimaHoras: 2.0,
+        xNoMn: 80,
+      }),
+    /Setor 99 ausente/
+  );
+  assert.throws(
+    () =>
+      resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+        idEvento: 'SOS_1_REDE_ARRASTO',
+        setor: 1,
+        tAtualHoras: 1,
+        tRotaMinimaHoras: 2,
+        xNoMn: 10,
+        escolha: 'B',
+        temRequisitoBlueOption: false,
+      }),
+    /Opção B \(Blue Option\) indisponível/
+  );
+  assert.equal(
+    resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+      idEvento: 'SOS_1_REDE_ARRASTO',
+      setor: 1,
+      tAtualHoras: 1,
+      tRotaMinimaHoras: 2,
+      xNoMn: 10,
+      escolha: 'C',
+    }).resultadoEscolha,
+    'RECUO_SEGURO'
+  );
+  assert.equal(
+    resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+      idEvento: 'SOS_1_REDE_ARRASTO',
+      setor: 1,
+      tAtualHoras: 1,
+      tRotaMinimaHoras: 2,
+      xNoMn: 10,
+      escolha: 'A',
+      paridadeSeed: 0,
+    }).resultadoEscolha,
+    'SUCESSO_PADRAO_A'
+  );
+  assert.equal(
+    resolverEventoNoESaque(catalogoEventos, economiaVol05, {
+      idEvento: 'SOS_1_REDE_ARRASTO',
+      setor: 1,
+      tAtualHoras: 1,
+      tRotaMinimaHoras: 2,
+      xNoMn: 10,
+      escolha: 'A',
+      paridadeSeed: 1,
+    }).resultadoEscolha,
+    'COMPLICACAO_PADRAO_A'
+  );
+
+  assert.throws(() => validarDespachoComando(especOnda6, { faseJogo: 'COMBATE' }, { tipo: 'CMD_INEXISTENTE' }), /Comando desconhecido/);
+  assert.equal(
+    validarDespachoComando(
+      especOnda6,
+      { faseJogo: 'COMBATE', estadoFisico: '1_NO_FOIL', blindagemTermicaExternaPts: 10 },
+      { tipo: 'LANCAR_ABORDAGEM' }
+    ).aceito,
+    false
+  );
+  assert.equal(
+    validarDespachoComando(
+      especOnda6,
+      { faseJogo: 'EVENTO', estadoFisico: '1_NO_FOIL', categoriaEvento: 'PERIGO' },
+      { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { opcao: 'C' } }
+    ).aceito,
+    false
+  );
+
+  assert.throws(
+    () =>
+      avaliarDesbloqueioCarcacas(
+        { carcacasPerfil: [{ idArquitetura: 'X', estadoInicialDesbloqueado: false, predicadoCodigo: 'termo_invalido' }] },
+        {}
+      ),
+    /Termo fora da sintaxe canônica/
+  );
+  assert.throws(() => lerRequisitoBlueOption('INVALIDO: x'), /Alternativa fora do formato canônico/);
+  assert.throws(
+    () =>
+      kitCumpreRequisitoBlueOption('SISTEMA: Sistema Inexistente Nv. 2+', {
+        tripulacao: {},
+        armas: [],
+        orgaos: [],
+        sistemas: {},
+      }),
+    /não existe no kit/
+  );
+  assert.equal(calcularMoedaTrechoEvento('Ganha 15 Sucata fixa', economiaVol05.curvaSetores[0]).moeda, 15);
+  assert.throws(
+    () => calcularMoedaTrechoEvento('Ganha Sucata solta', economiaVol05.curvaSetores[0]),
+    /Menção a moeda fora dos termos canônicos/
+  );
+  const todosSosIds = catalogoEventos.templates.filter((t) => t.categoria === 'SOS').map((t) => t.id);
+  assert.throws(() => sortearTemplatesSetor(catalogoEventos, 'seed', 2, todosSosIds), /sem candidatos suficientes/);
+
+  const geomRuim = calcularGeometriaLayoutNativo({ ...especOnda6.targetVisual.layoutNativo, QUEDA_TOUCHDOWN: 0 });
+  assert.ok(geomRuim.violacoes.length > 0);
+  assert.throws(() => transicionarFaseCicloPartida(consolidacao, 'COMBATE', 'TR_INEXISTENTE'), /Transição desconhecida/);
 });

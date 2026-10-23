@@ -355,4 +355,48 @@ test('[PORTÃO 06.3 | N4] 17 Templates de Eventos, Raridade das Blue Options (5 
   const audBeco = auditarInvariantesMapaSetorial(mapaComBeco);
   assert.equal(audBeco.valido, false);
   assert.ok(audBeco.erros.some((e) => e.includes('Beco sem saída')));
+
+  // Cobertura completa de invariantes de auditarInvariantesMapaSetorial, sortearTemplatesDoSetor e extrairKitDaNave com poraoCarga
+  const mapaViolado = structuredClone(mapaComBeco);
+  mapaViolado.totalNos = 10;
+  mapaViolado.nos[0].xMn = 0;
+  mapaViolado.nos[0].yMn = 0;
+  mapaViolado.nos[1].xMn = 5;
+  mapaViolado.nos[1].yMn = 0;
+  mapaViolado.nos[1].tipoNo = 'LOJA';
+  mapaViolado.nos[1].coluna = 1;
+  mapaViolado.nos[2].tipoNo = 'LOJA';
+  mapaViolado.nos[2].coluna = 2;
+  for (let i = 3; i < mapaViolado.nos.length; i += 1) {
+    if (mapaViolado.nos[i].tipoNo === 'LOJA') mapaViolado.nos[i].tipoNo = 'COMBATE';
+  }
+  mapaViolado.rotas.push({
+    id: 'R_LONGA',
+    origemId: mapaViolado.nos[1].id,
+    destinoId: mapaViolado.nos[2].id,
+    distanciaMn: 45.0,
+  });
+  const audViolado = auditarInvariantesMapaSetorial(mapaViolado);
+  assert.equal(audViolado.valido, false);
+  assert.ok(audViolado.erros.some((e) => e.includes('Total de nós')));
+  assert.ok(audViolado.erros.some((e) => e.includes('< 14.0 MN')));
+  assert.ok(audViolado.erros.some((e) => e.includes('fora de [14.0, 28.0] MN')));
+  assert.ok(audViolado.erros.some((e) => e.includes('fora das Colunas 2..4')));
+  assert.ok(audViolado.erros.some((e) => e.includes('coladas por rota direta')));
+
+  const todosSosIds = CATALOGO_TEMPLATES_EVENTOS_45A.filter((t) => t.categoria === 'SOS').map((t) => t.id);
+  assert.throws(
+    () => sortearTemplatesDoSetor('seed-sem-sos', 2, todosSosIds),
+    /Candidatos insuficientes para SOS/
+  );
+
+  const naveComPorao = structuredClone(estadoBaseSobrepeso.naveJogador);
+  naveComPorao.poraoCarga = [
+    null,
+    { tipo: 'ARMA', id: 'CORTADOR_TERMICO_PLASMA' },
+    { item: { tipo: 'ORGAO', id: 'BOLSA_TINTA_ABISSAL' } },
+  ];
+  const kitPorao = extrairKitDaNave(naveComPorao);
+  assert.ok(kitPorao.armas.includes('Cortador Térmico a Plasma'));
+  assert.ok(kitPorao.orgaos.includes('Bolsa de Tinta Abissal'));
 });

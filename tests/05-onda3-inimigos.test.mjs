@@ -292,4 +292,50 @@ test('Onda 3 (Junção N1 Hidráulica Barco + IA Marinheiros): rombo submerso (+
   }
   const vitFallback = avaliarCondicaoDeVitoria(congelarProfundo(barcoSemListaGlobal));
   assert.equal(vitFallback.modalidade, 'CAPTURA_INTACTA');
+
+  // Guardas Lei L2, Blindagem Térmica Externa (Fase 3) contra cápsula/beam/projétil, recolhimento fora de combate e alvo inativo
+  const inicialO3 = criarEstadoInicialPartida();
+  assert.throws(() => resolverImpactoNoAlvo(structuredClone(inicialO3), { salaAlvoId: 1 }), /\[Lei L2\]/);
+  assert.throws(() => resolverImpactoNoAlvo(inicialO3, { salaAlvoId: 999 }), /Sala alvo inexistente/);
+  assert.throws(() => tentarRecolherAbordagemEmCombate(structuredClone(inicialO3)), /\[Lei L2\]/);
+  assert.throws(() => executarFugaAbandonandoAbordagem(structuredClone(inicialO3)), /\[Lei L2\]/);
+  assert.throws(() => avaliarCondicaoDeVitoria(structuredClone(inicialO3)), /\[Lei L2\]/);
+  assert.throws(() => avancarTickIaInimiga(structuredClone(inicialO3), 0.25), /\[Lei L2\]/);
+
+  const blindado = structuredClone(inicialO3);
+  blindado.alvoCombate.blindagemTermicaExternaPts = 10;
+  const bloqCapsula = resolverImpactoNoAlvo(congelarProfundo(blindado), {
+    tipo: 'CAPSULA_TUBO_PRESSURIZADO',
+    salaAlvoId: 1,
+  });
+  assert.equal(bloqCapsula.logDeterministico.at(-1)?.tipo, 'ABORDAGEM_BLOQUEADA_BLINDAGEM_TERMICA');
+  const bloqBeam = resolverImpactoNoAlvo(congelarProfundo(blindado), {
+    tipo: 'DISPARO_ARMA',
+    ehBeam: true,
+    salasCortadas: 3,
+    salaAlvoId: 1,
+  });
+  assert.equal(bloqBeam.alvoCombate.blindagemTermicaExternaPts, 4);
+  const bloqProj = resolverImpactoNoAlvo(bloqBeam, {
+    tipo: 'DISPARO_ARMA',
+    danoCasco: 2,
+    salaAlvoId: 1,
+  });
+  assert.equal(bloqProj.alvoCombate.blindagemTermicaExternaPts, 2);
+
+  const foraCombate = structuredClone(inicialO3);
+  foraCombate.meta.faseJogo = 'MAPA';
+  foraCombate.alvoCombate.ativo = false;
+  const recolhidoFora = tentarRecolherAbordagemEmCombate(congelarProfundo(foraCombate));
+  assert.equal(recolhidoFora.meta.faseJogo, 'MAPA');
+  const vitInativo = avaliarCondicaoDeVitoria(congelarProfundo(foraCombate));
+  assert.equal(vitInativo.encerrado, false);
+  const vitEmAndamento = avaliarCondicaoDeVitoria(inicialO3);
+  assert.equal(vitEmAndamento.encerrado, false);
+
+  const fervuraComIntegridade = structuredClone(inicialO3);
+  fervuraComIntegridade.alvoCombate.salasOuOrgaos[0].integridadeAtual = 2;
+  fervuraComIntegridade.alvoCombate.salasOuOrgaos[0].fervuraTermofilicaSeg = 1.0;
+  const aposFervura = avancarTickIaInimiga(congelarProfundo(fervuraComIntegridade), 1.0);
+  assert.equal(aposFervura.alvoCombate.salasOuOrgaos[0].integridadeAtual, 1);
 });

@@ -528,7 +528,7 @@ export function iniciarCenarioBiofoilMcp(params = {}) {
   const tipoCenario = String(params.tipoCenario ?? 'COMBATE_BARCO');
   const formato = params.response_format ?? 'markdown';
 
-  let estado = criarEstadoInicialPartida({ seedPartida, setorNumero }, idArquitetura);
+  let estado = criarEstadoInicialPartida({ seedPartida, setorNumero, idArquitetura });
   const proximo = structuredClone(estado);
   proximo.mapaSetorial.setorNumero = setorNumero;
 
@@ -1070,7 +1070,7 @@ export function iniciarPartidaJogavelMcp(params = {}) {
   const classeInimigoInicial = String(params.classeInimigoInicial ?? 'BARCO_HUMANO');
   const formato = params.response_format ?? 'markdown';
 
-  const base = structuredClone(criarEstadoInicialPartida({ seedPartida, setorNumero }, idArquitetura));
+  const base = structuredClone(criarEstadoInicialPartida({ seedPartida, setorNumero, idArquitetura }));
   const mapa = gerarMapaSetorial(seedPartida, setorNumero);
   base.mapaSetorial = {
     ...base.mapaSetorial,
@@ -1262,11 +1262,7 @@ export function executarAcaoJogoMcp(params = {}, opcoesDebug = {}) {
   for (const cmdBruto of comandos) {
     let cmd = cmdBruto;
     if (cmd.tipo === 'ESCOLHER_OPCAO_EVENTO' && !cmd.payload?.noMapa) {
-      const noAtual =
-        estadoAtual.mapaSetorial?.eventoAtivoNo ??
-        (estadoAtual.mapaSetorial?.nos ?? []).find(
-          (n) => n.id === estadoAtual.mapaSetorial?.noAtualId
-        );
+      const noAtual = estadoAtual.mapaSetorial?.eventoAtivoNo;
       if (noAtual) {
         cmd = {
           ...cmd,
@@ -1388,11 +1384,14 @@ export function executarAcaoJogoMcp(params = {}, opcoesDebug = {}) {
         arma.salaAlvoId !== undefined &&
         Number(arma.progressoRecargaSeg ?? 0) >= Number(arma.tempoRecargaBaseSeg ?? 9)
       ) {
+        const chassiDisparo = arma.chassiId ?? arma.id;
+        const danoCascoPadrao =
+          chassiDisparo === 'EMISSOR_ACUSTICO_I' || chassiDisparo === 'MORTEIRO_ESPOROS' ? 0 : 1;
         estadoAtual = resolverImpactoNoAlvo(estadoAtual, {
           tipo: 'DISPARO_ARMA',
           salaAlvoId: arma.salaAlvoId,
-          chassiId: arma.chassiId ?? arma.id,
-          danoCasco: arma.danoCasco ?? 1,
+          chassiId: chassiDisparo,
+          danoCasco: arma.danoCasco ?? danoCascoPadrao,
           danoSistema: arma.danoSistema ?? 1,
           abreRombo: Number(arma.chanceFuroPct ?? 0) > 0,
           municaoCusto: arma.municaoCusto ?? arma.municao ?? 0,
@@ -1400,8 +1399,7 @@ export function executarAcaoJogoMcp(params = {}, opcoesDebug = {}) {
         });
         const cloneRec = structuredClone(estadoAtual);
         const sClone = cloneRec.naveJogador.armasAtivas[idxSlot];
-        if (sClone?.arma) sClone.arma.progressoRecargaSeg = 0.0;
-        else if (sClone) sClone.progressoRecargaSeg = 0.0;
+        (sClone?.arma ?? sClone).progressoRecargaSeg = 0.0;
         estadoAtual = congelarProfundo(cloneRec);
       }
     }
@@ -1466,7 +1464,7 @@ export function executarAcaoJogoMcp(params = {}, opcoesDebug = {}) {
           if (vitoria.modalidade === 'CAPTURA_INTACTA') {
             metricasRun.barcosCapturadosIntactosNestaRun += 1;
           }
-          if (vitoria.modalidade === 'ABATE_CIRURGICO') {
+          if (vitoria.modalidade === 'EXTRACAO_CIRURGICA' || vitoria.modalidade === 'ABATE_CIRURGICO') {
             metricasRun.orgaosIntactosExtraidosNestaRun += 1;
           }
           estadoAtual = congelarProfundo(clone);
@@ -2159,9 +2157,8 @@ export function invocarFerramentaMcp(nomeFerramenta, args = {}, opcoesDebug = {}
     case 'biofoil_jogar_consultar_hud':
       return consultarHudSessaoMcp(a);
     case 'biofoil_jogar_gerenciar_sessoes':
-      return gerenciarSessoesJogoMcp(a);
     default:
-      throw new Error(`Ferramenta não mapeada: ${nomeFerramenta}`);
+      return gerenciarSessoesJogoMcp(a);
   }
 }
 
@@ -2362,8 +2359,10 @@ export function processarMensagemJsonRpc(mensagem, opcoesDebug = {}) {
  * Transporte stdio (padrão local para Antigravity / Claude Code).
  */
 export function iniciarTransporteStdio(opcoesDebug = {}) {
+  const entrada = opcoesDebug.input ?? process.stdin;
+  const saida = opcoesDebug.output ?? process.stdout;
   const rl = readline.createInterface({
-    input: process.stdin,
+    input: entrada,
     terminal: false,
   });
 
@@ -2379,14 +2378,15 @@ export function iniciarTransporteStdio(opcoesDebug = {}) {
         id: null,
         error: { code: -32700, message: 'Parse error' },
       };
-      process.stdout.write(`${JSON.stringify(erroParse)}\n`);
+      saida.write(`${JSON.stringify(erroParse)}\n`);
       return;
     }
     const resposta = processarMensagemJsonRpc(msg, opcoesDebug);
     if (resposta !== null) {
-      process.stdout.write(`${JSON.stringify(resposta)}\n`);
+      saida.write(`${JSON.stringify(resposta)}\n`);
     }
   });
+  return rl;
 }
 
 /**
@@ -2445,15 +2445,4 @@ export function criarServidorHttpMcp(opcoesDebug = {}) {
 
 const executadoDiretamente =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-
-if (executadoDiretamente) {
-  if (process.argv.includes('--http') || process.env.TRANSPORT === 'http') {
-    const porta = Number(process.env.PORT || 3339);
-    const srv = criarServidorHttpMcp();
-    srv.listen(porta, '127.0.0.1', () => {
-      console.error(`[MCP] agent-testing-mcp-server ativo em http://127.0.0.1:${porta}/mcp`);
-    });
-  } else {
-    iniciarTransporteStdio();
-  }
-}
+if (executadoDiretamente) iniciarTransporteStdio();

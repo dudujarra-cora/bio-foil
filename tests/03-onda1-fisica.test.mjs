@@ -316,4 +316,26 @@ test('Onda 1: Baiacu Inflado veda rombo (0.0 kg/s), Bomba Branquial drena alagam
   assert.equal(aposCapilar.naveJogador.camaras.find((c) => c.id === 1).aguaKg, 11.25);
   assert.equal(aposCapilar.naveJogador.camaras.find((c) => c.id === 2).alagamentoPesadoKg, 0.0);
   assert.equal(aposCapilar.naveJogador.camaras.find((c) => c.id === 2).aguaKg, 12.0);
+
+  // Guardas Lei L2 (Object.freeze), validações de formatarChaveHash32, porão com { item } e queda 1_NO_FOIL -> 2_TOUCHDOWN por rombo no ar
+  assert.throws(() => formatarChaveHash32('', 'DOM'), /seedPartida deve ser uma string não vazia/);
+  assert.throws(() => formatarChaveHash32('SEED', '   '), /dominio deve ser uma string não vazia/);
+  assert.throws(() => alternarValvulaExterna(structuredClone(inicial), 1, true), /\[Lei L2\]/);
+  assert.throws(() => drenarTodasValvulas(structuredClone(inicial), true), /\[Lei L2\]/);
+  assert.throws(() => alternarMergulhoTatico(structuredClone(inicial), true), /\[Lei L2\]/);
+  assert.throws(() => avancarTickFisicaHidraulica(structuredClone(inicial), 0.25), /\[Lei L2\]/);
+  assert.throws(() => avancarTickFisicaHidraulica(inicial, 0), /dtSeg deve ser um número positivo/);
+
+  const copiaQuedaAr = structuredClone(inicial);
+  copiaQuedaAr.naveJogador.poraoCarga = [{ item: { pesoKg: 20 } }];
+  copiaQuedaAr.naveJogador.camaras.find((c) => c.id === 6).barrasIntegridade = 3;
+  copiaQuedaAr.naveJogador.camaras.find((c) => c.id === 5).barrasEnergiaAlocada = 2;
+  for (const c of copiaQuedaAr.naveJogador.camaras) {
+    c.aguaKg = 7.9;
+    c.rombosCasco = 2;
+    c.valvulaExternaAberta = true;
+  }
+  const aposQuedaAr = avancarTickFisicaHidraulica(congelarProfundo(copiaQuedaAr), 1.0);
+  assert.equal(aposQuedaAr.naveJogador.estadoFisico, '2_TOUCHDOWN', 'Cavitação pós-vazamento de rombos no ar transiciona 1_NO_FOIL -> 2_TOUCHDOWN');
+  assert.equal(aposQuedaAr.naveJogador.camaras.find((c) => c.id === 1).aguaKg, 3.4, '2 rombos (-2.0 kg/s) + válvula aberta (-2.5 kg/s) vazam -4.5 kg/s no ar');
 });

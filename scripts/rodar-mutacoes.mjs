@@ -34,7 +34,7 @@ function ambienteSemGit() {
 
 export function copiarProjeto(origem, destino) {
   for (const entrada of fs.readdirSync(origem, { withFileTypes: true })) {
-    if (entrada.name === '.git' || entrada.name === 'node_modules') continue;
+    if (entrada.name === '.git' || entrada.name === 'node_modules' || entrada.name === '.worktrees') continue;
     const de = path.join(origem, entrada.name);
     const para = path.join(destino, entrada.name);
     if (entrada.isDirectory()) {
@@ -151,11 +151,13 @@ export function extrairBlocoMd(conteudoMd) {
   return conteudoMd.slice(ini, fim + MARCADOR_FIM.length);
 }
 
-const executadoDiretamente = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-if (executadoDiretamente) {
-  const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-  const mutacoes = carregarMutacoes(raiz);
-  const { resultados } = executarMutacoes(raiz);
+export function executarCliMutacoes(
+  raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'),
+  args = process.argv.slice(2),
+  ids = null
+) {
+  const mutacoes = carregarMutacoes(raiz).filter((m) => !ids || ids.includes(m.id));
+  const { resultados } = executarMutacoes(raiz, { ids });
   let falhas = 0;
   for (const r of resultados) {
     const ok = r.confere;
@@ -163,7 +165,7 @@ if (executadoDiretamente) {
     console.log(`${ok ? 'OK ' : 'XX '} ${r.id} | vermelho=${r.vermelho} | ${r.desatualizada ?? r.linha}`);
   }
   console.log(`[N4] Mutações executadas: ${resultados.length} | conferem: ${resultados.length - falhas}`);
-  if (process.argv.includes('--gerar-md')) {
+  if (args.includes('--gerar-md')) {
     const caminho = path.join(raiz, 'padrao', 'protocolo', 'MUTACOES.md');
     const atual = fs.readFileSync(caminho, 'utf8');
     const novoBloco = renderizarBlocoMd(mutacoes, resultados);
@@ -172,5 +174,8 @@ if (executadoDiretamente) {
     fs.writeFileSync(caminho, novo, 'utf8');
     console.log(`Bloco gerado de MUTACOES.md atualizado (${mutacoes.length} mutações).`);
   }
-  process.exit(falhas === 0 ? 0 : 1);
+  return falhas === 0 ? 0 : 1;
 }
+
+const executadoDiretamente = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+if (executadoDiretamente) process.exit(executarCliMutacoes());

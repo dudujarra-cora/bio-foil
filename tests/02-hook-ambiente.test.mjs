@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import {
   CADEIA_CANONICA_ONDAS_SRC,
@@ -36,7 +37,15 @@ import {
   renderizarHudAsciiBiofoil,
   simularPassoAgenteMcp,
 } from '../scripts/mcp-testes-agentes.mjs';
-import { copiarProjeto, primeiraLinhaDeFalha } from '../scripts/rodar-mutacoes.mjs';
+import {
+  carregarMutacoes,
+  copiarProjeto,
+  executarCliMutacoes,
+  executarMutacoes,
+  extrairBlocoMd,
+  primeiraLinhaDeFalha,
+  renderizarBlocoMd,
+} from '../scripts/rodar-mutacoes.mjs';
 import { criarEstadoInicialPartida, congelarProfundo } from '../src/onda1-fisica/estado-inicial.mjs';
 
 const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -249,6 +258,88 @@ test('Seção 5 + L5 + N3 + N4: hooks contêm o unset no topo; tripwires de 6 á
       /\[L5 TRIPWIRE SRC FALHOU\].*onda1-fisica\/intruso-nao-declarado\.mjs/,
       'Arquivo intruso dentro de subpasta src/onda1-fisica/ deve reprovar no tripwire recursivo L5'
     );
+    fs.unlinkSync(path.join(tmpProjeto, 'src', 'onda1-fisica', 'intruso-nao-declarado.mjs'));
+
+    // Subpasta vazia em src/ também é detectada pelo tripwire recursivo L5
+    fs.mkdirSync(path.join(tmpProjeto, 'src', 'pasta-vazia'));
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[L5 TRIPWIRE SRC FALHOU\].*pasta-vazia\//);
+    fs.rmdirSync(path.join(tmpProjeto, 'src', 'pasta-vazia'));
+
+    // Cópia completa para testar tripwires de scripts/, padrao/protocolo/, raiz, CI, B10 engines, N3 PORTOES.md, B6 MUTACOES.md e Regra Testes-Para-Tudo
+    copiarProjeto(DIRETORIO_RAIZ, tmpProjeto);
+
+    fs.writeFileSync(path.join(tmpProjeto, 'scripts', 'intruso.sh'), '#!/bin/sh\n', 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[L5 TRIPWIRE SCRIPTS FALHOU\]/);
+    fs.unlinkSync(path.join(tmpProjeto, 'scripts', 'intruso.sh'));
+
+    fs.writeFileSync(path.join(tmpProjeto, 'padrao', 'protocolo', 'intruso.md'), '# intruso\n', 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[L5 TRIPWIRE PROTOCOLO FALHOU\]/);
+    fs.unlinkSync(path.join(tmpProjeto, 'padrao', 'protocolo', 'intruso.md'));
+
+    fs.writeFileSync(path.join(tmpProjeto, 'intruso.txt'), 'x\n', 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[L5 TRIPWIRE RAIZ ARQUIVOS FALHOU\]/);
+    fs.unlinkSync(path.join(tmpProjeto, 'intruso.txt'));
+
+    const caminhoPortoesYml = path.join(tmpProjeto, '.github', 'workflows', 'portoes.yml');
+    const ymlOrig = fs.readFileSync(caminhoPortoesYml, 'utf8');
+    fs.writeFileSync(caminhoPortoesYml, 'name: invalido\n', 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[CI FALHOU\]/);
+    fs.writeFileSync(caminhoPortoesYml, ymlOrig, 'utf8');
+
+    const caminhoPkg = path.join(tmpProjeto, 'package.json');
+    const pkgOrig = fs.readFileSync(caminhoPkg, 'utf8');
+    fs.writeFileSync(caminhoPkg, JSON.stringify({ engines: { node: 'invalido' } }), 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[B10 ENGINES FALHOU\].*ilegível/);
+    fs.writeFileSync(caminhoPkg, JSON.stringify({ engines: { node: '>=99.0.0 <100.0.0' } }), 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[B10 ENGINES FALHOU\] versão do Node fora/);
+    fs.writeFileSync(caminhoPkg, pkgOrig, 'utf8');
+
+    const caminhoPortoesMd = path.join(tmpProjeto, 'padrao', 'protocolo', 'PORTOES.md');
+    const portoesOrig = fs.readFileSync(caminhoPortoesMd, 'utf8');
+    fs.writeFileSync(caminhoPortoesMd, portoesOrig.replace('| OBRIGATORIO |', '| STATUS_RUIM |'), 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[N3 FALHOU\] Status inválido/);
+    fs.writeFileSync(caminhoPortoesMd, portoesOrig.replace('2026-10-22', 'data-ruim'), 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[N3 FALHOU\].*sem motivo ou sem data/);
+    fs.writeFileSync(caminhoPortoesMd, portoesOrig.replace('3/3', '1/3'), 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[N3 FALHOU\].*sem evidência de 3 corridas/);
+    fs.writeFileSync(caminhoPortoesMd, portoesOrig.replaceAll('OBRIGATORIO', 'DECLARADO'), 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[N4 FALHOU\] Zero portões OBRIGATORIO/);
+    fs.writeFileSync(caminhoPortoesMd, portoesOrig, 'utf8');
+
+    const caminhoMutMd = path.join(tmpProjeto, 'padrao', 'protocolo', 'MUTACOES.md');
+    const mutOrig = fs.readFileSync(caminhoMutMd, 'utf8');
+    fs.writeFileSync(caminhoMutMd, '# sem marcadores\n', 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /\[B6 FALHOU\]/);
+    fs.writeFileSync(
+      caminhoMutMd,
+      '<!-- INICIO BLOCO GERADO POR scripts/rodar-mutacoes.mjs — NÃO EDITAR À MÃO -->\n<!-- FIM BLOCO GERADO -->\n',
+      'utf8'
+    );
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /Zero mutações encontradas/);
+    fs.writeFileSync(caminhoMutMd, mutOrig.replaceAll('| `MUT-01` |', '| `MUT-99` |'), 'utf8');
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /ID de mutação fora de sequência/);
+    fs.writeFileSync(
+      caminhoMutMd,
+      mutOrig.replaceAll('AssertionError', 'SemFalha').replaceAll('Error', 'SemFalha'),
+      'utf8'
+    );
+    assert.throws(() => verificarCadeiaTestesEMutacoes(tmpProjeto), /sem primeira linha de falha real medida/);
+    fs.writeFileSync(caminhoMutMd, mutOrig, 'utf8');
+
+    // verificarRegraTestesParaTudo: arquivo sem teste, módulo sem função exportada e função órfã
+    const caminhoGddParserTmp = path.join(tmpProjeto, 'src', 'gdd-parser.mjs');
+    const gddParserOrig = fs.readFileSync(caminhoGddParserTmp, 'utf8');
+    const nomeOrfaTmp = `funcaoOrfa_${'SemTeste_999'}`;
+    fs.writeFileSync(caminhoGddParserTmp, `${gddParserOrig}\nexport function ${nomeOrfaTmp}() {}\n`, 'utf8');
+    assert.throws(() => verificarRegraTestesParaTudo(tmpProjeto), /não possui teste direto/);
+    fs.writeFileSync(caminhoGddParserTmp, 'const x = 1;\n', 'utf8');
+    assert.throws(() => verificarRegraTestesParaTudo(tmpProjeto), /não exporta nenhuma função testável/);
+    fs.writeFileSync(caminhoGddParserTmp, gddParserOrig, 'utf8');
+
+    for (const nomeTeste of auditoria.testesDeclarados) {
+      fs.writeFileSync(path.join(tmpProjeto, 'tests', nomeTeste), '// vazio\n', 'utf8');
+    }
+    assert.throws(() => verificarRegraTestesParaTudo(tmpProjeto), /não possui nenhum teste em tests/);
   } finally {
     fs.rmSync(tmpProjeto, { recursive: true, force: true });
   }
@@ -632,7 +723,441 @@ test('MCP para Testes e Jogo Bio-Foil (L1/L2/L3/L4/L6/N4): 12 ferramentas, 4 rec
       body: JSON.stringify({ jsonrpc: '2.0', id: 202, method: 'ping' }),
     });
     assert.equal(respRebinding.status, 403, 'Servidor HTTP MCP deve rejeitar Origin externo (DNS Rebinding)');
+
+    const resp404 = await fetch(`http://127.0.0.1:${porta}/outro`, { method: 'GET' });
+    assert.equal(resp404.status, 404);
+
+    const resp400 = await fetch(`http://127.0.0.1:${porta}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{json_invalido',
+    });
+    assert.equal(resp400.status, 400);
+
+    const resp202 = await fetch(`http://127.0.0.1:${porta}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+    });
+    assert.equal(resp202.status, 202);
   } finally {
     await new Promise((resolve) => srvHttp.close(resolve));
+  }
+
+  // 8. Transporte stdio in-process com PassThrough (linha vazia, JSON inválido, notificação e comando válido)
+  const inStream = new PassThrough();
+  const outStream = new PassThrough();
+  let bufferOut = '';
+  outStream.on('data', (chunk) => {
+    bufferOut += chunk.toString('utf8');
+  });
+  const rlStdio = iniciarTransporteStdio({ input: inStream, output: outStream });
+  inStream.write('   \n');
+  inStream.write('{json_invalido\n');
+  inStream.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
+  inStream.write(`${JSON.stringify({ jsonrpc: '2.0', id: 301, method: 'ping' })}\n`);
+  inStream.end();
+  await new Promise((resolve) => rlStdio.on('close', resolve));
+  const respostasInProc = bufferOut.trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(respostasInProc.length, 2);
+  assert.equal(respostasInProc[0].error.code, -32700);
+  assert.equal(respostasInProc[1].id, 301);
+
+  // 9. Cobertura integral dos ramos do MCP (invocarFerramentaMcp nas 12 tools, validações de schema, rotas de mapa/loja/evento/Draga e erros JSON-RPC)
+  assert.equal(processarMensagemJsonRpc({ jsonrpc: '1.0', id: 1 }).error.code, -32600);
+  assert.equal(processarMensagemJsonRpc({ jsonrpc: '2.0', id: 1, method: 'metodo/inexistente' }).error.code, -32601);
+  assert.equal(
+    processarMensagemJsonRpc({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri: 'uri://inexistente' } })
+      .error.code,
+    -32603
+  );
+  assert.throws(() => lerRecursoMcp('uri://inexistente'), /URI não encontrada/);
+  assert.throws(() => obterPromptMcp('prompt_inexistente'), /Prompt não encontrado/);
+
+  assert.equal(invocarFerramentaMcp('agent_test_simular_passo_agente', []).isError, true);
+  assert.equal(invocarFerramentaMcp('agent_test_simular_passo_agente', {}).isError, true);
+  assert.equal(
+    invocarFerramentaMcp('agent_test_auditar_ambiente_n5_secao5', { response_format: 'formato_invalido' }).isError,
+    true
+  );
+
+  // Chamadas diretas via invocarFerramentaMcp nas ferramentas restantes e ramos de erro/filtro
+  assert.equal(
+    invocarFerramentaMcp(
+      'agent_test_auditar_ambiente_n5_secao5',
+      {
+        limiteCargaMaquina: 1,
+        response_format: 'json',
+      },
+      { carga1mOverride: 50 }
+    ).isError,
+    true
+  );
+  assert.equal(invocarFerramentaMcp('agent_test_executar_portoes', { filtroSuite: 'inexistente' }).isError, true);
+  assert.equal(
+    invocarFerramentaMcp('agent_test_executar_mutacoes_l6', {
+      ids: ['MUT-INEXISTENTE'],
+      arquivoAlvo: 'inexistente.mjs',
+    }).isError,
+    true
+  );
+  assert.equal(
+    invocarFerramentaMcp('agent_test_iniciar_cenario_biofoil', { tipoCenario: 'CHEFE_FASE_1' }).isError,
+    false
+  );
+  assert.equal(iniciarCenarioBiofoilMcp({ tipoCenario: 'CENARIO_INEXISTENTE' }).isError, true);
+  assert.equal(simularPassoAgenteMcp({}).isError, true);
+  assert.equal(inspecionarAlvoL3Mcp({}).isError, true);
+  assert.equal(
+    avaliarPoliticaAgenteMcp({ estrategia: 'CANONICA_OTIMA' }, { forcarPontuacaoZero: true }).structuredContent
+      .pontuacaoTotal,
+    0
+  );
+
+  const cenDraga = iniciarCenarioBiofoilMcp({ tipoCenario: 'CHEFE_FASE_3' }).structuredContent.estado;
+  const passoDraga = invocarFerramentaMcp('agent_test_simular_passo_agente', {
+    estado: cenDraga,
+    passosTick: 1,
+    dtSeg: 0.25,
+  });
+  assert.equal(passoDraga.isError, false);
+
+  const inspSala = invocarFerramentaMcp('agent_test_inspecionar_alvo_l3', {
+    estado: cenDraga,
+    salaId: 'SALA_1',
+  });
+  assert.equal(inspSala.structuredContent.salasInspecionadasN4, 1);
+
+  const inspVazado = inspecionarAlvoL3Mcp(
+    { estado: congelarProfundo(baseCego) },
+    { vazarVazioQuandoCegoL3: true }
+  );
+  assert.deepEqual(inspVazado.structuredContent.leiturasL3[0].dados.tripulantes, []);
+
+  // Domínio C completo: sessão inexistente, Monstro Marinho, Setor 8 Draga, Digestão, Sair da Loja, Avançar Setor, Eventos, Mapa e Vitória/Derrota
+  assert.equal(executarAcaoJogoMcp({ sessaoId: 'inexistente' }).isError, true);
+  assert.equal(consultarHudSessaoMcp({ sessaoId: 'inexistente' }).isError, true);
+  assert.equal(gerenciarSessoesJogoMcp({ acao: 'EXPORTAR_REPLAY', sessaoId: 'inexistente' }).isError, true);
+
+  iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-monstro',
+    setorNumero: 2,
+    faseInicial: 'COMBATE',
+    classeInimigoInicial: 'MONSTRO_MARINHO',
+  });
+  // Digestão e Sair da Loja fora da fase LOJA (rejeitados)
+  const rejForaLoja = executarAcaoJogoMcp({
+    sessaoId: 'sessao-monstro',
+    acaoEspecial: 'DIGESTAO_ENZIMATICA',
+  });
+  assert.equal(rejForaLoja.structuredContent.resultadosComandos[0].aceito, false);
+  const rejSairForaLoja = executarAcaoJogoMcp({
+    sessaoId: 'sessao-monstro',
+    acaoEspecial: 'SAIR_DA_LOJA',
+  });
+  assert.equal(rejSairForaLoja.structuredContent.resultadosComandos[0].aceito, false);
+
+  // Vitória por EXTRACAO_CIRURGICA / CAPTURA_INTACTA e avanço de setor
+  iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-loja-digestao',
+    setorNumero: 1,
+    faseInicial: 'LOJA',
+  });
+  const digOk = executarAcaoJogoMcp({
+    sessaoId: 'sessao-loja-digestao',
+    acaoEspecial: 'DIGESTAO_ENZIMATICA',
+    moedaOrigemDigestao: 'SUCATA',
+    lotesDigestao: 1,
+  });
+  assert.equal(digOk.structuredContent.resultadosComandos[0].aceito, true);
+  const digFalha = executarAcaoJogoMcp({
+    sessaoId: 'sessao-loja-digestao',
+    acaoEspecial: 'DIGESTAO_ENZIMATICA',
+    moedaOrigemDigestao: 'SUCATA',
+    lotesDigestao: 999,
+  });
+  assert.equal(digFalha.structuredContent.resultadosComandos[0].aceito, false);
+  const sairLojaOk = executarAcaoJogoMcp({
+    sessaoId: 'sessao-loja-digestao',
+    acaoEspecial: 'SAIR_DA_LOJA',
+  });
+  assert.equal(sairLojaOk.structuredContent.faseJogo, 'MAPA');
+
+  // Avançar próximo setor (Setor 1 -> 2 e Setor 7 -> 8)
+  const avSetor2 = executarAcaoJogoMcp({
+    sessaoId: 'sessao-loja-digestao',
+    acaoEspecial: 'AVANCAR_PROXIMO_SETOR',
+  });
+  assert.equal(avSetor2.status === 'OK' || avSetor2.isError === false, true);
+
+  iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-setor7',
+    setorNumero: 7,
+    faseInicial: 'MAPA',
+  });
+  const avSetor8 = executarAcaoJogoMcp({
+    sessaoId: 'sessao-setor7',
+    acaoEspecial: 'AVANCAR_PROXIMO_SETOR',
+  });
+  assert.equal(avSetor8.structuredContent.faseJogo, 'COMBATE');
+
+  // HUD em EVENTO e FIM_DE_RUN
+  const estEvHud = structuredClone(cenDraga);
+  estEvHud.meta.faseJogo = 'EVENTO';
+  estEvHud.mapaSetorial.nos = [{ id: 'NO_0_ENTRADA', tipoNo: 'SOS', idTemplateEvento: 'SOS_1_REDE_ARRASTO' }];
+  assert.match(renderizarHudAsciiBiofoil(congelarProfundo(estEvHud)), /ENCONTRO DE EVENTO/);
+  const estFimHud = structuredClone(cenDraga);
+  estFimHud.meta.faseJogo = 'FIM_DE_RUN';
+  estFimHud.meta.resultadoRun = 'VITORIA_FINAL_DRAGA';
+  assert.match(renderizarHudAsciiBiofoil(congelarProfundo(estFimHud)), /FIM DE RUN/);
+
+  // Invocar tools restantes via invocarFerramentaMcp e cobrir todas as transições do Domínio C
+  assert.equal(
+    invocarFerramentaMcp('agent_test_inspecionar_codigo_14_leis', { diretorioRaiz: DIRETORIO_RAIZ }).isError,
+    false
+  );
+  const sessaoLongaId = 's'.repeat(25050);
+  const resTruncado = iniciarPartidaJogavelMcp({ sessaoId: sessaoLongaId, response_format: 'json' });
+  assert.match(resTruncado.content[0].text, /TRUNCADO em 25000 caracteres/);
+  gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: sessaoLongaId });
+
+  // Travessia de mapa real: EXPLORACAO -> EVENTO (opção C sem noMapa no payload -> MAPA) -> LOJA -> SOS -> SAIDA (Setor 1 -> 2)
+  iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-mapa-s5',
+    seedPartida: 'seed-5',
+    setorNumero: 1,
+    faseInicial: 'MAPA',
+  });
+  executarAcaoJogoMcp({
+    sessaoId: 'sessao-mapa-s5',
+    comandos: [
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_1_B' } },
+      { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { opcao: 'C' } },
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_2_C' } },
+      { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { opcao: 'C' } },
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_3_B' } },
+    ],
+  });
+  executarAcaoJogoMcp({ sessaoId: 'sessao-mapa-s5', acaoEspecial: 'SAIR_DA_LOJA' });
+  const rSaidaS1 = executarAcaoJogoMcp({
+    sessaoId: 'sessao-mapa-s5',
+    comandos: [
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_4_B' } },
+      { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { opcao: 'C' } },
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_5_SAIDA' } },
+    ],
+  });
+  assert.ok(rSaidaS1.structuredContent.eventosTransicao.includes('TR_8_TROCAR_SETOR:2'));
+  gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: 'sessao-mapa-s5' });
+
+  // Travessia até SAIDA no Setor 7 -> Setor 8 (Draga Fase 1)
+  iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-mapa-s7',
+    seedPartida: 'seed-7',
+    setorNumero: 7,
+    faseInicial: 'MAPA',
+  });
+  executarAcaoJogoMcp({
+    sessaoId: 'sessao-mapa-s7',
+    comandos: [
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_1_B' } },
+      { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { opcao: 'C' } },
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_2_C' } },
+      { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { opcao: 'C' } },
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_3_B' } },
+      { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { opcao: 'C' } },
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_4_B' } },
+    ],
+  });
+  executarAcaoJogoMcp({ sessaoId: 'sessao-mapa-s7', acaoEspecial: 'SAIR_DA_LOJA' });
+  const rSaidaS7 = executarAcaoJogoMcp({
+    sessaoId: 'sessao-mapa-s7',
+    comandos: [{ tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_5_SAIDA' } }],
+  });
+  assert.ok(rSaidaS7.structuredContent.eventosTransicao.includes('TR_8_CHEGADA_SETOR_8_DRAGA_FASE_1'));
+  gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: 'sessao-mapa-s7' });
+
+  // Travessia para nó COMBATE (s1: NO_1_B) e EVENTO -> COMBATE (seed-1: NO_1_C opção A)
+  iniciarPartidaJogavelMcp({ sessaoId: 'sessao-no-comb', seedPartida: 's1', faseInicial: 'MAPA' });
+  const rNoComb = executarAcaoJogoMcp({
+    sessaoId: 'sessao-no-comb',
+    comandos: [{ tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_1_B' } }],
+  });
+  assert.equal(rNoComb.structuredContent.faseJogo, 'COMBATE');
+  gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: 'sessao-no-comb' });
+
+  iniciarPartidaJogavelMcp({ sessaoId: 'sessao-ev-comb', seedPartida: 'seed-1', faseInicial: 'MAPA' });
+  const rEvComb = executarAcaoJogoMcp({
+    sessaoId: 'sessao-ev-comb',
+    comandos: [
+      { tipo: 'VIAJAR_NO_MAPA', payload: { idNoDestino: 'NO_1_C' } },
+      { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { opcao: 'A' } },
+    ],
+  });
+  assert.ok(rEvComb.structuredContent.eventosTransicao.includes('TR_3_EVENTO_PARA_COMBATE'));
+  gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: 'sessao-ev-comb' });
+
+  // Derrota permadeath, Extração Cirúrgica, Captura Intacta (c/ resgate de BORDO_INIMIGO) e Draga Fases 1->2->3
+  iniciarPartidaJogavelMcp({ sessaoId: 'sessao-derrota', faseInicial: 'COMBATE' });
+  const rDerrota = executarAcaoJogoMcp({
+    sessaoId: 'sessao-derrota',
+    comandos: [{ tipo: 'DRENAR_TUDO', payload: { aberta: true } }],
+    passosTick: 65,
+    dtSeg: 1.0,
+  });
+  assert.equal(rDerrota.structuredContent.faseJogo, 'FIM_DE_RUN');
+  gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: 'sessao-derrota' });
+
+  iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-extracao',
+    faseInicial: 'COMBATE',
+    classeInimigoInicial: 'MONSTRO_MARINHO',
+  });
+  const rExtracao = executarAcaoJogoMcp({
+    sessaoId: 'sessao-extracao',
+    comandos: [
+      { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 4, deltaBarras: -1 } },
+      { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 3, deltaBarras: 1 } },
+      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 4 } },
+    ],
+    passosTick: 90,
+    dtSeg: 0.5,
+  });
+  assert.equal(rExtracao.structuredContent.metricasRun.orgaosIntactosExtraidosNestaRun, 1);
+  gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: 'sessao-extracao' });
+
+  iniciarPartidaJogavelMcp({
+    sessaoId: 'sessao-captura',
+    idArquitetura: 'SOMBRA_ABISSAL',
+    faseInicial: 'COMBATE',
+    classeInimigoInicial: 'BARCO_HUMANO',
+  });
+  executarAcaoJogoMcp({
+    sessaoId: 'sessao-captura',
+    comandos: [
+      { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 8, deltaBarras: -1 } },
+      { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 3, deltaBarras: 1 } },
+      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 0, salaAlvoId: 1 } },
+      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 1 } },
+    ],
+    passosTick: 48,
+    dtSeg: 0.5,
+  });
+  const rCaptura = executarAcaoJogoMcp({
+    sessaoId: 'sessao-captura',
+    comandos: [
+      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 0, salaAlvoId: 3 } },
+      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 3 } },
+    ],
+    passosTick: 48,
+    dtSeg: 0.5,
+  });
+  assert.equal(rCaptura.structuredContent.metricasRun.barcosCapturadosIntactosNestaRun, 1);
+  gerenciarSessoesJogoMcp({ acao: 'REMOVER', sessaoId: 'sessao-captura' });
+
+  invocarFerramentaMcp('biofoil_jogar_iniciar_partida', {
+    sessaoId: 'sessao-via-tool',
+    setorNumero: 8,
+    faseInicial: 'COMBATE',
+  });
+  for (let f = 1; f <= 3; f += 1) {
+    for (let r = 0; r < 5; r += 1) {
+      const resDraga = invocarFerramentaMcp('biofoil_jogar_executar_acao', {
+        sessaoId: 'sessao-via-tool',
+        comandos:
+          r === 0
+            ? [
+                ...(f === 1
+                  ? [
+                      { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 4, deltaBarras: -1 } },
+                      { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 3, deltaBarras: 1 } },
+                    ]
+                  : []),
+                { tipo: 'MIRAR_ARMA', payload: { slotIndex: 0, salaAlvoId: 1 } },
+                { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 1 } },
+              ]
+            : [],
+        passosTick: 200,
+        dtSeg: 0.5,
+      });
+      if (resDraga.structuredContent.vitoria.encerrado) break;
+    }
+  }
+  const hudFinalDraga = invocarFerramentaMcp('biofoil_jogar_consultar_hud', { sessaoId: 'sessao-via-tool' });
+  assert.equal(hudFinalDraga.structuredContent.faseJogo, 'FIM_DE_RUN');
+  assert.equal(
+    invocarFerramentaMcp('biofoil_jogar_gerenciar_sessoes', {
+      acao: 'REMOVER',
+      sessaoId: 'sessao-via-tool',
+    }).isError,
+    false
+  );
+
+  // 10. Executor de mutações L6 e inspeção estática MCP em diretório temporário (100% funções e ramos)
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ftl-mut-cov-'));
+  try {
+    copiarProjeto(DIRETORIO_RAIZ, tmp);
+
+    // 1. renderizarBlocoMd, extrairBlocoMd e carregarMutacoes
+    const muts = carregarMutacoes(tmp);
+    const bloco = renderizarBlocoMd(muts.slice(0, 1), [
+      { id: 'MUT-01', vermelho: true, linha: 'Error: falha', confere: true, desatualizada: null },
+    ]);
+    assert.match(bloco, /MUT-01/);
+    assert.equal(extrairBlocoMd('sem marcadores'), null);
+    assert.equal(extrairBlocoMd(`antes\n${bloco}\ndepois`), bloco);
+
+    // 2. executarCliMutacoes em 1 mutação rápida (MUT-03) com --gerar-md
+    const codeCli = executarCliMutacoes(tmp, ['--gerar-md'], ['MUT-03']);
+    assert.equal(codeCli, 0);
+
+    // 3. Mutação desatualizada (buscar aparece 0x) -> retorna desatualizada e código 1 no CLI
+    const caminhoJson = path.join(tmp, 'padrao', 'protocolo', 'mutacoes.json');
+    const jsonOrig = fs.readFileSync(caminhoJson, 'utf8');
+    const jsonMod = JSON.parse(jsonOrig);
+    jsonMod.mutacoes[2].trocas[0].buscar = 'TRECHO_QUE_NAO_EXISTE_EM_LUGAR_NENHUM_999';
+    fs.writeFileSync(caminhoJson, JSON.stringify(jsonMod, null, 2), 'utf8');
+    const codeDesat = executarCliMutacoes(tmp, [], ['MUT-03']);
+    assert.equal(codeDesat, 1);
+    fs.writeFileSync(caminhoJson, jsonOrig, 'utf8');
+
+    // 4. Linha de base vermelha -> executarMutacoes lança [L6 LINHA DE BASE VERMELHA]
+    const caminhoT01 = path.join(tmp, 'tests', '01-portao-gdd.test.mjs');
+    const t01Orig = fs.readFileSync(caminhoT01, 'utf8');
+    fs.writeFileSync(caminhoT01, `import test from 'node:test';\ntest('falha', () => { throw new Error('boom'); });\n`, 'utf8');
+    assert.throws(() => executarMutacoes(tmp, { ids: ['MUT-03'] }), /\[L6 LINHA DE BASE VERMELHA\]/);
+
+    // 5. inspecionarCodigo14Leis detectando mock proibido, caminho de máquina, tautologia L4 e pasta tests vazia
+    const prefixoUsr = `/${'Users'}/dudu/arq`;
+    const fnMockStr = `${'jest'}.fn()`;
+    const tautStr = `assert.${'equal'}(b, b)`;
+    const caminhoT02 = path.join(tmp, 'tests', '02-hook-ambiente.test.mjs');
+    fs.writeFileSync(
+      caminhoT02,
+      `import test from 'node:test';\nimport assert from 'node:assert/strict';\ntest('y', () => { ${fnMockStr}; const p = '${prefixoUsr}'; const b = 1; ${tautStr}; });\n`,
+      'utf8'
+    );
+    const inspRuim = inspecionarCodigo14Leis({ diretorioRaiz: tmp });
+    assert.equal(inspRuim.isError, true);
+    assert.ok(inspRuim.structuredContent.violacoes.some((v) => v.includes('[Lei L1]')));
+    assert.ok(inspRuim.structuredContent.violacoes.some((v) => v.includes('[Lei N5]')));
+    assert.ok(inspRuim.structuredContent.violacoes.some((v) => v.includes('[Lei L4]')));
+
+    for (const f of fs.readdirSync(path.join(tmp, 'tests'))) {
+      fs.unlinkSync(path.join(tmp, 'tests', f));
+    }
+    const inspZero = inspecionarCodigo14Leis({ diretorioRaiz: tmp });
+    assert.ok(inspZero.structuredContent.violacoes.some((v) => v.includes('Zero arquivos de teste')));
+
+    // 6. auditarAmbienteN5Secao5 quando hook não tem unset/NODE_TEST_CONTEXT e quando hooksPath está vazio
+    const hookPreCommitTmp = path.join(tmp, 'scripts', 'hooks', 'pre-commit');
+    fs.writeFileSync(hookPreCommitTmp, '#!/bin/sh\ngit status\n', 'utf8');
+    const ambHookRuim = auditarAmbienteN5Secao5({ diretorioRaiz: tmp, limiteCargaMaquina: 99 });
+    assert.equal(ambHookRuim.isError, true);
+    fs.unlinkSync(hookPreCommitTmp);
+    const ambSemHooks = auditarAmbienteN5Secao5({ diretorioRaiz: tmp, limiteCargaMaquina: 99 });
+    assert.equal(ambSemHooks.isError, true);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 });

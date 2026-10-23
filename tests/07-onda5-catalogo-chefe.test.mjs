@@ -315,4 +315,18 @@ test('[PORTÃO 07.3 | N1 + N4 + MUT-O5-02..03] As 3 Fases da Draga Continental: 
   assert.equal(surgeF3.naveJogador.hpCascoAtual, 18, 'Fervura Oceânica causa -1 HP/s ao casco em Touchdown');
   assert.equal(surgeF3.alvoCombate.fervuraAtivaSeg, 3.0);
   assert.throws(() => transicionarFaseChefeDraga(estadoFase3), /última fase/);
+
+  // Cobertura de choque já ativo em aplicarChoqueEletroPlacaEmSala, decaimento de isolamento em avancarTickChoqueEIsolamentoSala, fase inválida da Draga e avancarTickChefeDraga em alvo comum
+  const salaEmChoque = { id: 1, barrasMax: 3, integridade: 3, energiaAlocada: 2, tempoParalisiaIonSeg: 4.0, isolamentoResidualChoqueSeg: 0 };
+  const resChoqueJaAtivo = aplicarChoqueEletroPlacaEmSala(salaEmChoque);
+  assert.equal(resChoqueJaAtivo.choqueAplicado, false);
+  assert.equal(resChoqueJaAtivo.motivoBloqueio, 'CHOQUE_JA_ATIVO');
+
+  const salaEmIsolamento = { id: 1, barrasMax: 3, integridade: 3, energiaAlocada: 2, tempoRestanteIonSeg: 0, isolamentoResidualChoqueSeg: 3.0 };
+  const salaAposDecay = avancarTickChoqueEIsolamentoSala(salaEmIsolamento, 1.0);
+  assert.equal(salaAposDecay.isolamentoResidualChoqueSeg, 2.0);
+
+  assert.throws(() => criarEstadoChefeDraga(99), /Fase inválida da Draga Continental: 99/);
+  const estadoSemDraga = avancarTickChefeDraga(base, 1.0);
+  assert.equal(estadoSemDraga.alvoCombate.classeInimigo, 'BARCO_HUMANO');
 });

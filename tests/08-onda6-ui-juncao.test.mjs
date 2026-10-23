@@ -564,4 +564,46 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
     255
   );
   assert.equal(avaliarPredicadoDesbloqueio('a <= 5 && b > 1 && c < 10', { a: 5, b: 2, c: 9 }), true);
+
+  // Cobertura completa de CUE_SPOOL_UP_DECOLAGEM, rejeições de ATIVAR_BAIACU / LANCAR_ABORDAGEM, gerenciarPersistenciaTransicao inválida e debug L3 do presenter
+  const estSpool = structuredClone(estadoMapa);
+  estSpool.naveJogador.estadoFisico = '3_SPOOL_UP';
+  estSpool.naveJogador.progressoSpoolUpSeg = 1.5;
+  const cuesSpool = avaliarCuesSonorosAtivos(estadoMapa, congelarProfundo(estSpool));
+  assert.ok(cuesSpool.some((c) => c.id === 'CUE_SPOOL_UP_DECOLAGEM'));
+
+  const resBaiacuInv = despacharComandoUi(estCouraca, {
+    tipo: 'ATIVAR_BAIACU',
+    payload: { tripulanteId: 'inexistente', inflado: true },
+  });
+  assert.equal(resBaiacuInv.aceito, false);
+
+  const resAbordFora7 = despacharComandoUi(estCouraca, {
+    tipo: 'LANCAR_ABORDAGEM',
+    payload: { tripulantesIds: ['trip-baiacu-1'], salaAlvoId: 1 },
+  });
+  assert.equal(resAbordFora7.aceito, false);
+
+  const copiaRecargaTubo = structuredClone(estCouraca);
+  copiaRecargaTubo.naveJogador.recargaTuboAbordagemSeg = 5.0;
+  const resAbordEmRecarga = despacharComandoUi(congelarProfundo(copiaRecargaTubo), {
+    tipo: 'LANCAR_ABORDAGEM',
+    payload: { tripulantesIds: ['trip-caranguejo-1'], salaAlvoId: 1 },
+  });
+  assert.equal(resAbordEmRecarga.aceito, false);
+
+  const trPersInv = gerenciarPersistenciaTransicao(
+    estadoMapa,
+    criarPerfilInicial(),
+    'TR_7A_DERROTA_EM_COMBATE'
+  );
+  assert.equal(trPersInv.aceita, false);
+
+  const copiaCega = structuredClone(estCouraca);
+  copiaCega.naveJogador.camaras.find((c) => c.id === 2).barrasIntegridade = 0;
+  copiaCega.naveJogador.tripulacao = [];
+  const vmVazado = projetarViewModelWireframe(congelarProfundo(copiaCega), {
+    vazarZeroTripulantesQuandoCegoL3: true,
+  });
+  assert.equal(vmVazado.painelAlvo.salasInspecionadas[0].textoTripulacao, '0 tripulantes');
 });
