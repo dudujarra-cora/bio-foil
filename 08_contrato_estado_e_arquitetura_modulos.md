@@ -162,7 +162,7 @@ Toda leitura do estado inimigo (pela UI ou pela IA de mira) é obrigada a passar
 Para cumprir a **Lei N5 ("Um dono por arquivo compartilhado")** e a **Lei N6 ("Onda de teste não conserta produto")**, cada arquivo do projeto pertence a **uma única Onda** e tem separação física estrita entre **Código de Produto (`src/`)** e **Portão de Teste (`tests/`)**:
 
 ```text
-/Users/dudujarra/Documents/ftl/
+./
 ├── 01..09_*.md                          # [Onda 0] 9 Volumes Canônicos do GDD (Congelados)
 ├── .github/workflows/portoes.yml        # [Onda 0] CI no servidor: roda o pre-push; a main protegida exige verde
 ├── package.json                         # [Onda 0] Fixa Node >=22.22 <23 (engines) — sem dependências

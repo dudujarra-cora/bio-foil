@@ -1663,13 +1663,30 @@ test('Junção N1 + L4 + N5: audita a Consolidação do Vol. 09 (5 Pilares x Ár
     `[N4] Vol. 09 examinado: ${consolidacao.pilares.length} pilares sênior, ${consolidacao.transicoesCiclo.length} transições de ciclo, ${consolidacao.streamsPrng.length} streams isolados de PRNG, ${arvore.length} arquivos na árvore 8.3`
   );
 
-  // 1. Árvore 8.3: caminhos únicos e Onda declarada coerente com a pasta (Lei N5)
+  // 1. Árvore 8.3: caminhos únicos, sem endereço dependente de máquina e Onda declarada coerente com a pasta (Lei N5)
   assert.equal(new Set(arvore.map((e) => e.caminho)).size, arvore.length, 'Árvore 8.3 tem caminho duplicado (dois donos)');
+  const padraoCaminhoMaquina = new RegExp(['/Users/', '/home/', '/private/', 'C:\\\\'].join('|'));
+  for (const v of cadeia.volumes) {
+    assert.equal(
+      padraoCaminhoMaquina.test(v.conteudo),
+      false,
+      `Volume ${v.arquivo} contém caminho absoluto dependente de máquina`
+    );
+  }
   for (const e of arvore) {
     const pasta = e.caminho.match(/onda(\d)-/);
     if (pasta) assert.equal(e.onda, Number(pasta[1]), `Arquivo ${e.caminho} está na pasta da Onda ${pasta[1]} mas declara Onda ${e.onda}`);
     if (e.caminho !== '01..09_*.md') {
-      assert.equal(fs.existsSync(path.join(DIRETORIO_RAIZ, e.caminho)), true, `Arquivo ${e.caminho} declarado na Árvore 8.3 não existe no disco`);
+      const arqAbs = path.join(DIRETORIO_RAIZ, e.caminho);
+      assert.equal(fs.existsSync(arqAbs), true, `Arquivo ${e.caminho} declarado na Árvore 8.3 não existe no disco`);
+      if (e.caminho !== 'tests/01-portao-gdd.test.mjs') {
+        const txt = fs.readFileSync(arqAbs, 'utf8');
+        assert.equal(
+          padraoCaminhoMaquina.test(txt),
+          false,
+          `Arquivo ${e.caminho} contém caminho absoluto dependente de máquina`
+        );
+      }
     }
   }
 

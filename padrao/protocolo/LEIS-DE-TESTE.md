@@ -1,7 +1,7 @@
 # Protocolo de Testes e Bugs — Projeto Bio-Foil (`ftl`)
 
 - **Projeto:** Bio-Foil (Nave Biológica com Hidrofólio)
-- **Repositório Principal:** `/Users/dudujarra/Documents/ftl`
+- **Repositório Principal:** `./` (raiz do repositório Git)
 - **Runtime / Runner:** Node.js `v22.22.2` (`node --test`, zero dependências externas)
 - **Registro de Mutações:** `padrao/protocolo/MUTACOES.md`
 
@@ -47,15 +47,15 @@ Antes de cada commit e de cada push: `git config --get core.bare` no repositóri
 
 ## 4. Regras operacionais medidas neste projeto (2026-10-22)
 
-- **Onde ficam as worktrees (N5):** `/Users/dudujarra/Documents/ftl-worktrees/<frente>`. Nesta máquina, a pasta `/tmp` dá `Operation not permitted` para o agente (medido), então não use worktree lá.
+- **Onde ficam as worktrees (N5):** `../ftl-worktrees/<frente>` (diretório irmão da raiz do projeto). Em ambientes restritos de sandbox, a pasta `/tmp` pode recusar criação de worktrees, então use uma pasta irmã do repositório.
 - **Commit direto na `main` é recusado** pelo `pre-commit` (Lei N5). A `main` só recebe `git merge --ff-only` da frente; isso não dispara o hook.
 - **O hook testa o conteúdo do commit**, não a árvore de trabalho. Ele exporta o índice, inclusive o índice temporário de `git commit <arquivo>` (B4).
 - **`NODE_TEST_CONTEXT` herdado** faz um `node --test` filho sair com 0 mesmo havendo falha (medido). Hooks e executor de mutações limpam essa variável (B16).
 - **Mutação só vale se re-executada:** `mutacoes.json` é a fonte; `node scripts/rodar-mutacoes.mjs --gerar-md` mede e gera o bloco do `MUTACOES.md` (B6).
 - **Portão novo nasce `DECLARADO`** em `PORTOES.md` e só vira `OBRIGATORIO` com 3 corridas verdes seguidas na `main`, com evidência colada (N3).
-- **Apagar arquivo de produto ou documento** exige mostrar o que vai mudar e esperar o ok do Dudu.
-- **Worktree e ramo de frente** já juntados na `main` *e* no remoto são removidos pelo próprio agente, mas só com comandos que recusam quando há pendência: `git worktree remove` (sem `--force`) e `git branch -d` (nunca `-D`). Decisão delegada pelo Dudu em 2026-10-22.
+- **Apagar arquivo de produto ou documento** exige mostrar o que vai mudar e esperar o ok do responsável.
+- **Worktree e ramo de frente** já juntados na `main` *e* no remoto são removidos pelo próprio agente, mas só com comandos que recusam quando há pendência: `git worktree remove` (sem `--force`) e `git branch -d` (nunca `-D`). Decisão delegada em 2026-10-22.
 - **Dúvida não se deduz, se testa:** quando um número do GDD depende de um parâmetro não declarado, o portão enumera as possibilidades, imprime quais quebram o resultado e exige que o GDD declare o valor canônico (exemplo: os 12 cenários do Marinheiro 1).
-- **Portão no servidor (CI + proteção da `main`):** o repositório público `dudujarra-cora/bio-foil` roda o job `portoes` (que executa `sh scripts/hooks/pre-push`) em todo push. A `main` está protegida: exige o job verde, não aceita push forçado nem exclusão, e a regra vale também para administradores.
+- **Portão no servidor (CI + proteção da `main`):** o repositório remoto roda o job `portoes` (que executa `sh scripts/hooks/pre-push`) em todo push. A `main` está protegida: exige o job verde, não aceita push forçado nem exclusão, e a regra vale também para administradores.
 - **Fluxo de envio:** 1) `git push origin frente/<nome>`; 2) esperar o job `portoes` ficar verde nesse commit; 3) `git merge --ff-only` na `main` local; 4) `git push origin main`, que reaproveita o mesmo commit e por isso o check já verde.
 - **E-mail de commit:** este repositório usa só o endereço `noreply` do GitHub (`git config user.email`, local ao repositório). O histórico foi reescrito uma única vez, em 2026-10-22, com autorização do Dudu. A cópia anterior ficou na etiqueta local `backup/pre-reescrita-email`, que nunca deve ir para o remoto.
