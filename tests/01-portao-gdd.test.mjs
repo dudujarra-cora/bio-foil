@@ -10,6 +10,9 @@ import {
   extrairSsotEMatrizDoVolume06,
   consultarConstanteSsotComPermissao,
   extrairCatalogoVolume05,
+  extrairEconomiaVolume05,
+  extrairCustosMastroVolume01,
+  extrairSaqueSetor1Volume03,
   calcularPesoTotalNave,
   calcularSustentacaoAtual,
   calcularVelocidadeCruzeiro,
@@ -561,6 +564,174 @@ test('Junção N1 + L4 + N4 (B1/B2): Tabela de Tripulação do Vol. 01 é a font
   const inflarVol03 = vol03.match(/ativa Inflar sobre o furo \(leva ([\d.]+)s/);
   assert.ok(inflarVol03, 'Vol. 03 deve declarar o tempo de ativação do Inflar');
   assert.equal(Number(inflarVol03[1]), trip.tempoInflarBaiacuSeg, 'Tempo de Inflar no Vol. 03 diverge do Vol. 01');
+});
+
+test('Junção N1 + L4 + N4: audita a Economia Completa do Vol. 05 (Upgrades, Lojas, Reator 7..18 e Curva Setores 1..8) contra Vols. 01, 03, 06 e 08', () => {
+  const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const vol01 = cadeia.volumes[0].conteudo;
+  const vol03 = cadeia.volumes[2].conteudo;
+  const vol05 = cadeia.volumes[4].conteudo;
+  const vol06 = cadeia.volumes[5].conteudo;
+  const vol08 = extrairContratoEstadoVolume08(cadeia.volumes[7].conteudo);
+
+  const catalogo = extrairCatalogoVolume05(vol05);
+  const economia = extrairEconomiaVolume05(vol05);
+  const custosMastroVol01 = extrairCustosMastroVolume01(vol01);
+  const saqueSetor1Vol03 = extrairSaqueSetor1Volume03(vol03);
+  const { constantesSsot } = extrairSsotEMatrizDoVolume06(vol06);
+  const tripVol01 = extrairTripulacaoVolume01(vol01);
+
+  console.log(
+    `[N4] Economia Vol. 05 examinada: ${economia.upgrades.length} árvores de upgrade, ${economia.itensLoja.length} itens/serviços de loja, ${economia.curvaSetores.length} setores na curva de saque`
+  );
+  assert.equal(economia.upgrades.length, 10, 'Seção 5.6.A deve especificar exatamente as 10 árvores de upgrade');
+  assert.equal(economia.itensLoja.length, 20, 'Seção 5.6.B deve especificar exatamente os 20 itens/serviços dos Recifes-Forja');
+  assert.equal(economia.curvaSetores.length, 8, 'Seção 5.6.C deve especificar a curva de saque dos 8 setores');
+
+  // 1. Verifica cada árvore de upgrade e a soma total de maximização (850 Sucata + 1100 Biomassa + 380 Flexível = 2330)
+  for (const u of economia.upgrades) {
+    assert.ok(u.custosNiveis.length > 0, `Upgrade ${u.nome} sem níveis de custo`);
+    assert.equal(
+      u.somaCalculada,
+      u.somaDeclarada,
+      `Soma dos níveis de ${u.nome} (${u.somaCalculada}) diverge do total declarado (${u.somaDeclarada})`
+    );
+  }
+  const somaSucataUpgrades = economia.upgrades
+    .filter((u) => u.moeda === 'SUCATA')
+    .reduce((acc, u) => acc + u.somaCalculada, 0);
+  const somaBiomassaUpgrades = economia.upgrades
+    .filter((u) => u.moeda === 'BIOMASSA')
+    .reduce((acc, u) => acc + u.somaCalculada, 0);
+  const somaFlexivelUpgrades = economia.upgrades
+    .filter((u) => u.moeda === 'FLEXIVEL')
+    .reduce((acc, u) => acc + u.somaCalculada, 0);
+
+  assert.equal(somaSucataUpgrades, 850, 'Soma dos upgrades mecânicos em Sucata deve ser 850');
+  assert.equal(somaBiomassaUpgrades, 1100, 'Soma dos upgrades biológicos em Biomassa deve ser 1100');
+  assert.equal(somaFlexivelUpgrades, 380, 'Soma das 12 barras compráveis do Reator deve ser 380');
+  assert.equal(
+    somaSucataUpgrades + somaBiomassaUpgrades + somaFlexivelUpgrades,
+    economia.orcamentoTotalDeclarado,
+    'Orçamento total de maximização diverge da soma das 10 árvores'
+  );
+  assert.equal(economia.orcamentoTotalDeclarado, 2330);
+
+  // 2. Junção N1: Custos do Mastro do Foil no Vol. 05 batem com o Vol. 01 (45 / 80 / 120 Sucata)
+  const upgradeMastro = economia.upgrades.find((u) => u.nome.includes('Mastro do Foil'));
+  assert.ok(upgradeMastro, 'Upgrade do Mastro do Foil deve existir na Seção 5.6.A');
+  assert.deepEqual(
+    upgradeMastro.custosNiveis,
+    custosMastroVol01,
+    'Custos de upgrade do Mastro do Foil no Vol. 05 divergem do Vol. 01'
+  );
+
+  // 3. Junção N1: Teto de Energia dos Sistemas (28 barras) vs. Reator (6 iniciais no Vol. 08 + 12 compráveis = 18 da SSOT Vol. 06)
+  const sistemasConsumidores = economia.upgrades.filter((u) => u.moeda !== 'FLEXIVEL');
+  const somaBarrasSistemas = sistemasConsumidores.reduce((acc, u) => acc + u.barrasEnergiaMax, 0);
+  assert.equal(somaBarrasSistemas, 28, 'Soma das barras máximas de sistemas ativos na Seção 5.6.A deve ser 28');
+
+  const upgradeReator = economia.upgrades.find((u) => u.nome.includes('Coração Bio-Elétrico'));
+  const tetoReatorSsot = Number(normalizarTexto(constantesSsot.REATOR_TETO_COMPRA.valorBruto).match(/(\d+)/)?.[1]);
+  const barrasIniciaisVol08 = vol08.gameState.naveJogador.reator.barrasCompradas;
+  assert.equal(upgradeReator.barrasEnergiaMax, tetoReatorSsot, 'Teto do Reator na Seção 5.6.A diverge da SSOT Vol. 06');
+  assert.equal(
+    barrasIniciaisVol08 + upgradeReator.custosNiveis.length,
+    tetoReatorSsot,
+    'Barras iniciais no Vol. 08 (6) + barras compráveis na Seção 5.6.A (12) devem fechar em 18 barras'
+  );
+
+  // 4. Junção N1: Loja (5.6.B) vs. Catálogo de Armas (5.1), Órgãos (5.2) e Tripulação (Vol. 01) + Regra de Venda de 50%
+  const armasLoja = economia.itensLoja.filter((i) => i.categoria === 'ARMA');
+  const orgaosLoja = economia.itensLoja.filter((i) => i.categoria === 'ORGAO');
+  const tripulantesLoja = economia.itensLoja.filter((i) => i.categoria === 'TRIPULANTE');
+  assert.equal(armasLoja.length, 7, 'Loja deve listar as 7 armas');
+  assert.equal(orgaosLoja.length, 6, 'Loja deve listar os 6 órgãos');
+  assert.equal(tripulantesLoja.length, 4, 'Loja deve listar as 4 espécies de tripulação');
+  assert.equal(economia.limiteTripulacaoDeclarado, 6, 'Limite máximo de tripulação deve ser de 6 animais');
+
+  armasLoja.forEach((item, idx) => {
+    const armaCatalogo = catalogo.armas[idx];
+    const nomeCatalogoLimpo = armaCatalogo.nome.replace(/^\d+\.\s*/, '');
+    assert.equal(item.nome, nomeCatalogoLimpo, `Nome da arma ${idx + 1} na loja diverge do catálogo 5.1`);
+    assert.equal(item.pesoKg, armaCatalogo.pesoKg, `Peso da arma ${item.nome} na loja diverge do catálogo 5.1`);
+    assert.equal(item.moeda, 'SUCATA', `Arma ${item.nome} deve ser comprada com SUCATA`);
+    assert.equal(
+      item.valorVenda,
+      Math.floor(item.precoCompra * 0.5),
+      `Valor de venda da arma ${item.nome} (${item.valorVenda}) viola a regra de 50% de ${item.precoCompra}`
+    );
+  });
+
+  orgaosLoja.forEach((item, idx) => {
+    const orgaoCatalogo = catalogo.orgaos[idx];
+    const nomeOrgaoLimpo = orgaoCatalogo.nome.replace(/:$/, '');
+    assert.equal(item.nome, nomeOrgaoLimpo, `Nome do órgão ${idx + 1} na loja diverge do catálogo 5.2`);
+    assert.equal(item.pesoKg, catalogo.pesoPorOrgaoKg, `Peso do órgão ${item.nome} na loja diverge de +5 kg`);
+    assert.equal(item.moeda, 'BIOMASSA', `Órgão ${item.nome} deve ser comprado com BIOMASSA`);
+    assert.equal(
+      item.valorVenda,
+      Math.floor(item.precoCompra * 0.5),
+      `Valor de venda do órgão ${item.nome} (${item.valorVenda}) viola a regra de 50% de ${item.precoCompra}`
+    );
+  });
+
+  assert.equal(tripulantesLoja.length, tripVol01.especies.length, 'Espécies na loja devem bater com o Vol. 01');
+  for (const tLoja of tripulantesLoja) {
+    assert.equal(tLoja.moeda, 'BIOMASSA', `Recrutamento de ${tLoja.nome} deve custar BIOMASSA`);
+    assert.equal(tLoja.pesoKg, 0, `Tripulante ${tLoja.nome} não adiciona peso fora de P_chassi/P_agua`);
+  }
+
+  // 5. Junção N1: Curva Setorial (5.6.C) vs. Saque Setor 1 (Vol. 03) + Prova de Solvência vs. Escassez (Vol. 08)
+  const s1 = economia.curvaSetores[0];
+  assert.equal(
+    s1.barcoBrutoSucata,
+    saqueSetor1Vol03.barcoBrutoSucata,
+    'Saque de Destruição Bruta no Setor 1 (Vol. 05) diverge da Lancha Patrulheira (Vol. 03)'
+  );
+  assert.equal(
+    s1.barcoCapturaSucata,
+    saqueSetor1Vol03.barcoCapturaSucata,
+    'Saque de Captura Intacta no Setor 1 (Vol. 05) diverge da Lancha Patrulheira (Vol. 03)'
+  );
+  assert.equal(
+    s1.monstroBrutoBiomassa,
+    saqueSetor1Vol03.monstroBrutoBiomassa,
+    'Saque de Dano Bruto no Setor 1 (Vol. 05) diverge da Teuthis Couraçada (Vol. 03)'
+  );
+  assert.equal(
+    s1.monstroCirurgicoBiomassa,
+    saqueSetor1Vol03.monstroCirurgicoBiomassa,
+    'Saque de Extração Cirúrgica no Setor 1 (Vol. 05) diverge da Teuthis Couraçada (Vol. 03)'
+  );
+
+  for (const linhaSetor of economia.curvaSetores) {
+    const s = linhaSetor.setor;
+    assert.equal(linhaSetor.barcoBrutoSucata, 12 + 4 * (s - 1), `Fórmula de Sucata bruta violada no Setor ${s}`);
+    assert.equal(linhaSetor.barcoCapturaSucata, 25 + 8 * (s - 1), `Fórmula de Sucata captura violada no Setor ${s}`);
+    assert.equal(linhaSetor.monstroBrutoBiomassa, 15 + 4 * (s - 1), `Fórmula de Biomassa bruta violada no Setor ${s}`);
+    assert.equal(linhaSetor.monstroCirurgicoBiomassa, 25 + 8 * (s - 1), `Fórmula de Biomassa cirúrgica violada no Setor ${s}`);
+  }
+
+  const reservaInicialVol08 = vol08.gameState.economia.sucata + vol08.gameState.economia.biomassa;
+  assert.equal(reservaInicialVol08, 45, 'Reserva inicial no GameState (Vol. 08) deve somar 45 (30 Sucata + 15 Biomassa)');
+
+  const setores1a7 = economia.curvaSetores.slice(0, 7);
+  const pisoBrutoCalculado =
+    reservaInicialVol08 +
+    setores1a7.reduce((acc, s) => acc + 4 * s.barcoBrutoSucata + 4 * s.monstroBrutoBiomassa, 0);
+  const tetoMaestriaCalculado =
+    reservaInicialVol08 +
+    setores1a7.reduce((acc, s) => acc + 4 * s.barcoCapturaSucata + 4 * s.monstroCirurgicoBiomassa, 0);
+
+  assert.equal(pisoBrutoCalculado, 1473);
+  assert.equal(pisoBrutoCalculado, economia.pisoBruto1a7Declarado, 'Piso de Solvência declarado diverge do cálculo 1..7');
+  assert.equal(tetoMaestriaCalculado, 2789);
+  assert.equal(tetoMaestriaCalculado, economia.tetoMaestria1a7Declarado, 'Teto de Maestria declarado diverge do cálculo 1..7');
+  assert.ok(
+    pisoBrutoCalculado < economia.orcamentoTotalDeclarado && economia.orcamentoTotalDeclarado < tetoMaestriaCalculado,
+    'Curva econômica deve manter 1473 (piso bruto) < 2330 (maximização total) < 2789 (teto bruto de maestria antes de insumos)'
+  );
 });
 
 test('Lei N2: verificação da Lista-Catraca (nenhum item resolvido pode permanecer na catraca)', () => {

@@ -311,6 +311,7 @@ export function extrairCatalogoVolume05(conteudoVol05) {
     else if (linha.startsWith('## 5.3.')) secao = '5.3';
     else if (linha.startsWith('## 5.4.')) secao = '5.4';
     else if (linha.startsWith('## 5.5.')) secao = '5.5';
+    else if (linha.startsWith('## 5.6.')) secao = '5.6';
     else if (linha.startsWith('# CONTRA-AUDITORIA')) secao = 'AUDITORIA';
 
     if (secao === '5.1' && linha.startsWith('| **')) {
@@ -376,6 +377,152 @@ export function extrairCatalogoVolume05(conteudoVol05) {
     pesoPorOrgaoKg,
     naves,
     fasesChefe,
+  });
+}
+
+/**
+ * Extrai a Seção 5.6 do Volume 05 (Tabelas Canônicas da Economia: Upgrades, Lojas e Curva Setorial 1..8)
+ * e os valores da Falha Global Encontrada 6 (Prova de Solvência vs. Escassez).
+ */
+export function extrairEconomiaVolume05(conteudoVol05) {
+  const secao56 = conteudoVol05.split('## 5.6.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const auditoria5 = normalizarTexto(conteudoVol05.split('# CONTRA-AUDITORIA')[1] ?? '');
+
+  const upgrades = [];
+  const itensLoja = [];
+  const curvaSetores = [];
+
+  let subsecao = '';
+  for (const linhaBruta of secao56.split('\n')) {
+    if (linhaBruta.startsWith('### A.')) subsecao = 'A';
+    else if (linhaBruta.startsWith('### B.')) subsecao = 'B';
+    else if (linhaBruta.startsWith('### C.')) subsecao = 'C';
+
+    const linha = normalizarTexto(linhaBruta);
+    if (subsecao === 'A' && linhaBruta.startsWith('| **')) {
+      const cols = linha
+        .split('|')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (cols.length >= 6) {
+        const nome = cols[0].replace(/^\d+\.\s*/, '');
+        const moeda = cols[1];
+        const barrasEnergiaMax = Number(cols[3].match(/(\d+)\s*E/)?.[1] ?? NaN);
+        const custosNiveis = cols[4]
+          .split('/')
+          .map((n) => Number(n.trim()))
+          .filter((n) => !Number.isNaN(n));
+        const somaDeclarada = Number(cols[5].match(/(\d+)/)?.[1] ?? NaN);
+        const somaCalculada = custosNiveis.reduce((acc, v) => acc + v, 0);
+        upgrades.push({
+          nome,
+          moeda,
+          nivelInicialBruto: cols[2],
+          barrasEnergiaMax,
+          custosNiveis,
+          somaDeclarada,
+          somaCalculada,
+        });
+      }
+    }
+
+    if (subsecao === 'B' && /^\| `(ARMA|ORGAO|TRIPULANTE|INSUMO|REPARO)`/.test(linhaBruta)) {
+      const cols = linha
+        .split('|')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (cols.length >= 6) {
+        const categoria = cols[0];
+        const nome = cols[1].replace(/^\d+\.\s*/, '');
+        const moeda = cols[2];
+        const pesoKg = Number(cols[3].match(/(\d+(?:\.\d+)?)\s*kg/)?.[1] ?? NaN);
+        const precosCompra = cols[4]
+          .split('/')
+          .map((n) => Number(n.trim()))
+          .filter((n) => !Number.isNaN(n));
+        const valorVenda = Number(cols[5].match(/(\d+)/)?.[1] ?? NaN);
+        itensLoja.push({
+          categoria,
+          nome,
+          moeda,
+          pesoKg,
+          precosCompra,
+          precoCompra: precosCompra[0],
+          valorVenda,
+        });
+      }
+    }
+
+    if (subsecao === 'C' && /^\| \*\*Setor \d+\*\*/.test(linhaBruta)) {
+      const cols = linha
+        .split('|')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (cols.length >= 5) {
+        const setor = Number(cols[0].match(/Setor (\d+)/)?.[1] ?? NaN);
+        curvaSetores.push({
+          setor,
+          barcoBrutoSucata: Number(cols[1]),
+          barcoCapturaSucata: Number(cols[2]),
+          monstroBrutoBiomassa: Number(cols[3]),
+          monstroCirurgicoBiomassa: Number(cols[4]),
+        });
+      }
+    }
+  }
+
+  const textoSecao56Norm = normalizarTexto(secao56);
+  const orcamentoTotalDeclarado = Number(
+    textoSecao56Norm.match(/Orçamento Total de Maximização Completa[^=]*=\s*(\d+)\s*unidades/)?.[1] ?? NaN
+  );
+  const limiteTripulacaoDeclarado = Number(
+    textoSecao56Norm.match(/limite máximo da tripulação a bordo da nave é de\s*(\d+)\s*animais/)?.[1] ?? NaN
+  );
+  const pisoBruto1a7Declarado = Number(
+    auditoria5.match(/Bruto_\{1\.\.7\}[^\n]*?=\s*(\d+)\s*unidades/)?.[1] ?? NaN
+  );
+  const tetoMaestria1a7Declarado = Number(
+    auditoria5.match(/Maestria_\{1\.\.7\}[^\n]*?=\s*(\d+)\s*unidades/)?.[1] ?? NaN
+  );
+
+  return clonarProfundoCongelado({
+    upgrades,
+    itensLoja,
+    curvaSetores,
+    orcamentoTotalDeclarado,
+    limiteTripulacaoDeclarado,
+    pisoBruto1a7Declarado,
+    tetoMaestria1a7Declarado,
+  });
+}
+
+/**
+ * Extrai os custos de upgrade do Mastro do Foil declarados no Volume 01 (Seção 1.2.A) para Junção N1 com o Volume 05.
+ */
+export function extrairCustosMastroVolume01(conteudoVol01) {
+  const secao12A = normalizarTexto(conteudoVol01.split('### A. Mastro do Foil')[1]?.split('### B.')[0] ?? '');
+  const custos = [...secao12A.matchAll(/Custo:\s*(\d+)\s*Sucata/g)].map((m) => Number(m[1]));
+  return clonarProfundoCongelado(custos);
+}
+
+/**
+ * Extrai os valores de saque do Setor 1 declarados no Volume 03 (Seções 3.2 e 3.3) para Junção N1 com a Curva Setorial do Volume 05.
+ */
+export function extrairSaqueSetor1Volume03(conteudoVol03) {
+  const vol03 = normalizarTexto(conteudoVol03);
+  const secao32 = vol03.split('## 3.2.')[1]?.split('## 3.3.')[0] ?? '';
+  const secao33 = vol03.split('## 3.3.')[1]?.split('## 3.4.')[0] ?? '';
+
+  const barcoBrutoSucata = Number(secao32.match(/Destruição Bruta[^:]*:\*?\s*(\d+)\s*Sucata/)?.[1] ?? NaN);
+  const barcoCapturaSucata = Number(secao32.match(/Barco Intacto\):\*?\s*(\d+)\s*Sucata/)?.[1] ?? NaN);
+  const monstroBrutoBiomassa = Number(secao33.match(/Dano Bruto[^:]*:\*?\s*(\d+)\s*Biomassa/)?.[1] ?? NaN);
+  const monstroCirurgicoBiomassa = Number(secao33.match(/Vitória Cirúrgica[^:]*:\*?\s*(\d+)\s*Biomassa/)?.[1] ?? NaN);
+
+  return clonarProfundoCongelado({
+    barcoBrutoSucata,
+    barcoCapturaSucata,
+    monstroBrutoBiomassa,
+    monstroCirurgicoBiomassa,
   });
 }
 

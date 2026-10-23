@@ -436,6 +436,54 @@
         "tests/02-hook-ambiente.test.mjs"
       ],
       "falhaEsperada": "[CI FALHOU]"
+    },
+    {
+      "id": "MUT-28",
+      "arquivo": "01_matematica_base_e_auditoria.md",
+      "lei": "N1 / L4",
+      "descricao": "Custo do Mastro Nv.2 no Vol. 01 muda de 45 para 55 Sucata (quebra Junção N1 com a Tabela 5.6.A do Vol. 05)",
+      "trocas": [
+        {
+          "buscar": "* **Nível 2 (Custo: 45 Sucata — 5 Barras Estruturais):**",
+          "substituir": "* **Nível 2 (Custo: 55 Sucata — 5 Barras Estruturais):**"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Custos de upgrade do Mastro do Foil no Vol. 05 divergem do Vol. 01"
+    },
+    {
+      "id": "MUT-29",
+      "arquivo": "05_conteudo_chefe_e_auditoria_final.md",
+      "lei": "L4 / L6",
+      "descricao": "Valor de venda do Emissor Acústico I na loja muda de 17 para 20 Sucata (viola regra de 50% de 35)",
+      "trocas": [
+        {
+          "buscar": "| `ARMA` | **1. Emissor Acústico I** | `SUCATA` | $10\\text{ kg}$ | $35$ | $17$ |",
+          "substituir": "| `ARMA` | **1. Emissor Acústico I** | `SUCATA` | $10\\text{ kg}$ | $35$ | $20$ |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Valor de venda da arma Emissor Acústico I (20) viola a regra de 50% de 35"
+    },
+    {
+      "id": "MUT-30",
+      "arquivo": "05_conteudo_chefe_e_auditoria_final.md",
+      "lei": "N1 / L4",
+      "descricao": "Saque de Captura Intacta no Setor 1 (Seção 5.6.C) muda de 25 para 30 Sucata (diverge da Lancha Patrulheira do Vol. 03)",
+      "trocas": [
+        {
+          "buscar": "| **Setor 1** | $12$ | $25$ | $15$ | $25$ |",
+          "substituir": "| **Setor 1** | $12$ | $30$ | $15$ | $25$ |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Saque de Captura Intacta no Setor 1 (Vol. 05) diverge da Lancha Patrulheira (Vol. 03)"
     }
   ]
 }

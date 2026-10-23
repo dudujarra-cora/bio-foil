@@ -51,5 +51,8 @@ Conforme **Seção 3.5** e **Lei L6**, toda mutação abaixo foi executada alter
 | `MUT-25` | `02_wireframe_ui_e_auditoria.md` | **N1 (possibilidades)** | Wireframe troca Motor e Torpedo de lugar: Cabine deixa de ficar sobre o Motor | `AssertionError [ERR_ASSERTION]: Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT` |
 | `MUT-26` | `src/gdd-parser.mjs` | **L5 (CI)** | Workflow portoes.yml some da lista canônica de .github/workflows | `Error: [L5 TRIPWIRE WORKFLOWS CI FALHOU] Faltando=[] Extras=[portoes.yml]` |
 | `MUT-27` | `.github/workflows/portoes.yml` | **L1 (CI)** | CI deixa de rodar os portões (job vira um echo verde) | `Error: [CI FALHOU] .github/workflows/portoes.yml tem de ter o job "portoes" rodando "sh scripts/hooks/pre-push"` |
+| `MUT-28` | `01_matematica_base_e_auditoria.md` | **N1 / L4** | Custo do Mastro Nv.2 no Vol. 01 muda de 45 para 55 Sucata (quebra Junção N1 com a Tabela 5.6.A do Vol. 05) | `AssertionError [ERR_ASSERTION]: Custos de upgrade do Mastro do Foil no Vol. 05 divergem do Vol. 01` |
+| `MUT-29` | `05_conteudo_chefe_e_auditoria_final.md` | **L4 / L6** | Valor de venda do Emissor Acústico I na loja muda de 17 para 20 Sucata (viola regra de 50% de 35) | `AssertionError [ERR_ASSERTION]: Valor de venda da arma Emissor Acústico I (20) viola a regra de 50% de 35` |
+| `MUT-30` | `05_conteudo_chefe_e_auditoria_final.md` | **N1 / L4** | Saque de Captura Intacta no Setor 1 (Seção 5.6.C) muda de 25 para 30 Sucata (diverge da Lancha Patrulheira do Vol. 03) | `AssertionError [ERR_ASSERTION]: Saque de Captura Intacta no Setor 1 (Vol. 05) diverge da Lancha Patrulheira (Vol. 03)` |
 
 <!-- FIM BLOCO GERADO -->

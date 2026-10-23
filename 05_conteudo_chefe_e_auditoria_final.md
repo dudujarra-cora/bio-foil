@@ -84,6 +84,78 @@ Assim como a *Rebel Flagship* do FTL, a **Draga Continental** é uma cidade-fáb
 
 ---
 
+## 5.6. Tabelas Canônicas da Economia: Custos de Upgrade, Preços de Loja e Curva Setorial (Setores 1 a 8)
+
+Para eliminar qualquer chute econômico na implementação da Onda 5, todas as tabelas de progressão, comércio nos Recifes-Forja e escalamento de saque por setor ficam travadas abaixo.
+
+### A. Tabela Completa de Custos de Upgrade da Nave (Sistemas, Subsistemas e Reator)
+
+Conforme a regra de separação de árvores de custo, upgrades estruturais/mecânicos consomem **100% Sucata**, upgrades biológicos consomem **100% Biomassa** e o **Coração Bio-Elétrico (Reator)** aceita qualquer uma das duas moedas ($1:1$). Na *Carcaça Alfa*, a soma de energia de todos os sistemas ativos maximizados é $8 + 8 + 5 + 3 + 2 + 2 = \mathbf{28\text{ Barras}}$ contra o teto de **$18\text{ Barras}$** compráveis no Reator:
+
+| Sistema / Subsistema | Moeda | Nível Inicial (*Alfa*) | Barras Máx. | Custos por Nível Adicional | Soma p/ Maximizar (*Alfa*) |
+| :--- | :---: | :---: | :---: | :--- | :---: |
+| **1. Mastro do Foil** | `SUCATA` | Nv. 1 ($4\text{ barras}$) | $0\text{ E}$ ($7\text{ est.}$) | $45 / 80 / 120$ | $245\text{ Sucata}$ |
+| **2. Artilharia Dorsal** | `SUCATA` | Nv. 3 ($3\text{ barras}$) | $8\text{ E}$ | $35 / 50 / 70 / 95 / 125$ | $375\text{ Sucata}$ |
+| **3. Placas de Blindagem** | `SUCATA` | Nv. 0 ($0\text{ placas}$) | $0\text{ E}$ ($3\text{ nv.}$) | $40 / 75 / 115$ | $230\text{ Sucata}$ |
+| **4. Glândula de Barreira** | `BIOMASSA` | Nv. 2 ($2\text{ barras}$) | $8\text{ E}$ | $30 / 50 / 65 / 90 / 110 / 140$ | $485\text{ Biomassa}$ |
+| **5. Sifão de Propulsão** | `BIOMASSA` | Nv. 2 ($2\text{ barras}$) | $5\text{ E}$ | $35 / 65 / 105$ | $205\text{ Biomassa}$ |
+| **6. Bomba Branquial** | `BIOMASSA` | Nv. 1 ($1\text{ barra}$) | $3\text{ E}$ | $35 / 65$ | $100\text{ Biomassa}$ |
+| **7. Córtex de Navegação** | `BIOMASSA` | Nv. 1 ($1\text{ barra}$) | $0\text{ E}$ ($3\text{ pas.}$) | $25 / 50$ | $75\text{ Biomassa}$ |
+| **8. Tubo Pressurizado** | `BIOMASSA` | Nv. 0 (Câmara 7 livre) | $2\text{ E}$ | $60 / 45$ | $105\text{ Biomassa}$ |
+| **9. Glândula de Tinta Furtiva** | `BIOMASSA` | Nv. 0 (Câmara 8 livre) | $2\text{ E}$ | $75 / 55$ | $130\text{ Biomassa}$ |
+| **10. Coração Bio-Elétrico** | `FLEXIVEL` | $6\text{ barras}$ compradas | $18\text{ E}$ | $20 / 20 / 20 / 20 / 30 / 30 / 30 / 30 / 45 / 45 / 45 / 45$ | $380\text{ Flexível}$ |
+
+* **Exceções de Arquitetura Inicial:** Para a *Couraça-Limiar* (que começa sem Glândula de Barreira na Câmara 4), enxertar a Glândula de Barreira Nv. 2 ($1\text{ bolha}$) num Recife-Forja custa **$60\text{ Biomassa}$**. Para naves que já iniciam com um subsistema instalado (*Couraça-Limiar* com Tubo Nv. 2; *Sombra-Abissal* com Tinta Nv. 1), os níveis já instalados têm custo zero.
+* **Orçamento Total de Maximização Completa (*Carcaça Alfa*):** $850\text{ Sucata} + 1100\text{ Biomassa} + 380\text{ Flexível} = \mathbf{2330\text{ unidades}}$.
+
+### B. Tabela de Preços nos Recifes-Forja (Armas, Órgãos, Tripulação e Insumos)
+
+Todo item (Chassi de Arma ou Órgão de Enxerto) vendido num Recife-Forja paga exatamente **$50\%$ do preço de compra arredondado para baixo** ($\lfloor 0.5 \times \text{Compra} \rfloor$). O limite máximo da tripulação a bordo da nave é de **$6\text{ animais}$**:
+
+| Categoria | Item / Serviço | Moeda | Peso | Preço de Compra | Valor de Venda ($50\%$) |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| `ARMA` | **1. Emissor Acústico I** | `SUCATA` | $10\text{ kg}$ | $35$ | $17$ |
+| `ARMA` | **2. Rajada Hidropneumática II** | `SUCATA` | $18\text{ kg}$ | $65$ | $32$ |
+| `ARMA` | **3. Canhão de Arpão de Cabo** | `SUCATA` | $15\text{ kg}$ | $50$ | $25$ |
+| `ARMA` | **4. Dispersor de Estilhaços (Flak Naval)** | `SUCATA` | $22\text{ kg}$ | $60$ | $30$ |
+| `ARMA` | **5. Cortador Térmico a Plasma (Beam)** | `SUCATA` | $25\text{ kg}$ | $75$ | $37$ |
+| `ARMA` | **6. Lançador de Torpedo Abissal** | `SUCATA` | $28\text{ kg}$ | $70$ | $35$ |
+| `ARMA` | **7. Morteiro de Esporos / Bomba** | `SUCATA` | $12\text{ kg}$ | $45$ | $22$ |
+| `ORGAO` | **1. Glândula de Baiacu (Neurotoxina)** | `BIOMASSA` | $5\text{ kg}$ | $40$ | $20$ |
+| `ORGAO` | **2. Eletro-Placa de Arraia (Choque / Íon)** | `BIOMASSA` | $5\text{ kg}$ | $50$ | $25$ |
+| `ORGAO` | **3. Bexiga de Alta Pressão (Inundação / Concussão)** | `BIOMASSA` | $5\text{ kg}$ | $45$ | $22$ |
+| `ORGAO` | **4. Bolsa de Tinta Abissal (Cegueira)** | `BIOMASSA` | $5\text{ kg}$ | $40$ | $20$ |
+| `ORGAO` | **5. Dente Serrilhado de Leviatã (Sangramento/Perfuração)** | `BIOMASSA` | $5\text{ kg}$ | $55$ | $27$ |
+| `ORGAO` | **6. Glândula Termofílica (Fogo/Fervura)** | `BIOMASSA` | $5\text{ kg}$ | $50$ | $25$ |
+| `TRIPULANTE` | **1. Polvo** | `BIOMASSA` | $0\text{ kg}$ | $50$ | $0$ |
+| `TRIPULANTE` | **2. Arraia Elétrica** | `BIOMASSA` | $0\text{ kg}$ | $55$ | $0$ |
+| `TRIPULANTE` | **3. Baiacu Espinhoso** | `BIOMASSA` | $0\text{ kg}$ | $45$ | $0$ |
+| `TRIPULANTE` | **4. Caranguejo Anfíbio** | `BIOMASSA` | $0\text{ kg}$ | $50$ | $0$ |
+| `INSUMO` | **Célula de Combustível (1 un.)** | `SUCATA` | $0\text{ kg}$ | $3$ | $0$ |
+| `INSUMO` | **Munição de Torpedo/Esporo (1 un.)** | `SUCATA` | $0\text{ kg}$ | $4$ | $0$ |
+| `REPARO` | **Reparo de Casco por 1 HP (Setores 1–3 / 4–6 / 7–8)** | `SUCATA` | $0\text{ kg}$ | $2 / 3 / 4$ | $0$ |
+
+### C. Curva Canônica de Saque por Setor (Setores 1 a 8)
+
+O saque de cada encontro escala linearmente com o número do Setor $S \in \{1..8\}$, ancorado exatamente nos valores do Setor 1 definidos no Passo 3 (*Lancha Patrulheira*: $12 / 25\text{ Sucata}$; *Teuthis Couraçada*: $15 / 25\text{ Biomassa}$):
+* **Barco Humano — Destruição Bruta ($0\text{ HP}$):** $\text{Sucata}_{\text{bruta}}(S) = 12 + 4 \times (S - 1)$ (+ $1\text{ Combustível}$).
+* **Barco Humano — Captura por Asfixia (Casco Intacto $> 0\text{ HP}$):** $\text{Sucata}_{\text{captura}}(S) = 25 + 8 \times (S - 1)$ (+ $3\text{ Combustíveis}$, $2\text{ Munições}$ e $25\%$ de chance de arma recuperada).
+* **Monstro Biológico — Morte por Dano Bruto ($0\text{ HP}$):** $\text{Biomassa}_{\text{bruta}}(S) = 15 + 4 \times (S - 1)$.
+* **Monstro Biológico — Extração Cirúrgica (Gânglio $0/3$ com Vida $> 0\text{ HP}$):** $\text{Biomassa}_{\text{cirúrgica}}(S) = 25 + 8 \times (S - 1)$ (+ $1\text{ Órgão Intacto}$ nos encontros de elite/SOS).
+
+| Setor ($S$) | Barco: Destruição Bruta (`SUCATA`) | Barco: Captura Intacta (`SUCATA`) | Monstro: Dano Bruto (`BIOMASSA`) | Monstro: Extração Cirúrgica (`BIOMASSA`) |
+| :---: | :---: | :---: | :---: | :---: |
+| **Setor 1** | $12$ | $25$ | $15$ | $25$ |
+| **Setor 2** | $16$ | $33$ | $19$ | $33$ |
+| **Setor 3** | $20$ | $41$ | $23$ | $41$ |
+| **Setor 4** | $24$ | $49$ | $27$ | $49$ |
+| **Setor 5** | $28$ | $57$ | $31$ | $57$ |
+| **Setor 6** | $32$ | $65$ | $35$ | $65$ |
+| **Setor 7** | $36$ | $73$ | $39$ | $73$ |
+| **Setor 8** | $40$ | $81$ | $43$ | $81$ |
+
+---
+
 # CONTRA-AUDITORIA #5 (Auditoria Global de Fechamento: Passos 1 a 5)
 
 Vamos cruzar todas as regras dos Passos 1 a 5 para caçar **combos infinitos (*game-breaking bugs*)** ou **becos sem saída onde uma nave não consegue zerar o jogo**:
@@ -122,3 +194,13 @@ Vamos cruzar todas as regras dos Passos 1 a 5 para caçar **combos infinitos (*g
 * **Correção Obrigatória Aplicada ao Design:**
   * O **Coração Bio-Elétrico tem teto máximo estrito de $18\text{ Barras}$ compráveis** (chegando no máximo a $20\text{ ou } 21$ com Arraias Elétricas na tripulação).
   * Isso garante matematicamente um déficit mínimo de $7\text{ a } 10\text{ Barras}$ no Chefe Final: **até no último segundo da Fase 3, o jogador é obrigado a tirar energia de um sistema para alimentar outro na Pausa Tática!**
+
+### Falha Global Encontrada 6: A Prova de Solvência vs. Escassez da Curva Econômica (Setores 1 a 7)
+* **O Problema:** Se a soma de saque dos Setores 1 a 7 for baixa demais, uma nave que vença apenas por *Destruição Bruta* chega ao Setor 8 sem condições de enfrentar a Draga Continental; se for alta demais, um jogador que faça *Captura/Extração Cirúrgica* maximiza $100\%$ da nave já no Setor 5 e as lojas perdem utilidade.
+* **Prova Matemática na Curva Canônica (8 encontros remunerados por setor nos Setores 1 a 7 = 56 encontros + $45\text{ unidades iniciais}$ de $30\text{ Sucata} + 15\text{ Biomassa}$):**
+  1. **Piso de Solvência (100% Destruição Bruta — 4 barcos + 4 monstros por setor):**
+     $$\text{Bruto}_{1..7} = 45 + \sum_{S=1}^{7} \left(4 \times \text{Sucata}_{\text{bruta}}(S) + 4 \times \text{Biomassa}_{\text{bruta}}(S)\right) = 45 + 672 + 756 = \mathbf{1473\text{ unidades}}$$
+     Mesmo descontando gastos operacionais de combustível e reparos, o jogador acumula ~55% do orçamento total de maximização ($2330\text{ unidades}$), suficiente para fechar uma *build* especializada viável no Setor 8.
+  2. **Teto de Maestria (100% Captura Intacta / Extração Cirúrgica — 4 barcos + 4 monstros por setor):**
+     $$\text{Maestria}_{1..7} = 45 + \sum_{S=1}^{7} \left(4 \times \text{Sucata}_{\text{captura}}(S) + 4 \times \text{Biomassa}_{\text{cirúrgica}}(S)\right) = 45 + 1372 + 1372 = \mathbf{2789\text{ unidades}}$$
+     Descontando a compra de armas de topo, órgãos e reparos nos Recifes-Forja (~$600\text{ a }750\text{ unidades}$ ao longo de 7 setores), o investimento líquido em sistemas fica entre **$2039\text{ e }2189\text{ unidades}$** ($\approx \mathbf{87\%\text{ a }94\%}$ do teto de $2330\text{ unidades}$): até uma run perfeita é obrigada a escolher quais sistemas priorizar antes da Draga Continental!
