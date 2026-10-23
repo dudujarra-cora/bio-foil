@@ -19,6 +19,8 @@ import {
 } from '../src/onda1-fisica/tick-hidraulica-foil.mjs';
 import {
   hash32,
+  hash32Uniforme01,
+  hash32Percentual100,
   streamMapaPoisson,
   streamEventoOpcaoA,
   streamLojaEstoque,
@@ -236,4 +238,68 @@ test('Onda 1: Baiacu Inflado veda rombo (0.0 kg/s), Bomba Branquial drena alagam
   const s5 = streamChefeDraga('seed-x', 3, 40, 2);
   const s6 = streamSorteioTemplates('seed-x', 1, 'SOS_1_REDE_ARRASTO');
   assert.equal(new Set([s1, s2, s3, s4, s5, s6]).size, 6, 'Os 6 streams PRNG devem produzir hashes distintos e isolados');
+
+  // Cobertura completa de utilitários Onda 1: clonarCongelado, hash32Uniforme01, hash32Percentual100,
+  // classificarEstadoCompostoMatriz, drenarTodasValvulas, sobrecarga hidrostática, dreno Branquial e decolagem completa
+  const inicial = criarEstadoInicialPartida({ idArquitetura: 'CARCACA_ALFA' });
+  const clone = clonarCongelado(inicial);
+  assert.notEqual(clone, inicial);
+  assert.equal(Object.isFrozen(clone), true);
+  assert.throws(() => criarEstadoInicialPartida({ idArquitetura: 'INEXISTENTE' }), /Arquitetura desconhecida/);
+
+  const u01 = hash32Uniforme01('seed-x', 'TESTE', null, undefined, { k: 1 });
+  const p100 = hash32Percentual100('seed-x', 'TESTE', true);
+  assert.ok(u01 >= 0 && u01 < 1);
+  assert.ok(Number.isInteger(p100) && p100 >= 0 && p100 <= 99);
+
+  assert.equal(classificarEstadoCompostoMatriz({ estadoFisico: '1_NO_FOIL', furtividadeAtivaSeg: 0 }), '1_NO_FOIL');
+  assert.equal(classificarEstadoCompostoMatriz({ estadoFisico: '1_NO_FOIL', furtividadeAtivaSeg: 5 }), '4_FURTIVO_AR');
+  assert.equal(classificarEstadoCompostoMatriz({ estadoFisico: '2_TOUCHDOWN', furtividadeAtivaSeg: 0 }), '2_TOUCHDOWN');
+  assert.equal(classificarEstadoCompostoMatriz({ estadoFisico: '2_TOUCHDOWN', furtividadeAtivaSeg: 5 }), '5_FURTIVO_AGUA');
+
+  // Atalho [V] DRENAR TUDO no ar vs bloqueado em Touchdown e câmara inválida em alternarValvulaExterna
+  const todasAbertas = drenarTodasValvulas(inicial, true);
+  assert.equal(todasAbertas.naveJogador.camaras.every((c) => c.valvulaExternaAberta === true), true);
+  const todasFechadas = drenarTodasValvulas(todasAbertas, false);
+  assert.equal(todasFechadas.naveJogador.camaras.every((c) => c.valvulaExternaAberta === false), true);
+  const camInvalida = alternarValvulaExterna(inicial, 999, true);
+  assert.equal(camInvalida.logDeterministico.at(-1)?.motivo, 'PRECONDICAO_NAO_ATENDIDA');
+
+  const emTouchdown = alternarMergulhoTatico(inicial, true);
+  const drenoBloqueado = drenarTodasValvulas(emTouchdown, true);
+  assert.equal(drenoBloqueado.logDeterministico.at(-1)?.motivo, 'BLOQUEADO_TRAVA_HIDROSTATICA');
+
+  // Sobrecarga hidrostática em 2_TOUCHDOWN (+5.0 kg/s -> alagamentoPesadoKg + curtoCircuitoAtivo) e dreno pela Bomba Branquial (-4.0 kg/s)
+  const copiaRomboMar = structuredClone(emTouchdown);
+  copiaRomboMar.naveJogador.camaras.find((c) => c.id === 1).aguaKg = 10.0;
+  copiaRomboMar.naveJogador.camaras.find((c) => c.id === 5).rombosCasco = 1;
+  copiaRomboMar.naveJogador.camaras.find((c) => c.id === 3).barrasEnergiaAlocada = 1;
+  const aposRomboMar = avancarTickFisicaHidraulica(congelarProfundo(copiaRomboMar), 1.0);
+  assert.equal(aposRomboMar.naveJogador.camaras.find((c) => c.id === 1).aguaKg, 12.5, 'Recarga tática no mar enche sala seca a +5.0 kg/s até 12.5 kg');
+  assert.equal(aposRomboMar.naveJogador.camaras.find((c) => c.id === 5).alagamentoPesadoKg, 5.0, 'Rombo submerso gera +5.0 kg/s de alagamento pesado');
+  assert.equal(aposRomboMar.naveJogador.camaras.find((c) => c.id === 5).curtoCircuitoAtivo, true, 'Alagamento pesado dispara Curto-Circuito Aquático');
+
+  // Vedando o rombo na água com Bomba Branquial ligada drena o alagamento pesado (-4.0 kg/s) e conclui os 3.0s de Spool-up
+  const copiaVedadaMar = structuredClone(aposRomboMar);
+  copiaVedadaMar.naveJogador.mergulhoTaticoAtivo = false;
+  copiaVedadaMar.naveJogador.camaras.find((c) => c.id === 5).rombosCasco = 0;
+  copiaVedadaMar.naveJogador.camaras.find((c) => c.id === 5).brechaAtiva = false;
+  let estadoDecolagem = congelarProfundo(copiaVedadaMar);
+  for (let i = 0; i < 4; i += 1) {
+    estadoDecolagem = avancarTickFisicaHidraulica(estadoDecolagem, 1.0);
+  }
+  assert.equal(estadoDecolagem.naveJogador.camaras.find((c) => c.id === 5).alagamentoPesadoKg, 0.0);
+  assert.equal(estadoDecolagem.naveJogador.estadoFisico, '1_NO_FOIL', 'Após 3.0s de Spool-up contínuo, a nave retorna para 1_NO_FOIL');
+
+  // No ar com Bomba Branquial ativa: drena alagamento pesado residual (-4.0 kg/s) e puxa recarga capilar (+1.25 kg/s)
+  const copiaCapilar = structuredClone(estadoDecolagem);
+  copiaCapilar.naveJogador.camaras.find((c) => c.id === 1).aguaKg = 10.0;
+  copiaCapilar.naveJogador.camaras.find((c) => c.id === 1).alagamentoPesadoKg = 4.0;
+  copiaCapilar.naveJogador.camaras.find((c) => c.id === 2).alagamentoPesadoKg = 2.0;
+  copiaCapilar.naveJogador.camaras.find((c) => c.id === 2).valvulaExternaAberta = true;
+  const aposCapilar = avancarTickFisicaHidraulica(congelarProfundo(copiaCapilar), 1.0);
+  assert.equal(aposCapilar.naveJogador.camaras.find((c) => c.id === 1).alagamentoPesadoKg, 0.0);
+  assert.equal(aposCapilar.naveJogador.camaras.find((c) => c.id === 1).aguaKg, 11.25);
+  assert.equal(aposCapilar.naveJogador.camaras.find((c) => c.id === 2).alagamentoPesadoKg, 0.0);
+  assert.equal(aposCapilar.naveJogador.camaras.find((c) => c.id === 2).aguaKg, 12.0);
 });

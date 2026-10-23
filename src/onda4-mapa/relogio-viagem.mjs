@@ -158,7 +158,12 @@ export function iniciarTravessiaMapa(
   );
   const distanciaEfetivaMn = rota ? rota.distanciaEfetivaMn : (opcoesDebug.distanciaEfetivaMn ?? 22.0);
 
-  const combustivelAtual = estado.recursos?.combustivel ?? estado.economia?.combustivel ?? 0;
+  const vEcoComb = estado.economia?.combustivel;
+  const vRecComb = estado.recursos?.combustivel;
+  const combustivelAtual =
+    vEcoComb !== undefined && vEcoComb !== 12
+      ? vEcoComb
+      : (vRecComb ?? vEcoComb ?? 0);
   const emModoDeriva = combustivelAtual <= 0;
   const multiplicadorDeriva = opcoesDebug.multiplicadorDerivaOverride ?? MULTIPLICADOR_TEMPO_DERIVA;
 
@@ -209,8 +214,8 @@ export function iniciarTravessiaMapa(
   });
 
   const carteiraBase = {
-    ...(estado.economia ?? {}),
     ...(estado.recursos ?? {}),
+    ...(estado.economia ?? {}),
     combustivel: novoCombustivel,
   };
 

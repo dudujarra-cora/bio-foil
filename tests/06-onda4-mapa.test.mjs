@@ -252,4 +252,98 @@ test('[PORTÃO 06.3 | N4] 17 Templates de Eventos, Raridade das Blue Options (5 
   assert.equal(trDerrota.faseResultante, 'FIM_DE_RUN');
   assert.equal(trDerrota.apagaRunSavePermadeath, true);
   assert.equal(trDerrota.preservaProfileJson, true);
+
+  // Cobertura completa de resolverVisitaNoMapa (Opções A, B aceita/rejeitada, C recuo/bloqueada em PERIGO, COMBATE_PADRAO),
+  // sobrepeso no mapa (4.75 MN/h, 2 comb.) e rejeições de transição no ciclo de partida
+  const visitaPadraoSemTemplate = resolverVisitaNoMapa({
+    seedPartida: 'seed-ev',
+    setorNumero: 1,
+    relogioSetorHoras: 1.0,
+    noMapa: { id: 'NO_1_X', tipoNo: 'COMBATE', idTemplateEvento: null, xMn: 30, tPrazoHoras: null },
+  });
+  assert.equal(visitaPadraoSemTemplate.estadoNo, 'COMBATE_PADRAO');
+  assert.equal(visitaPadraoSemTemplate.combateObrigatorio, true);
+
+  const noSosRede = { id: 'NO_1_SOS', tipoNo: 'SOS', idTemplateEvento: 'SOS_1_REDE_ARRASTO', xMn: 30, tPrazoHoras: 10 };
+  const visitaOpcaoA = resolverVisitaNoMapa({
+    seedPartida: 'seed-ev-a',
+    setorNumero: 1,
+    relogioSetorHoras: 1.0,
+    noMapa: noSosRede,
+    kitOuNave: KITS_INICIAIS_5_CARCACAS.CARCACA_ALFA,
+    opcaoEscolhida: 'A',
+  });
+  assert.equal(visitaOpcaoA.estadoNo, 'EVENTO_ATIVO');
+  assert.equal(visitaOpcaoA.aceito, true);
+
+  const visitaOpcaoBRejeitada = resolverVisitaNoMapa({
+    seedPartida: 'seed-ev-b',
+    setorNumero: 1,
+    relogioSetorHoras: 1.0,
+    noMapa: noSosRede,
+    kitOuNave: KITS_INICIAIS_5_CARCACAS.CARCACA_ALFA,
+    opcaoEscolhida: 'B',
+  });
+  assert.equal(visitaOpcaoBRejeitada.aceito, false);
+  assert.equal(visitaOpcaoBRejeitada.marcadorRejeicao, 'PRECONDICAO_NAO_ATENDIDA');
+
+  const visitaOpcaoBAceita = resolverVisitaNoMapa({
+    seedPartida: 'seed-ev-b',
+    setorNumero: 1,
+    relogioSetorHoras: 1.0,
+    noMapa: noSosRede,
+    kitOuNave: KITS_INICIAIS_5_CARCACAS.COURACA_LIMIAR,
+    opcaoEscolhida: 'B',
+  });
+  assert.equal(visitaOpcaoBAceita.aceito, true);
+  assert.equal(visitaOpcaoBAceita.resultadoEscolha, 'SUCESSO_CRITICO_BLUE_OPTION');
+  assert.equal(visitaOpcaoBAceita.moedaGerada.biomassa, 15);
+
+  const visitaOpcaoCRecuo = resolverVisitaNoMapa({
+    seedPartida: 'seed-ev-c',
+    setorNumero: 1,
+    relogioSetorHoras: 1.0,
+    noMapa: noSosRede,
+    kitOuNave: KITS_INICIAIS_5_CARCACAS.CARCACA_ALFA,
+    opcaoEscolhida: 'C',
+  });
+  assert.equal(visitaOpcaoCRecuo.aceito, true);
+  assert.equal(visitaOpcaoCRecuo.resultadoEscolha, 'RECUO_SEGURO');
+
+  const noPerigo = { id: 'NO_1_PER', tipoNo: 'PERIGO', idTemplateEvento: 'PER_1_CHUVA_ACIDA', xMn: 30, tPrazoHoras: null };
+  const visitaOpcaoCPerigo = resolverVisitaNoMapa({
+    seedPartida: 'seed-ev-per',
+    setorNumero: 1,
+    relogioSetorHoras: 1.0,
+    noMapa: noPerigo,
+    kitOuNave: KITS_INICIAIS_5_CARCACAS.CARCACA_ALFA,
+    opcaoEscolhida: 'C',
+  });
+  assert.equal(visitaOpcaoCPerigo.aceito, false);
+  assert.equal(visitaOpcaoCPerigo.marcadorRejeicao, 'BLOQUEADO_COMBATE_OBRIGATORIO');
+
+  // Sobrepeso na travessia (P_viagem > S_max -> 4.75 MN/h e custo 2 combustíveis)
+  const estadoBaseSobrepeso = criarEstadoInicialPartida('seed-sp', 'CARCACA_ALFA');
+  const naveSobrepeso = {
+    ...estadoBaseSobrepeso.naveJogador,
+    poraoCarga: [
+      { id: 'P1', pesoKg: 25 },
+      { id: 'P2', pesoKg: 25 },
+    ],
+  };
+  const cruzeiroSobrepeso = calcularVelocidadeCruzeiroMapa(naveSobrepeso);
+  assert.equal(cruzeiroSobrepeso.emSobrepesoTouchdown, true);
+  assert.equal(cruzeiroSobrepeso.velocidadeCruzeiroMnH, 4.75);
+  assert.equal(cruzeiroSobrepeso.custoCombustivel, 2);
+
+  // Transições inválidas na máquina de ciclo de partida e detecção de beco sem saída pelo auditor do mapa
+  assert.throws(() => aplicarTransicaoCicloPartida('COMBATE', 'TR_INEXISTENTE'), /Transição desconhecida/);
+  const trFaseErrada = aplicarTransicaoCicloPartida('LOJA', 'TR_7A_DERROTA_EM_COMBATE');
+  assert.equal(trFaseErrada.aceita, false);
+  assert.equal(trFaseErrada.faseResultante, 'LOJA');
+
+  const mapaComBeco = gerarMapaSetorial('seed-beco', 1, [], { forcarBecoSemSaidaColuna2: true });
+  const audBeco = auditarInvariantesMapaSetorial(mapaComBeco);
+  assert.equal(audBeco.valido, false);
+  assert.ok(audBeco.erros.some((e) => e.includes('Beco sem saída')));
 });

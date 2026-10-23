@@ -61,9 +61,10 @@ export function calcularAlagamentoPesadoTotalKg(naveJogador) {
 export function calcularPesoArmasECargaKg(naveJogador) {
   let peso = 0.0;
   for (const slot of naveJogador.armasAtivas ?? []) {
-    if (slot?.arma) {
-      peso += Number(slot.arma.pesoBaseKg ?? 0);
-      const qtdOrgaos = Array.isArray(slot.arma.orgaosEnxertados) ? slot.arma.orgaosEnxertados.length : 0;
+    const arma = slot?.arma !== undefined ? slot.arma : slot;
+    if (arma) {
+      peso += Number(arma.pesoBaseKg ?? arma.pesoKg ?? 0);
+      const qtdOrgaos = Array.isArray(arma.orgaosEnxertados) ? arma.orgaosEnxertados.length : 0;
       peso += qtdOrgaos * CONSTANTES_FISICA_HIDRAULICA.PESO_ORGAO_ENXERTADO_KG;
     }
   }

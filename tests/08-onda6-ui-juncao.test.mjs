@@ -34,6 +34,10 @@ import {
   CATALOGO_8_CUES_SONOROS_85C,
   avaliarCuesSonorosAtivos,
 } from '../src/onda6-ui/cues-audio.mjs';
+import {
+  calcularPesoTotalNave as calcularPesoOraculo,
+  avaliarPredicadoDesbloqueio,
+} from '../src/oraculos-referencia.mjs';
 
 test('[PORTÃO 08.1 | N1 + N4 + MUT-O6-01..02] Junção Ponta a Ponta UI <-> Motor: desligar Sifão derruba Sustentação, aciona Touchdown, trava Válvulas e renderiza 8 câmaras, 4 slots de armas e 8 sistemas', () => {
   const estadoInicial = {
@@ -329,4 +333,235 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
   });
   assert.equal(resEnxertoEletro.aceito, true);
   assert.equal(resEnxertoEletro.estado.naveJogador.armasAtivas[0].arma.penalidadeOrgaosSeg, 2);
+
+  // Cobertura fim-a-fim de TODOS os 15 comandos atômicos da Seção 8.5.A no motor real (despacharComandoUi)
+  const cmdDesconhecido = () => despacharComandoUi(estadoCombate, { tipo: 'COMANDO_FANTASMA' });
+  assert.throws(cmdDesconhecido, /Comando desconhecido/);
+
+  // 1) DRENAR_TUDO e ALTERNAR_VALVULA em 1_NO_FOIL vs bloqueado em 2_TOUCHDOWN
+  const resValvulaAr = despacharComandoUi(estadoCombate, {
+    tipo: 'ALTERNAR_VALVULA',
+    payload: { camaraId: 1, aberta: true },
+  });
+  assert.equal(resValvulaAr.aceito, true);
+  const resValvulaInvalida = despacharComandoUi(estadoCombate, {
+    tipo: 'ALTERNAR_VALVULA',
+    payload: { camaraId: 999, aberta: true },
+  });
+  assert.equal(resValvulaInvalida.aceito, false);
+  assert.equal(resValvulaInvalida.marcadorRejeicao, 'PRECONDICAO_NAO_ATENDIDA');
+
+  const resDrenarAr = despacharComandoUi(estadoCombate, {
+    tipo: 'DRENAR_TUDO',
+    payload: { abrirTodas: true },
+  });
+  assert.equal(resDrenarAr.aceito, true);
+  assert.equal(resDrenarAr.estado.naveJogador.camaras.every((c) => c.valvulaExternaAberta), true);
+
+  // 2) MERGULHO_TATICO (recolherFoil=true -> 2_TOUCHDOWN; recolherFoil=false -> 3_SPOOL_UP) e bloqueio de DRENAR_TUDO no mar
+  const resMergulho = despacharComandoUi(estadoCombate, {
+    tipo: 'MERGULHO_TATICO',
+    payload: { recolherFoil: true },
+  });
+  assert.equal(resMergulho.aceito, true);
+  assert.equal(resMergulho.cueEmitido, 'CUE_ESTOL_TOUCHDOWN');
+  assert.equal(resMergulho.estado.naveJogador.estadoFisico, '2_TOUCHDOWN');
+
+  const resDrenarMar = despacharComandoUi(resMergulho.estado, {
+    tipo: 'DRENAR_TUDO',
+    payload: { abrirTodas: true },
+  });
+  assert.equal(resDrenarMar.aceito, false);
+  assert.equal(resDrenarMar.marcadorRejeicao, 'BLOQUEADO_TRAVA_HIDROSTATICA');
+
+  const resEmergir = despacharComandoUi(resMergulho.estado, {
+    tipo: 'MERGULHO_TATICO',
+    payload: { recolherFoil: false },
+  });
+  assert.equal(resEmergir.aceito, true);
+  assert.equal(resEmergir.cueEmitido, 'CUE_SPOOL_UP_DECOLAGEM');
+  assert.equal(resEmergir.estado.naveJogador.estadoFisico, '3_SPOOL_UP');
+
+  // 3) MOVER_TRIPULANTE (aceito + rejeitado por lotação máxima de 2 aliados na sala destino)
+  const resMover = despacharComandoUi(estadoCombate, {
+    tipo: 'MOVER_TRIPULANTE',
+    payload: { tripulanteId: 'trip-polvo-1', camaraDestinoId: 4 },
+  });
+  assert.equal(resMover.aceito, true);
+  assert.equal(resMover.estado.naveJogador.tripulacao.find((t) => t.id === 'trip-polvo-1').camaraDestinoId, 4);
+
+  const copiaLotada = structuredClone(estadoCombate);
+  copiaLotada.naveJogador.tripulacao[0].camaraAtualId = 4; // Polvo + Arraia já estão na Câmara 4 (2 aliados)
+  const resMoverLotado = despacharComandoUi(congelarProfundo(copiaLotada), {
+    tipo: 'MOVER_TRIPULANTE',
+    payload: { tripulanteId: 'trip-baiacu-1', camaraDestinoId: 4 },
+  });
+  assert.equal(resMoverLotado.aceito, false);
+  assert.equal(resMoverLotado.marcadorRejeicao, 'PRECONDICAO_NAO_ATENDIDA');
+
+  // 4) MIRAR_ARMA (projétil comum, Feixe Beam com trinca ortogonal [1,2,4] e Torpedo exigindo sala submersa)
+  const resMirarPadrao = despacharComandoUi(estadoCombate, {
+    tipo: 'MIRAR_ARMA',
+    payload: { slotIndex: 0, salaAlvoId: 3 },
+  });
+  assert.equal(resMirarPadrao.aceito, true);
+  assert.equal(resMirarPadrao.estado.naveJogador.armasAtivas[0].arma.salaAlvoId, 3);
+
+  const copiaBeamTorpedo = structuredClone(estadoCombate);
+  copiaBeamTorpedo.alvoCombate = structuredClone(criarAlvoSetor1Canonico('BARCO_HUMANO'));
+  copiaBeamTorpedo.naveJogador.armasAtivas[0].arma.chassiId = 'CORTADOR_TERMICO_PLASMA';
+  copiaBeamTorpedo.naveJogador.armasAtivas[1].arma.chassiId = 'LANCADOR_TORPEDO_ABISSAL';
+  const estBeamTorp = congelarProfundo(copiaBeamTorpedo);
+
+  assert.equal(
+    despacharComandoUi(estBeamTorp, { tipo: 'MIRAR_ARMA', payload: { slotIndex: 0, salaAlvoId: 1 } }).aceito,
+    false,
+    'Beam sem trincaSalasBeam deve ser rejeitado'
+  );
+  assert.equal(
+    despacharComandoUi(estBeamTorp, { tipo: 'MIRAR_ARMA', payload: { slotIndex: 0, salaAlvoId: 1, trincaSalasBeam: [1, 2, 1] } }).aceito,
+    false,
+    'Beam com trinca vai-e-volta deve ser rejeitado'
+  );
+  assert.equal(
+    despacharComandoUi(estBeamTorp, { tipo: 'MIRAR_ARMA', payload: { slotIndex: 0, salaAlvoId: 1, trincaSalasBeam: [1, 2, 4] } }).aceito,
+    true,
+    'Beam com trinca ortogonal simples [1,2,4] deve ser aceito'
+  );
+  assert.equal(
+    despacharComandoUi(estBeamTorp, { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 1 } }).aceito,
+    false,
+    'Torpedo contra sala seca superior (id=1) deve ser rejeitado'
+  );
+  assert.equal(
+    despacharComandoUi(estBeamTorp, { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 3 } }).aceito,
+    true,
+    'Torpedo contra sala submersa (id=3) deve ser aceito'
+  );
+
+  // 5) ATIVAR_PULSO_ENZIMAS e ATIVAR_TINTA_FURTIVA
+  const copiaHab = structuredClone(estadoCombate);
+  copiaHab.naveJogador.camaras.find((c) => c.id === 3).barrasEnergiaAlocada = 2;
+  copiaHab.naveJogador.camaras.find((c) => c.id === 8).barrasEnergiaAlocada = 2;
+  const estHab = congelarProfundo(copiaHab);
+  const resPulso = despacharComandoUi(estHab, { tipo: 'ATIVAR_PULSO_ENZIMAS', payload: { camaraId: 3 } });
+  assert.equal(resPulso.aceito, true);
+  assert.equal(resPulso.estado.naveJogador.pulsoEnzimasAtivoSeg, 6.0);
+  assert.equal(resPulso.estado.naveJogador.recargaPulsoEnzimasSeg, 25.0);
+
+  const resTinta = despacharComandoUi(estHab, { tipo: 'ATIVAR_TINTA_FURTIVA', payload: { camaraId: 8 } });
+  assert.equal(resTinta.aceito, true);
+  assert.equal(resTinta.estado.naveJogador.furtividadeAtivaSeg, 8.0);
+  assert.equal(resTinta.estado.naveJogador.recargaFurtividadeSeg, 20.0);
+
+  // 6) LANCAR_ABORDAGEM (Couraça-Limiar com Caranguejo na Câmara 7)
+  const estCouraca = congelarProfundo({
+    ...structuredClone(criarEstadoInicialPartida('seed-ab', 'COURACA_LIMIAR')),
+    alvoCombate: criarAlvoSetor1Canonico('BARCO_HUMANO'),
+  });
+  const resAbordOk = despacharComandoUi(estCouraca, {
+    tipo: 'LANCAR_ABORDAGEM',
+    payload: { tripulantesIds: ['trip-caranguejo-1'], salaAlvoId: 1 },
+  });
+  assert.equal(resAbordOk.aceito, true);
+  assert.equal(resAbordOk.estado.naveJogador.recargaTuboAbordagemSeg, 15.0);
+  assert.equal(
+    resAbordOk.estado.naveJogador.tripulacao.find((t) => t.id === 'trip-caranguejo-1').localizacao,
+    'BORDO_INIMIGO'
+  );
+  const resAbordSalaInvalida = despacharComandoUi(estCouraca, {
+    tipo: 'LANCAR_ABORDAGEM',
+    payload: { tripulantesIds: ['trip-caranguejo-1'], salaAlvoId: 99 },
+  });
+  assert.equal(resAbordSalaInvalida.aceito, false);
+
+  // 7) ESCOLHER_OPCAO_EVENTO (Opções A, B e C em fase EVENTO)
+  const estEvento = congelarProfundo({
+    ...structuredClone(estCouraca),
+    meta: { ...estCouraca.meta, faseJogo: 'EVENTO' },
+  });
+  const resEvB = despacharComandoUi(estEvento, {
+    tipo: 'ESCOLHER_OPCAO_EVENTO',
+    payload: { idEvento: 'SOS_1_REDE_ARRASTO', categoriaEvento: 'SOS', opcao: 'B' },
+  });
+  assert.equal(resEvB.aceito, true);
+  assert.equal(resEvB.estado.economia.biomassa, 30);
+
+  const resEvCPerigo = despacharComandoUi(estEvento, {
+    tipo: 'ESCOLHER_OPCAO_EVENTO',
+    payload: { idEvento: 'PER_1_CHUVA_ACIDA', categoriaEvento: 'PERIGO', opcao: 'C' },
+  });
+  assert.equal(resEvCPerigo.aceito, false);
+  assert.equal(resEvCPerigo.marcadorRejeicao, 'BLOQUEADO_COMBATE_OBRIGATORIO');
+
+  // 8) COMPRAR_OU_VENDER_LOJA (compra de reparo, compra de tripulante e venda de arma/órgão) e ENXERTAR_ORGAO (REMOVER)
+  const copiaLojaRica = structuredClone(estadoLoja);
+  copiaLojaRica.economia.sucata = 200;
+  copiaLojaRica.economia.biomassa = 200;
+  copiaLojaRica.naveJogador.hpCascoAtual = 25;
+  const estLojaRica = congelarProfundo(copiaLojaRica);
+
+  const resReparoLoja = despacharComandoUi(estLojaRica, {
+    tipo: 'COMPRAR_OU_VENDER_LOJA',
+    payload: { itemOuSistemaId: 'REPARO_CASCO_1HP', acao: 'COMPRAR' },
+  });
+  assert.equal(resReparoLoja.aceito, true);
+  assert.equal(resReparoLoja.estado.naveJogador.hpCascoAtual, 26);
+
+  const resRecrutaLoja = despacharComandoUi(estLojaRica, {
+    tipo: 'COMPRAR_OU_VENDER_LOJA',
+    payload: { itemOuSistemaId: 'TRIPULANTE_POLVO', acao: 'COMPRAR' },
+  });
+  assert.equal(resRecrutaLoja.aceito, true);
+  assert.equal(resRecrutaLoja.estado.naveJogador.tripulacao.length, 4);
+
+  const resVendaLoja = despacharComandoUi(estLojaRica, {
+    tipo: 'COMPRAR_OU_VENDER_LOJA',
+    payload: { itemOuSistemaId: 'EMISSOR_ACUSTICO_I', acao: 'VENDER' },
+  });
+  assert.equal(resVendaLoja.aceito, true);
+  assert.equal(resVendaLoja.estado.economia.sucata, 217);
+
+  const resRemoverOrgao = despacharComandoUi(resEnxertoEletro.estado, {
+    tipo: 'ENXERTAR_ORGAO',
+    payload: { orgaoId: 'ELETRO_PLACA_ARRAIA', slotIndex: 0, acao: 'REMOVER' },
+  });
+  assert.equal(resRemoverOrgao.aceito, true);
+  assert.equal(resRemoverOrgao.estado.naveJogador.armasAtivas[0].arma.orgaosEnxertados.length, 0);
+
+  // 9) VIAJAR_NO_MAPA (aceito e rejeitado sem destino ou sem rota conectada) + oráculos auxiliares
+  const estadoMapaComRotas = congelarProfundo({
+    ...structuredClone(estadoMapa),
+    mapaSetorial: {
+      ...estadoMapa.mapaSetorial,
+      noAtualId: 'NO_0_ENTRADA',
+      rotas: [{ origemId: 'NO_0_ENTRADA', destinoId: 'NO_1_A', distanciaEfetivaMn: 22.0 }],
+    },
+  });
+  const resViagemSemRota = despacharComandoUi(estadoMapaComRotas, {
+    tipo: 'VIAJAR_NO_MAPA',
+    payload: { idNoDestino: 'NO_4_SAIDA', descartarCargaIds: [] },
+  });
+  assert.equal(resViagemSemRota.aceito, false);
+  assert.equal(resViagemSemRota.marcadorRejeicao, 'PRECONDICAO_NAO_ATENDIDA');
+
+  const resViagemOk = despacharComandoUi(estadoMapaComRotas, {
+    tipo: 'VIAJAR_NO_MAPA',
+    payload: { idNoDestino: 'NO_1_A', descartarCargaIds: [] },
+  });
+  assert.equal(resViagemOk.aceito, true);
+  assert.equal(resViagemOk.estado.mapaSetorial.noAtualId, 'NO_1_A');
+
+  assert.equal(
+    calcularPesoOraculo({
+      pesoChassiKg: 100,
+      aguaPorCamaraKg: [12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5, 12.5],
+      pesosArmasAtivasKg: [15, 10],
+      pesosCargaPoraoKg: [10],
+      quantidadeOrgaosEnxertados: 1,
+      nivelBlindagem: 1,
+    }),
+    255
+  );
+  assert.equal(avaliarPredicadoDesbloqueio('a <= 5 && b > 1 && c < 10', { a: 5, b: 2, c: 9 }), true);
 });

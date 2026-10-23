@@ -98,6 +98,30 @@ export const ESQUEMA_15_COMANDOS_85A = Object.freeze([
   }),
 ]);
 
+function extrairCarteiraSincronizada(estado) {
+  const padrao = { sucata: 30, biomassa: 15, combustivel: 12, municao: 8 };
+  const eco = estado.economia ?? {};
+  const rec = estado.recursos ?? {};
+  const resolverCampo = (chave) => {
+    const vEco = eco[chave];
+    const vRec = rec[chave];
+    if (vEco !== undefined && vRec !== undefined) {
+      if (vEco !== padrao[chave]) return Number(vEco);
+      if (vRec !== padrao[chave]) return Number(vRec);
+      return Number(vEco);
+    }
+    return Number(vEco ?? vRec ?? padrao[chave]);
+  };
+  return {
+    ...rec,
+    ...eco,
+    sucata: resolverCampo('sucata'),
+    biomassa: resolverCampo('biomassa'),
+    combustivel: resolverCampo('combustivel'),
+    municao: resolverCampo('municao'),
+  };
+}
+
 function rejeitarComando(estado, comando, marcadorRejeicao, cueEmitido = null) {
   const novoLog = [
     ...(estado.logDeterministico ?? []),
@@ -166,6 +190,9 @@ export function despacharComandoUi(estado, comando) {
     case 'ALTERNAR_VALVULA': {
       if (estadoFisicoAtual !== '1_NO_FOIL') {
         return rejeitarComando(estado, comando, 'BLOQUEADO_TRAVA_HIDROSTATICA', 'CUE_TRAVA_HIDROSTATICA');
+      }
+      if (!(nave.camaras ?? []).some((c) => c.id === p.camaraId)) {
+        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
       const novoEstado = alternarValvulaExterna(estado, p.camaraId, p.aberta ?? p.abrir);
       return clonarProfundoCongelado({
@@ -416,6 +443,13 @@ export function despacharComandoUi(estado, comando) {
       if (!todosValidosNaCamara7) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
+      if (
+        Array.isArray(estado.alvoCombate?.salasOuOrgaos) &&
+        estado.alvoCombate.salasOuOrgaos.length > 0 &&
+        !estado.alvoCombate.salasOuOrgaos.some((s) => s.id === p.salaAlvoId)
+      ) {
+        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      }
       const resAbord = tentarAbordagemContraAlvo(estado, p.tripulantesIds, p.salaAlvoId);
       if (!resAbord.aceito) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
@@ -451,14 +485,14 @@ export function despacharComandoUi(estado, comando) {
       const ionSif = Math.max(0, Number(camSif?.danoIonizado ?? camSif?.barrasIonizadas ?? 0));
       const ctxInt = Math.max(0, Number(camCtx?.barrasIntegridade ?? camCtx?.integridade ?? 0) - ionCtx);
       const sifEne = Math.max(0, Number(camSif?.barrasEnergiaAlocada ?? camSif?.energiaAlocada ?? 0) - ionSif);
-      const comb = Number(estado.economia?.combustivel ?? estado.recursos?.combustivel ?? 0);
+      const baseCarteiraFuga = extrairCarteiraSincronizada(estado);
+      const comb = baseCarteiraFuga.combustivel;
       const cargaPronta = (nave.progressoFugaSeg ?? 0) >= 20.0 || (nave.cargaSaltoPct ?? 0) >= 100;
       if (!cargaPronta || ctxInt < 1 || sifEne < 1 || comb < 1) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
       const novaCarteira = {
-        ...(estado.economia ?? {}),
-        ...(estado.recursos ?? {}),
+        ...baseCarteiraFuga,
         combustivel: comb - 1,
       };
       return clonarProfundoCongelado({
@@ -505,14 +539,7 @@ export function despacharComandoUi(estado, comando) {
         nave.hpCascoMax,
         Math.max(0, nave.hpCascoAtual - danoCasco) + reparoHp
       );
-      const baseCarteira = {
-        sucata: 30,
-        biomassa: 15,
-        combustivel: 12,
-        municao: 8,
-        ...(estado.economia ?? {}),
-        ...(estado.recursos ?? {}),
-      };
+      const baseCarteira = extrairCarteiraSincronizada(estado);
       const novaCarteiraEvento = {
         ...baseCarteira,
         sucata: baseCarteira.sucata + Number(resVisita.moedaGerada?.sucata ?? 0),
@@ -552,14 +579,7 @@ export function despacharComandoUi(estado, comando) {
       if (!item) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       const acao = p.acao ?? 'COMPRAR';
       const chaveMoeda = item.moeda === 'BIOMASSA' ? 'biomassa' : 'sucata';
-      const baseCarteira = {
-        sucata: 30,
-        biomassa: 15,
-        combustivel: 12,
-        municao: 8,
-        ...(estado.economia ?? {}),
-        ...(estado.recursos ?? {}),
-      };
+      const baseCarteira = extrairCarteiraSincronizada(estado);
       let novaCarteiraLoja = { ...baseCarteira };
       let novoHpCascoLoja = nave.hpCascoAtual;
       let novaTripulacaoLoja = nave.tripulacao;
@@ -683,6 +703,15 @@ export function despacharComandoUi(estado, comando) {
 
     case 'VIAJAR_NO_MAPA': {
       if (!p.idNoDestino) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      if (
+        Array.isArray(estado.mapaSetorial?.rotas) &&
+        estado.mapaSetorial.rotas.length > 0 &&
+        !estado.mapaSetorial.rotas.some(
+          (r) => r.origemId === estado.mapaSetorial.noAtualId && r.destinoId === p.idNoDestino
+        )
+      ) {
+        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      }
       const novoEstado = iniciarTravessiaMapa(estado, p.idNoDestino, p.descartarCargaIds ?? []);
       return clonarProfundoCongelado({
         aceito: true,

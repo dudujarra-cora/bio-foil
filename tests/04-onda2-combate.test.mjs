@@ -224,4 +224,80 @@ test('Onda 2 (Lei L3 + Junção N1 Simulação Passo 3): Canal L3 de visão do a
   const apos1Tick = avancarTickCombateCompleto(base, 0.25);
   assert.equal(apos1Tick.telemetriaN4.ultimoTickCamarasExaminadas, 8);
   assert.equal(apos1Tick.telemetriaN4.ultimoTickTripulantesExaminados, 3);
+
+  // Cobertura completa de calcularTempoRegenBarreiraSeg (1.7s com Arraia, 1.5s com Polvo, 2.0s sem operador)
+  assert.equal(calcularTempoRegenBarreiraSeg(base.naveJogador), 1.7);
+  const copiaPolvoBarreira = structuredClone(base);
+  copiaPolvoBarreira.naveJogador.tripulacao.find((t) => t.id === 'trip-arraia-1').camaraAtualId = 1;
+  copiaPolvoBarreira.naveJogador.tripulacao.find((t) => t.id === 'trip-polvo-1').camaraAtualId = 4;
+  assert.equal(calcularTempoRegenBarreiraSeg(congelarProfundo(structuredClone(copiaPolvoBarreira)).naveJogador), 1.5);
+  copiaPolvoBarreira.naveJogador.tripulacao.find((t) => t.id === 'trip-polvo-1').camaraAtualId = 2;
+  assert.equal(calcularTempoRegenBarreiraSeg(congelarProfundo(copiaPolvoBarreira).naveJogador), 2.0);
+
+  // Cobertura de avancarTickSistemasEArmas: timers de habilidades, regeneração de Barreira, choque/isolamento e Curto-Circuito (seco 3s vs água 8s)
+  const copiaSistemas = structuredClone(base);
+  copiaSistemas.naveJogador.pulsoEnzimasAtivoSeg = 1.0;
+  copiaSistemas.naveJogador.recargaPulsoEnzimasSeg = 5.0;
+  copiaSistemas.naveJogador.furtividadeAtivaSeg = 2.0;
+  copiaSistemas.naveJogador.recargaFurtividadeSeg = 10.0;
+  copiaSistemas.naveJogador.recargaTuboAbordagemSeg = 4.0;
+  copiaSistemas.naveJogador.camadasBarreiraAtivas = 0;
+  const cam1 = copiaSistemas.naveJogador.camaras.find((c) => c.id === 1);
+  cam1.curtoCircuitoAtivo = true;
+  cam1.aguaKg = 0.0; // Seco: extingue em 3.0s
+  const cam5 = copiaSistemas.naveJogador.camaras.find((c) => c.id === 5);
+  cam5.curtoCircuitoAtivo = true; // Na água: queima 1 barra em 8.0s e devolve energia ao reator
+  const cam3 = copiaSistemas.naveJogador.camaras.find((c) => c.id === 3);
+  cam3.barrasEnergiaAlocada = 1;
+  cam3.tempoParalisiaIonSeg = 1.0;
+  cam3.danoIonizado = 1;
+
+  let estSist = avancarTickSistemasEArmas(congelarProfundo(copiaSistemas), 3.0);
+  assert.equal(estSist.naveJogador.camadasBarreiraAtivas, 1, 'Barreira regenera 1 bolha após >= 1.7s');
+  assert.equal(estSist.naveJogador.camaras.find((c) => c.id === 1).curtoCircuitoAtivo, false, 'Curto-circuito em sala 0% seca extingue em 3.0s');
+  assert.equal(estSist.naveJogador.camaras.find((c) => c.id === 3).tempoParalisiaIonSeg, 0);
+  assert.equal(estSist.naveJogador.camaras.find((c) => c.id === 3).isolamentoResidualChoqueSeg, 5.0);
+
+  estSist = avancarTickSistemasEArmas(estSist, 5.0);
+  assert.equal(estSist.naveJogador.camaras.find((c) => c.id === 3).isolamentoResidualChoqueSeg, 0.0);
+  assert.equal(estSist.naveJogador.camaras.find((c) => c.id === 5).barrasIntegridade, 1, 'Curto-circuito na água queima 1 barra de sistema após 8.0s');
+  assert.equal(estSist.naveJogador.camaras.find((c) => c.id === 5).barrasEnergiaAlocada, 1);
+
+  // Cobertura de avancarTickTripulacao: nado entre câmaras, bloqueio de nado se Baiacu inflado, reparo de Curto-Circuito/Sistema/Rombo e auto-desinflar Baiacu
+  const copiaTrip = structuredClone(base);
+  // 1) Polvo nada da Câmara 2 para a Câmara 4 (1 salto = 1.5s)
+  copiaTrip.naveJogador.tripulacao.find((t) => t.id === 'trip-polvo-1').camaraDestinoId = 4;
+  // 2) Baiacu inflado tenta nadar para a Câmara 6 -> nado cancelado, mas repara rombo na Câmara 5 com Polvo/Arraia
+  const baiacu = copiaTrip.naveJogador.tripulacao.find((t) => t.id === 'trip-baiacu-1');
+  baiacu.inflado = true;
+  baiacu.camaraDestinoId = 6;
+  // 3) Arraia na Câmara 4 repara Curto-Circuito Aquático (8.0s base / 2.0x = 4.0s)
+  copiaTrip.naveJogador.camaras.find((c) => c.id === 4).curtoCircuitoAtivo = true;
+  let estTrip = avancarTickTripulacao(congelarProfundo(copiaTrip), 4.0);
+  assert.equal(estTrip.naveJogador.tripulacao.find((t) => t.id === 'trip-polvo-1').camaraAtualId, 4);
+  assert.equal(estTrip.naveJogador.tripulacao.find((t) => t.id === 'trip-baiacu-1').camaraDestinoId, null);
+  assert.equal(estTrip.naveJogador.camaras.find((c) => c.id === 4).curtoCircuitoAtivo, false, 'Arraia repara Curto-Circuito em 4.0s');
+
+  // 4) Polvo e Arraia na Câmara 4 reparam 1 barra de integridade de sistema e depois 1 rombo de casco (auto-desinflando Baiacu se presente)
+  const copiaReparo = structuredClone(estTrip);
+  const cam4Rep = copiaReparo.naveJogador.camaras.find((c) => c.id === 4);
+  cam4Rep.barrasIntegridade = 1; // max = 2 (precisa de 12.0s base; Polvo 2.0x + Arraia 1.0x = 3.0x -> 4.0s)
+  cam4Rep.rombosCasco = 1;
+  cam4Rep.brechaAtiva = true;
+  copiaReparo.naveJogador.tripulacao.find((t) => t.id === 'trip-baiacu-1').camaraAtualId = 4;
+  cam4Rep.baiacuInfladoId = 'trip-baiacu-1';
+  let estRep = avancarTickTripulacao(congelarProfundo(copiaReparo), 4.0);
+  assert.equal(estRep.naveJogador.camaras.find((c) => c.id === 4).barrasIntegridade, 2, 'Sistema reparado para 2/2 barras');
+  estRep = avancarTickTripulacao(estRep, 3.0);
+  assert.equal(estRep.naveJogador.camaras.find((c) => c.id === 4).rombosCasco, 0, 'Rombo de casco reparado');
+  assert.equal(estRep.naveJogador.tripulacao.find((t) => t.id === 'trip-baiacu-1').inflado, false, 'Baiacu desinfla automaticamente ao zerar rombos da câmara');
+
+  // 5) Invasor vivo na câmara interrompe reparo e asfixia/curto pode abater tripulante com HP baixo
+  const copiaInvasor = structuredClone(estRep);
+  copiaInvasor.naveJogador.invasoresInimigos = [{ id: 'inv-1', camaraAtualId: 4, hpAtual: 50 }];
+  copiaInvasor.naveJogador.camaras.find((c) => c.id === 4).aguaKg = 0.0;
+  copiaInvasor.naveJogador.camaras.find((c) => c.id === 4).curtoCircuitoAtivo = true;
+  copiaInvasor.naveJogador.tripulacao.find((t) => t.id === 'trip-polvo-1').hpAtual = 5;
+  const estMorte = avancarTickTripulacao(congelarProfundo(copiaInvasor), 1.0);
+  assert.equal(estMorte.naveJogador.tripulacao.find((t) => t.id === 'trip-polvo-1').hpAtual, 0);
 });

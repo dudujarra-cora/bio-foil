@@ -209,4 +209,78 @@ test('Onda 3 (Junção N1 Hidráulica Barco + IA Marinheiros): rombo submerso (+
   }
   assert.equal(estado.alvoCombate.salasOuOrgaos.find((s) => s.id === 3).tripulantes.length, 0);
   assert.equal(estado.alvoCombate.salasOuOrgaos.find((s) => s.id === 1).tripulantes.length, 2);
+
+  // Cobertura completa de órgãos enxertados no impacto (Bexiga, Eletro-Placa, Tinta, Baiacu, Termofílica, Dente),
+  // sincronização de tripulacaoInimiga, Bomba de Porão (-1.0 kg/s), explosão por DISPARO_EXTERNO e DESTRUICAO_BRUTA de Monstro
+  const copiaOrgaosBarco = structuredClone(estado);
+  copiaOrgaosBarco.alvoCombate.salasOuOrgaos.find((s) => s.id === 3).rombosSubmersos = 0;
+  copiaOrgaosBarco.alvoCombate.tripulacaoInimiga = [
+    { id: 'mar-1', hpAtual: 100 },
+    { id: 'mar-2', hpAtual: 29 },
+  ];
+  // Bomba de porão drena 1.0 kg/s na Sala 3 quando o rombo submerso é vedado e o motor tem integridade > 0
+  const aposBombaPorao = avancarTickIaInimiga(congelarProfundo(copiaOrgaosBarco), 2.5);
+  assert.equal(aposBombaPorao.alvoCombate.salasOuOrgaos.find((s) => s.id === 3).aguaKg, 10.0);
+
+  // Disparo com todos os órgãos contra a Sala 1 (Cabine com 2 marinheiros)
+  const aposImpactoOrgaos = resolverImpactoNoAlvo(aposBombaPorao, {
+    tipo: 'DISPARO_ARMA',
+    chassiId: 'CANHAO_ARPAO_CABO',
+    municaoCusto: 0,
+    danoCasco: 1,
+    danoSistema: 1,
+    salaAlvoId: 1,
+    orgaosEnxertados: [
+      'BEXIGA_ALTA_PRESSAO',
+      'ELETRO_PLACA_ARRAIA',
+      'BOLSA_TINTA_ABISSAL',
+      'GLANDULA_BAIACU',
+      'GLANDULA_TERMOFILICA',
+      'DENTE_LEVIATA',
+    ],
+  });
+  const sala1Org = aposImpactoOrgaos.alvoCombate.salasOuOrgaos.find((s) => s.id === 1);
+  assert.equal(sala1Org.aguaKg, 15.0, 'Bexiga de Alta Pressão injeta +15 kg na sala seca superior');
+  assert.equal(sala1Org.paralisiaIonSeg, 6.0);
+  assert.equal(sala1Org.cegoTintaSeg, 8.0);
+  assert.equal(sala1Org.venenoToxinaSeg, 10.0);
+  assert.equal(sala1Org.fervuraTermofilicaSeg, 8.0);
+  assert.equal(aposImpactoOrgaos.alvoCombate.tripulacaoInimiga.find((t) => t.id === 'mar-1').hpAtual, 70);
+
+  // Avança IA inimiga por 6.0s e depois mais 2.0s: veneno (-6 HP/s), fervura (-5 HP/s + -1 barra ao expirar em 8s) e isolamento pós-choque (5s)
+  let estTickOrg = avancarTickIaInimiga(aposImpactoOrgaos, 6.0);
+  assert.equal(estTickOrg.alvoCombate.salasOuOrgaos.find((s) => s.id === 1).isolamentoResidualChoqueSeg, 5.0);
+  estTickOrg = avancarTickIaInimiga(estTickOrg, 2.0);
+  assert.equal(estTickOrg.alvoCombate.salasOuOrgaos.find((s) => s.id === 1).isolamentoResidualChoqueSeg, 3.0);
+  assert.equal(estTickOrg.alvoCombate.salasOuOrgaos.find((s) => s.id === 1).fervuraTermofilicaSeg, 0.0);
+
+  // Bexiga de Alta Pressão contra Monstro Marinho (-15% esquiva por 5s) e DESTRUICAO_BRUTA de Monstro (0 Sucata, 15 Biomassa)
+  const baseMonstro = structuredClone(criarEstadoInicialPartida({ idArquitetura: 'COURACA_LIMIAR' }));
+  baseMonstro.alvoCombate = structuredClone(criarAlvoSetor1Canonico('MONSTRO_MARINHO'));
+  baseMonstro.alvoCombate.hpCascoAtual = 2;
+  baseMonstro.naveJogador.tripulacao[0].localizacao = 'BORDO_INIMIGO';
+  const monstroBexiga = resolverImpactoNoAlvo(congelarProfundo(baseMonstro), {
+    tipo: 'DISPARO_ARMA',
+    danoCasco: 1,
+    danoSistema: 0,
+    salaAlvoId: 3,
+    orgaosEnxertados: ['BEXIGA_ALTA_PRESSAO'],
+  });
+  assert.equal(monstroBexiga.alvoCombate.esquivaEfetivaPct, 5);
+  const monstroApos5s = avancarTickIaInimiga(monstroBexiga, 5.0);
+  assert.equal(monstroApos5s.alvoCombate.esquivaEfetivaPct, 20);
+
+  // Golpe final por DISPARO_EXTERNO mata o animal aliado ainda a bordo e registra DESTRUICAO_BRUTA do monstro
+  const monstroMorto = resolverImpactoNoAlvo(monstroApos5s, {
+    tipo: 'DISPARO_ARMA',
+    danoCasco: 2,
+    danoSistema: 1,
+    salaAlvoId: 1,
+  });
+  assert.equal(monstroMorto.alvoCombate.hpCascoAtual, 0);
+  assert.equal(monstroMorto.naveJogador.tripulacao[0].hpAtual, 0, 'Explosão por disparo externo abate invasor aliado ainda a bordo');
+  const vitBrutaMonstro = avaliarCondicaoDeVitoria(monstroMorto);
+  assert.equal(vitBrutaMonstro.modalidade, 'DESTRUICAO_BRUTA');
+  assert.equal(vitBrutaMonstro.recompensa.biomassa, 15);
+  assert.equal(vitBrutaMonstro.recompensa.sucata, 0);
 });

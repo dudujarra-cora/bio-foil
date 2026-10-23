@@ -26,6 +26,7 @@ import {
   avancarTickChoqueEIsolamentoSala,
   avancarTickBiomaEColmeiaViva,
   converterMoedaDigestaoEnzimatica,
+  gerarEstoqueLojaForja,
 } from '../src/onda5-catalogo-chefe/catalogo-naves-itens.mjs';
 import {
   FASES_DRAGA_CONTINENTAL_55,
@@ -238,4 +239,80 @@ test('[PORTÃO 07.3 | N1 + N4 + MUT-O5-02..03] As 3 Fases da Draga Continental: 
   assert.equal(ttk.ttkMedianoSeg, 67.2);
   assert.equal(ttk.ttkEsperadoSeg, 74.2);
   assert.equal(ttk.ttkP90Seg, 100.8);
+
+  // 5. Cobertura completa de gerarEstoqueLojaForja, Digestão Enzimática (BIOMASSA -> SUCATA e erros),
+  // Biomas Setores 6/7 e Power Surges das Fases 1, 2 e 3 da Draga Continental
+  const estoqueForja = gerarEstoqueLojaForja('seed-forja-01', 2, 'NO_FORJA_1');
+  assert.ok(estoqueForja.armaOferta?.id);
+  assert.ok(estoqueForja.orgaoOferta?.id);
+  assert.ok(estoqueForja.tripulanteOfertaId.startsWith('TRIPULANTE_'));
+
+  const posDigestaoBio = converterMoedaDigestaoEnzimatica({ sucata: 10, biomassa: 10 }, 'BIOMASSA', 3);
+  assert.equal(posDigestaoBio.biomassa, 4);
+  assert.equal(posDigestaoBio.sucata, 13);
+  assert.throws(() => converterMoedaDigestaoEnzimatica({ sucata: 1, biomassa: 10 }, 'SUCATA', 1), /Sucata insuficiente/);
+  assert.throws(() => converterMoedaDigestaoEnzimatica({ sucata: 10, biomassa: 1 }, 'BIOMASSA', 1), /Biomassa insuficiente/);
+  assert.throws(() => converterMoedaDigestaoEnzimatica({ sucata: 10, biomassa: 10 }, 'OURO', 1), /Moeda desconhecida/);
+
+  // Bioma Setor 6 (Chuva Ácida a cada 15s em 1_NO_FOIL) e Setor 7 (Corrosão do Mastro após > 8s em Touchdown)
+  const estSetor6 = {
+    ...base,
+    mapaSetorial: { ...base.mapaSetorial, setorNumero: 6 },
+    naveJogador: { ...base.naveJogador, estadoFisico: '1_NO_FOIL', hpCascoAtual: 25 },
+  };
+  const aposChuvaAcida = avancarTickBiomaEColmeiaViva(estSetor6, 15.0);
+  assert.equal(aposChuvaAcida.naveJogador.hpCascoAtual, 24, 'Setor 6 causa -1 HP de Chuva Ácida a cada 15s no Foil');
+
+  const estSetor7 = {
+    ...base,
+    mapaSetorial: { ...base.mapaSetorial, setorNumero: 7 },
+    naveJogador: { ...base.naveJogador, estadoFisico: '2_TOUCHDOWN', tempoTouchdownContinuoSeg: 0 },
+  };
+  const aposCorrosaoMastro = avancarTickBiomaEColmeiaViva(estSetor7, 9.0);
+  assert.equal(
+    aposCorrosaoMastro.naveJogador.camaras.find((c) => c.id === 6).barrasIntegridade,
+    4,
+    'Setor 7 corrói 1 barra do Mastro (5 -> 4 na Couraça-Limiar) após > 8.0s contínuos em Touchdown'
+  );
+
+  // Power Surge Fase 1 (22s -> +50 kg arrasto por 6.0s e depois zera)
+  let surgeF1 = avancarTickChefeDraga(
+    { ...base, alvoCombate: criarEstadoChefeDraga(1) },
+    22.0
+  );
+  assert.equal(surgeF1.alvoCombate.ultimoPowerSurgeDisparado.tipo, 'ONDA_ARRASTO_HIDRAULICO');
+  assert.equal(surgeF1.naveJogador.pesoVirtualArrastoKg, 50);
+  surgeF1 = avancarTickChefeDraga(surgeF1, 6.0);
+  assert.equal(surgeF1.naveJogador.pesoVirtualArrastoKg, 0);
+
+  // Power Surge Fase 2 (20s -> 4 drones com Hangar intacto vs 2 drones com Hangar destruído)
+  const surgeF2Intacto = avancarTickChefeDraga(estadoFase2, 20.0);
+  assert.equal(surgeF2Intacto.alvoCombate.ultimoPowerSurgeDisparado.totalDrones, 4);
+  const estadoFase2SemHangar = {
+    ...estadoFase2,
+    alvoCombate: {
+      ...estadoFase2.alvoCombate,
+      tripulacaoInimiga: [{ id: 'op-1', hpAtual: 100 }],
+      salasOuOrgaos: estadoFase2.alvoCombate.salasOuOrgaos.map((s) =>
+        s.id === 4 ? { ...s, integridade: 0, integridadeAtual: 0 } : s
+      ),
+    },
+  };
+  const surgeF2Quebrado = avancarTickChefeDraga(estadoFase2SemHangar, 20.0);
+  assert.equal(surgeF2Quebrado.alvoCombate.ultimoPowerSurgeDisparado.totalDrones, 2);
+
+  // Power Surge Fase 3 (18s -> Fervura Oceânica por 5.0s causando dano em Touchdown) e erro ao transicionar além da Fase 3
+  let surgeF3 = avancarTickChefeDraga(
+    {
+      ...estadoFase3,
+      naveJogador: { ...estadoFase3.naveJogador, estadoFisico: '2_TOUCHDOWN', hpCascoAtual: 20 },
+    },
+    18.0
+  );
+  assert.equal(surgeF3.alvoCombate.ultimoPowerSurgeDisparado.tipo, 'FERVURA_OCEANICA_E_7_LASERS');
+  assert.equal(surgeF3.alvoCombate.fervuraAtivaSeg, 5.0);
+  surgeF3 = avancarTickChefeDraga(surgeF3, 2.0);
+  assert.equal(surgeF3.naveJogador.hpCascoAtual, 18, 'Fervura Oceânica causa -1 HP/s ao casco em Touchdown');
+  assert.equal(surgeF3.alvoCombate.fervuraAtivaSeg, 3.0);
+  assert.throws(() => transicionarFaseChefeDraga(estadoFase3), /última fase/);
 });
