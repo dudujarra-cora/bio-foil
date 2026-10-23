@@ -628,6 +628,54 @@
         "tests/01-portao-gdd.test.mjs"
       ],
       "falhaEsperada": "Exemplo de SOS Expirado (Captura Intacta Setor 1) na Seção 4.5.B diverge de floor(0.5 x 25) = 12 Sucata"
+    },
+    {
+      "id": "MUT-40",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L3",
+      "descricao": "ALTERNAR_VALVULA na Seção 8.5.A troca marcador BLOQUEADO_TRAVA_HIDROSTATICA por PRECONDICAO_NAO_ATENDIDA (quebra Junção N1 com a Matriz 6.2)",
+      "trocas": [
+        {
+          "buscar": "| `ALTERNAR_VALVULA` | `COMBATE` | `{ camaraId, aberta }` | Permitido **exclusivamente** em `estadoFisico === '1_NO_FOIL'` (Matriz 6.2 Células 2C e 3C) | `BLOQUEADO_TRAVA_HIDROSTATICA` |",
+          "substituir": "| `ALTERNAR_VALVULA` | `COMBATE` | `{ camaraId, aberta }` | Permitido **exclusivamente** em `estadoFisico === '1_NO_FOIL'` (Matriz 6.2 Células 2C e 3C) | `PRECONDICAO_NAO_ATENDIDA` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "ALTERNAR_VALVULA em Touchdown deve ser rejeitado com BLOQUEADO_TRAVA_HIDROSTATICA"
+    },
+    {
+      "id": "MUT-41",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L4",
+      "descricao": "MANTA_VOLT no profile.json (Seção 8.5.B) passa a iniciar desbloqueada (true em vez de false)",
+      "trocas": [
+        {
+          "buscar": "| `MANTA_VOLT` | **2. Manta-Volt** | `false` |",
+          "substituir": "| `MANTA_VOLT` | **2. Manta-Volt** | `true` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "No profile.json inicial, apenas CARCACA_ALFA deve começar desbloqueada (true)"
+    },
+    {
+      "id": "MUT-42",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L4",
+      "descricao": "CUE_ALARME_FERVURA_4S na Seção 8.5.C muda antecedência de 4.0s para 2.0s (quebra Junção N1 com a Fase 3 do Vol. 05 e Célula 3H do Vol. 06)",
+      "trocas": [
+        {
+          "buscar": "| `CUE_ALARME_FERVURA_4S` | `alvoCombate.alarmeFervuraAtivoSeg > 0` antes da Fervura na Fase 3 | Alarme antecedente de **$4.0\\text{s}$** (Fervura dura **$5.0\\text{s}$**) |",
+          "substituir": "| `CUE_ALARME_FERVURA_4S` | `alvoCombate.alarmeFervuraAtivoSeg > 0` antes da Fervura na Fase 3 | Alarme antecedente de **$2.0\\text{s}$** (Fervura dura **$5.0\\text{s}$**) |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "CUE_ALARME_FERVURA_4S na Seção 8.5.C diverge do alarme de 4.0s e duração de 5.0s da Fase 3 (Vol. 05 / Matriz 6.2)"
     }
   ]
 }

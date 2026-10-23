@@ -24,6 +24,9 @@ import {
   resolverEventoNoESaque,
   extrairSimulacaoVolume03,
   extrairContratoEstadoVolume08,
+  extrairComandosPersistenciaOnda6Volume08,
+  validarDespachoComando,
+  avaliarDesbloqueioCarcacas,
   extrairTripulacaoVolume01,
   extrairTopologiaOcupacaoBeamVolume01,
   calcularRotaMinimaCamaras,
@@ -1367,6 +1370,203 @@ test('Junção N1 + L4 + N4: audita o Catálogo Determinístico de Eventos (4.5.
       }),
     /BLOQUEADO_COMBATE_OBRIGATORIO/,
     'Tentar escolher Opção C num nó PERIGO deve lançar erro com BLOQUEADO_COMBATE_OBRIGATORIO'
+  );
+});
+
+test('Junção N1 + L4 + N4: audita o Action Schema (8.5.A), Persistência profile.json (8.5.B) e Target Visual/Sonoro da Onda 6 (8.5.C) contra Vols. 01, 02, 04, 05 e 06', () => {
+  const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const vol02 = normalizarTexto(cadeia.volumes[1].conteudo);
+  const vol05 = cadeia.volumes[4].conteudo;
+  const vol06 = cadeia.volumes[5].conteudo;
+  const vol08 = cadeia.volumes[7].conteudo;
+
+  const especOnda6 = extrairComandosPersistenciaOnda6Volume08(vol08);
+  const catalogoVol05 = extrairCatalogoVolume05(vol05);
+  const chefeBestiario = extrairChefeEBestiarioVolume05(vol05);
+  const { constantesSsot, celulasMatriz } = extrairSsotEMatrizDoVolume06(vol06);
+
+  console.log(
+    `[N4] Onda 6 / Action Schema Vol. 08 examinado: ${especOnda6.comandos.length} comandos atômicos, ${especOnda6.carcacasPerfil.length} carcaças no profile.json, ${especOnda6.cuesSonoros.length} cues sonoros, resolução nativa=${especOnda6.targetVisual.larguraNativaPx}x${especOnda6.targetVisual.alturaNativaPx}`
+  );
+
+  // 1. Auditoria da Tabela 8.5.A (14 Comandos Atômicos) e cruzamento com Matriz 6.2 (Trava Hidrostática) e Seção 4.5.A
+  const tiposEsperados = [
+    'ALOCAR_ENERGIA',
+    'MOVER_TRIPULANTE',
+    'MIRAR_ARMA',
+    'ALTERNAR_VALVULA',
+    'DRENAR_TUDO',
+    'ATIVAR_BAIACU',
+    'ATIVAR_PULSO_ENZIMAS',
+    'ATIVAR_TINTA_FURTIVA',
+    'LANCAR_ABORDAGEM',
+    'MERGULHO_TATICO',
+    'SALTO_FUGA',
+    'ESCOLHER_OPCAO_EVENTO',
+    'COMPRAR_OU_VENDER_LOJA',
+    'VIAJAR_NO_MAPA',
+  ];
+  assert.equal(
+    especOnda6.comandos.length,
+    14,
+    'Seção 8.5.A deve especificar exatamente os 14 comandos atômicos do Action Schema'
+  );
+  assert.deepEqual(
+    especOnda6.comandos.map((c) => c.tipo),
+    tiposEsperados,
+    'Lista de comandos atômicos na Seção 8.5.A diverge da lista canônica'
+  );
+
+  for (const c of especOnda6.comandos) {
+    assert.ok(c.fasesPermitidas.length > 0, `Comando ${c.tipo} sem fases permitidas`);
+    assert.ok(c.payloadObrigatorio.startsWith('{'), `Comando ${c.tipo} sem schema de payload`);
+    assert.ok(c.regraValidacao.length > 10, `Comando ${c.tipo} sem regra de validação explícita`);
+    assert.ok(c.marcadorRejeicao.length > 0, `Comando ${c.tipo} sem marcador de rejeição`);
+  }
+
+  // Cruzamento com a Matriz 6.2 (Célula 2C: Bloqueado pela Física em Touchdown)
+  const celula2C = normalizarTexto(
+    celulasMatriz.find((c) => c.evento.startsWith('C. Abrir Válvula') && c.estado === '2_TOUCHDOWN')?.regra ?? ''
+  );
+  assert.ok(celula2C.includes('BLOQUEADO PELA FÍSICA'), 'Célula 2C da Matriz 6.2 deve declarar BLOQUEADO PELA FÍSICA');
+
+  const cmdValvulaTouchdown = validarDespachoComando(
+    especOnda6,
+    { faseJogo: 'COMBATE', estadoFisico: '2_TOUCHDOWN' },
+    { tipo: 'ALTERNAR_VALVULA', payload: { camaraId: 5, aberta: true } }
+  );
+  assert.equal(cmdValvulaTouchdown.aceito, false);
+  assert.equal(cmdValvulaTouchdown.estadoInalterado, true);
+  assert.equal(
+    cmdValvulaTouchdown.marcadorRejeicao,
+    'BLOQUEADO_TRAVA_HIDROSTATICA',
+    'ALTERNAR_VALVULA em Touchdown deve ser rejeitado com BLOQUEADO_TRAVA_HIDROSTATICA'
+  );
+  assert.equal(cmdValvulaTouchdown.cueEmitido, 'CUE_TRAVA_HIDROSTATICA');
+
+  const cmdDrenarSpoolUp = validarDespachoComando(
+    especOnda6,
+    { faseJogo: 'COMBATE', estadoFisico: '3_SPOOL_UP' },
+    { tipo: 'DRENAR_TUDO', payload: { abrirTodas: true } }
+  );
+  assert.equal(cmdDrenarSpoolUp.aceito, false);
+  assert.equal(cmdDrenarSpoolUp.marcadorRejeicao, 'BLOQUEADO_TRAVA_HIDROSTATICA');
+
+  const cmdLojaEmCombate = validarDespachoComando(
+    especOnda6,
+    { faseJogo: 'COMBATE', estadoFisico: '1_NO_FOIL' },
+    { tipo: 'COMPRAR_OU_VENDER_LOJA', payload: { operacao: 'ENXERTAR_ORGAO', itemOuSistemaId: 'GLANDULA_BAIACU' } }
+  );
+  assert.equal(cmdLojaEmCombate.aceito, false);
+  assert.equal(
+    cmdLojaEmCombate.marcadorRejeicao,
+    'REJEITADO_FASE_INVALIDA',
+    'Enxertar órgão ou operar loja durante COMBATE deve retornar REJEITADO_FASE_INVALIDA (Seção 5.2)'
+  );
+
+  const cmdMergulhoFoil = validarDespachoComando(
+    especOnda6,
+    { faseJogo: 'COMBATE', estadoFisico: '1_NO_FOIL' },
+    { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: true } }
+  );
+  assert.equal(cmdMergulhoFoil.aceito, true);
+  assert.equal(cmdMergulhoFoil.cueEmitido, 'CUE_ESTOL_TOUCHDOWN');
+
+  // 2. Auditoria da Persistência profile.json (8.5.B) contra as 5 Naves Desbloqueáveis da Seção 5.4 (Vol. 05)
+  assert.equal(
+    especOnda6.carcacasPerfil.length,
+    catalogoVol05.naves.length,
+    'Seção 8.5.B deve registrar exatamente as 5 carcaças desbloqueáveis da Seção 5.4 (Vol. 05)'
+  );
+  especOnda6.carcacasPerfil.forEach((cPerfil, idx) => {
+    const naveVol05 = catalogoVol05.naves[idx];
+    assert.equal(
+      cPerfil.nomeCanonico,
+      normalizarTexto(naveVol05.nome),
+      `Nome da carcaça ${idx + 1} na Seção 8.5.B diverge da Seção 5.4 (Vol. 05)`
+    );
+  });
+
+  const desbloqueioInicial = avaliarDesbloqueioCarcacas(especOnda6, {});
+  assert.deepEqual(
+    desbloqueioInicial,
+    {
+      CARCACA_ALFA: true,
+      MANTA_VOLT: false,
+      COURACA_LIMIAR: false,
+      SOMBRA_ABISSAL: false,
+      COLMEIA_VIVA: false,
+    },
+    'No profile.json inicial, apenas CARCACA_ALFA deve começar desbloqueada (true)'
+  );
+
+  const desbloqueioCompleto = avaliarDesbloqueioCarcacas(especOnda6, {
+    setorNumero: 4,
+    vitoriaCombate: true,
+    danoCascoCausadoAoInimigoNestaLuta: 0,
+    barcosCapturadosIntactosNestaRun: 5,
+    orgaosIntactosExtraidosNestaRun: 4,
+    setorNumeroAlcanceMaxNestaRun: 8,
+  });
+  assert.deepEqual(desbloqueioCompleto, {
+    CARCACA_ALFA: true,
+    MANTA_VOLT: true,
+    COURACA_LIMIAR: true,
+    SOMBRA_ABISSAL: true,
+    COLMEIA_VIVA: true,
+  });
+
+  // 3. Auditoria do Target Visual 960x540 -> 1920x1080 e dos 8 Cues Sonoros Táticos (8.5.C) contra Vols. 02, 05 e 06
+  const tv = especOnda6.targetVisual;
+  assert.equal(tv.larguraNativaPx, 960, 'Largura lógica nativa da Onda 6 deve ser 960 px');
+  assert.equal(tv.alturaNativaPx, 540, 'Altura lógica nativa da Onda 6 deve ser 540 px');
+  assert.equal(tv.fatorUpscaleFullHd, 2, 'Fator de upscale inteiro para Full HD deve ser 2x');
+  assert.equal(tv.larguraNativaPx * tv.fatorUpscaleFullHd, tv.larguraFullHdPx, '960 x 2 deve fechar em 1920 px');
+  assert.equal(tv.alturaNativaPx * tv.fatorUpscaleFullHd, tv.alturaFullHdPx, '540 x 2 deve fechar em 1080 px');
+  assert.equal(tv.larguraCamaraPx, 100, 'Largura interna da câmara na Seção 8.5.C deve bater com os 100 px da Seção 2.2.3');
+  assert.equal(tv.alturaCamaraPx, 70, 'Altura interna da câmara na Seção 8.5.C deve bater com os 70 px da Seção 2.2.3');
+  assert.ok(
+    vol02.includes(`${tv.larguraCamaraPx}x ${tv.alturaCamaraPx} pixels`),
+    'Dimensão da câmara na Seção 8.5.C diverge da Seção 2.2.3 (Vol. 02)'
+  );
+  assert.equal(
+    tv.deslocamentoTouchdownNativoPx * tv.fatorUpscaleFullHd,
+    tv.deslocamentoTouchdown1080pPx,
+    'Deslocamento vertical em Touchdown (+60 px nativo x 2) deve fechar em +120 px em 1080p'
+  );
+  assert.ok(
+    vol02.includes(`cai fisicamente ${tv.deslocamentoTouchdown1080pPx} pixels para baixo`),
+    'Deslocamento em Touchdown na Seção 8.5.C diverge dos 120 pixels da Seção 2.2.2 (Vol. 02)'
+  );
+  assert.equal(tv.filtroSubaquaticoHz, 400, 'Filtro passa-baixa subaquático em Touchdown deve ser de 400 Hz');
+
+  assert.equal(especOnda6.cuesSonoros.length, 8, 'Seção 8.5.C deve declarar os 8 cues sonoros táticos obrigatórios');
+  const cueFervura = especOnda6.cuesSonoros.find((c) => c.id === 'CUE_ALARME_FERVURA_4S');
+  assert.ok(cueFervura, 'CUE_ALARME_FERVURA_4S deve existir na Tabela 8.5.C');
+  assert.ok(
+    cueFervura.parametroAcustico.includes(`${chefeBestiario.surgeFase3AlarmeFervuraSeg}.0s`) &&
+      cueFervura.parametroAcustico.includes(`${chefeBestiario.surgeFase3DuracaoFervuraSeg}.0s`),
+    'CUE_ALARME_FERVURA_4S na Seção 8.5.C diverge do alarme de 4.0s e duração de 5.0s da Fase 3 (Vol. 05 / Matriz 6.2)'
+  );
+
+  const cueSpool = especOnda6.cuesSonoros.find((c) => c.id === 'CUE_SPOOL_UP_DECOLAGEM');
+  const tempoSpoolSsot = normalizarTexto(constantesSsot.TEMPO_SPOOL_UP.valorBruto).match(/(\d+(?:\.\d+)?)/)?.[1];
+  assert.ok(
+    cueSpool && cueSpool.parametroAcustico.includes(`${tempoSpoolSsot}s`),
+    'CUE_SPOOL_UP_DECOLAGEM na Seção 8.5.C diverge de TEMPO_SPOOL_UP (3.0s) da Tabela 6.1 (Vol. 06)'
+  );
+
+  const cueCavitacao = especOnda6.cuesSonoros.find((c) => c.id === 'CUE_CAVITACAO_SIFAO');
+  const reservaMinSsot = normalizarTexto(constantesSsot.RESERVA_MIN_SIFAO.valorBruto).match(/(\d+(?:\.\d+)?)/)?.[1];
+  assert.ok(
+    cueCavitacao && cueCavitacao.gatilho.includes(`${reservaMinSsot} kg`),
+    'CUE_CAVITACAO_SIFAO na Seção 8.5.C diverge de RESERVA_MIN_SIFAO (62.5 kg) da Tabela 6.1 (Vol. 06)'
+  );
+
+  assert.equal(
+    especOnda6.temItem3ContraAuditoria8,
+    true,
+    'Contra-Auditoria #8 do Vol. 08 deve conter o Item 3 (validação pura de cliques de UI e separação run_save.json vs profile.json)'
   );
 });
 

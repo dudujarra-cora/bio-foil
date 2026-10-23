@@ -1359,6 +1359,7 @@ export function extrairContratoEstadoVolume08(conteudoVol08) {
     if (linha.startsWith('## 8.2.')) secao = '8.2';
     else if (linha.startsWith('## 8.3.')) secao = '8.3';
     else if (linha.startsWith('## 8.4.')) secao = '8.4';
+    else if (linha.startsWith('## 8.5.')) secao = '8.5';
     else if (linha.startsWith('# CONTRA-AUDITORIA')) secao = 'AUDITORIA';
 
     if (secao === '8.2' && linha.startsWith('| ') && !linha.startsWith('| Situação') && !linha.startsWith('| :---')) {
@@ -1385,6 +1386,219 @@ export function extrairContratoEstadoVolume08(conteudoVol08) {
     linhasTabelaL3,
     juncoesN1,
   });
+}
+
+/**
+ * Extrai e audita a Seção 8.5 do Volume 08:
+ *  - 8.5.A: Catálogo Fechado dos 14 Comandos Atômicos (Action Schema);
+ *  - 8.5.B: Contrato de Persistência (profile.json vs run_save.json) e Desbloqueio das 5 Carcaças;
+ *  - 8.5.C: Target Visual Pixel-Perfect (960x540 -> 1920x1080) e 8 Cues Sonoros Táticos da Onda 6.
+ * Valor ausente vira null/NaN (L3).
+ */
+export function extrairComandosPersistenciaOnda6Volume08(conteudoVol08) {
+  const secao85 = conteudoVol08.split('## 8.5.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const subA = secao85.split('### A.')[1]?.split('### B.')[0] ?? '';
+  const subB = secao85.split('### B.')[1]?.split('### C.')[0] ?? '';
+  const subC = secao85.split('### C.')[1] ?? '';
+  const subCNorm = normalizarTexto(subC);
+
+  const comandos = [];
+  for (const linha of subA.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID do Comando') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 5) {
+        comandos.push({
+          tipo: cols[0].replace(/`/g, '').trim(),
+          fasesPermitidas: cols[1]
+            .replace(/`/g, '')
+            .split(',')
+            .map((f) => f.trim())
+            .filter(Boolean),
+          payloadObrigatorio: cols[2].replace(/`/g, '').trim(),
+          regraValidacao: normalizarTexto(cols[3]),
+          marcadorRejeicao: cols[4].replace(/`/g, '').trim(),
+        });
+      }
+    }
+  }
+
+  const carcacasPerfil = [];
+  for (const linha of subB.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID da Carcaça') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 4) {
+        const estadoIniStr = cols[2].replace(/`/g, '').trim();
+        carcacasPerfil.push({
+          idArquitetura: cols[0].replace(/`/g, '').trim(),
+          nomeCanonico: normalizarTexto(cols[1]),
+          estadoInicialDesbloqueado:
+            estadoIniStr === 'true' ? true : estadoIniStr === 'false' ? false : null,
+          predicadoTexto: normalizarTexto(cols[3]),
+        });
+      }
+    }
+  }
+
+  const matchResNativa = subCNorm.match(/Resolu[cç][aã]o L[oó]gica Nativa\s*\(16:9\):\s*(\d+)\s*x\s*(\d+)\s*pixels/i);
+  const matchUpscale2x = subCNorm.match(/fator inteiro\s*(\d+)x\s*para\s*(\d+)\s*x\s*(\d+)\s*pixels/i);
+  const matchCamaraPx = subCNorm.match(/8 c[aâ]maras tem [aá]rea [uú]til interna de\s*(\d+)\s*x\s*(\d+)\s*pixels/i);
+  const matchQuedaPx = subCNorm.match(
+    /desloca a nave verticalmente em\s*\+(\d+)\s*px nativos\s*\(\+(\d+)\s*pixels\s+na tela\s*1920\s*x\s*1080/i
+  );
+  const matchPassaBaixaHz = subCNorm.match(/passa-baixa subaqu[aá]tico em\s*(\d+)\s*Hz/i);
+
+  const targetVisual = {
+    larguraNativaPx: matchResNativa ? Number(matchResNativa[1]) : NaN,
+    alturaNativaPx: matchResNativa ? Number(matchResNativa[2]) : NaN,
+    fatorUpscaleFullHd: matchUpscale2x ? Number(matchUpscale2x[1]) : NaN,
+    larguraFullHdPx: matchUpscale2x ? Number(matchUpscale2x[2]) : NaN,
+    alturaFullHdPx: matchUpscale2x ? Number(matchUpscale2x[3]) : NaN,
+    larguraCamaraPx: matchCamaraPx ? Number(matchCamaraPx[1]) : NaN,
+    alturaCamaraPx: matchCamaraPx ? Number(matchCamaraPx[2]) : NaN,
+    deslocamentoTouchdownNativoPx: matchQuedaPx ? Number(matchQuedaPx[1]) : NaN,
+    deslocamentoTouchdown1080pPx: matchQuedaPx ? Number(matchQuedaPx[2]) : NaN,
+    filtroSubaquaticoHz: matchPassaBaixaHz ? Number(matchPassaBaixaHz[1]) : NaN,
+  };
+
+  const cuesSonoros = [];
+  for (const linha of subC.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID do Cue') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 4) {
+        cuesSonoros.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          gatilho: normalizarTexto(cols[1]),
+          parametroAcustico: normalizarTexto(cols[2]),
+          cruzamentoGdd: normalizarTexto(cols[3]),
+        });
+      }
+    }
+  }
+
+  const secaoContra8 = conteudoVol08.split('# CONTRA-AUDITORIA #8')[1] ?? '';
+  const temItem3ContraAuditoria8 =
+    /3\.\s+\*\*Existe risco da UI mutar o `GameState` em cliques inválidos ou de \*Save Scumming\* corromper o meta-progresso \(`profile\.json`\)\?\*\*/.test(
+      secaoContra8
+    );
+
+  return clonarProfundoCongelado({
+    comandos,
+    carcacasPerfil,
+    targetVisual,
+    cuesSonoros,
+    temItem3ContraAuditoria8,
+  });
+}
+
+/**
+ * Validador puro de despacho de comando da UI para o motor (Seção 8.5.A + 8.5.C).
+ */
+export function validarDespachoComando(especVol08, contextoEstado, comando) {
+  const def = especVol08.comandos.find((c) => c.tipo === comando?.tipo);
+  if (!def) {
+    throw new Error(`[ACTION SCHEMA FALHOU] Comando desconhecido fora da Seção 8.5.A: "${comando?.tipo}"`);
+  }
+
+  if (!def.fasesPermitidas.includes(contextoEstado.faseJogo)) {
+    return clonarProfundoCongelado({
+      aceito: false,
+      estadoInalterado: true,
+      marcadorRejeicao: 'REJEITADO_FASE_INVALIDA',
+      cueEmitido: null,
+    });
+  }
+
+  if (
+    (comando.tipo === 'ALTERNAR_VALVULA' || comando.tipo === 'DRENAR_TUDO') &&
+    contextoEstado.estadoFisico !== '1_NO_FOIL'
+  ) {
+    return clonarProfundoCongelado({
+      aceito: false,
+      estadoInalterado: true,
+      marcadorRejeicao: def.marcadorRejeicao,
+      cueEmitido: 'CUE_TRAVA_HIDROSTATICA',
+    });
+  }
+
+  if (comando.tipo === 'LANCAR_ABORDAGEM' && (contextoEstado.blindagemTermicaExternaPts ?? 0) > 0) {
+    return clonarProfundoCongelado({
+      aceito: false,
+      estadoInalterado: true,
+      marcadorRejeicao: def.marcadorRejeicao,
+      cueEmitido: null,
+    });
+  }
+
+  if (
+    comando.tipo === 'ESCOLHER_OPCAO_EVENTO' &&
+    comando.payload?.opcao === 'C' &&
+    contextoEstado.categoriaEvento === 'PERIGO'
+  ) {
+    return clonarProfundoCongelado({
+      aceito: false,
+      estadoInalterado: true,
+      marcadorRejeicao: def.marcadorRejeicao,
+      cueEmitido: null,
+    });
+  }
+
+  return clonarProfundoCongelado({
+    aceito: true,
+    estadoInalterado: false,
+    marcadorRejeicao: null,
+    cueEmitido:
+      comando.tipo === 'MERGULHO_TATICO' && comando.payload?.recolherFoil === true
+        ? 'CUE_ESTOL_TOUCHDOWN'
+        : null,
+  });
+}
+
+/**
+ * Avaliador puro de desbloqueio de carcaças no profile.json (Seção 8.5.B vs Seção 5.4).
+ */
+export function avaliarDesbloqueioCarcacas(
+  especVol08,
+  {
+    setorNumero = 1,
+    vitoriaCombate = false,
+    danoCascoCausadoAoInimigoNestaLuta = 0,
+    barcosCapturadosIntactosNestaRun = 0,
+    orgaosIntactosExtraidosNestaRun = 0,
+    setorNumeroAlcanceMaxNestaRun = 1,
+  } = {}
+) {
+  const mapa = {};
+  for (const c of especVol08.carcacasPerfil) {
+    if (c.idArquitetura === 'CARCACA_ALFA') {
+      mapa[c.idArquitetura] = c.estadoInicialDesbloqueado === true;
+    } else if (c.idArquitetura === 'MANTA_VOLT') {
+      mapa[c.idArquitetura] =
+        c.estadoInicialDesbloqueado === true ||
+        (setorNumero >= 4 && vitoriaCombate === true && danoCascoCausadoAoInimigoNestaLuta === 0);
+    } else if (c.idArquitetura === 'COURACA_LIMIAR') {
+      mapa[c.idArquitetura] =
+        c.estadoInicialDesbloqueado === true || barcosCapturadosIntactosNestaRun >= 5;
+    } else if (c.idArquitetura === 'SOMBRA_ABISSAL') {
+      mapa[c.idArquitetura] =
+        c.estadoInicialDesbloqueado === true || orgaosIntactosExtraidosNestaRun >= 4;
+    } else if (c.idArquitetura === 'COLMEIA_VIVA') {
+      mapa[c.idArquitetura] =
+        c.estadoInicialDesbloqueado === true || setorNumeroAlcanceMaxNestaRun >= 8;
+    }
+  }
+  return clonarProfundoCongelado(mapa);
 }
 
 /**

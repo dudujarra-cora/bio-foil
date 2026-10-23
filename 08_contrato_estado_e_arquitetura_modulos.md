@@ -219,6 +219,64 @@ Nenhum módulo conversa por efeito colateral; todas as junções (`N1`) usam con
 
 ---
 
+## 8.5. Catálogo Fechado de Comandos (`Action Schema`), Persistência (`profile.json`) e Target da Onda 6 (`UI/Áudio`)
+
+Para que a função pura $\text{Transição}(\text{EstadoAnterior Congelado}, \text{Comando}, \Delta t)$ e o `src/onda6-ui/presenter-wireframe.mjs` operem sem ambiguidade, ficam travados abaixo: (A) o esquema fechado dos **14 comandos atômicos**, (B) a estrutura de persistência de meta-progresso (`profile.json`) vs. estado da *run* (`run_save.json`), e (C) o target de resolução pixel-perfect ($960\times 540 \xrightarrow{2\times} 1920\times 1080$) e os **8 *cues* sonoros táticos obrigatórios**.
+
+### A. Catálogo Fechado dos 14 Comandos Atômicos (`Action Schema`)
+
+* **Regra de Rejeição Pura (Imutabilidade `L2`):** Se um comando violar sua pré-condição de fase ou física, a transição devolve o mesmo `GameState` sem mutação e anexa ao `logDeterministico` o marcador explícito de rejeição (`REJEITADO_FASE_INVALIDA`, `BLOQUEADO_TRAVA_HIDROSTATICA`, `BLOQUEADO_COMBATE_OBRIGATORIO` ou `PRECONDICAO_NAO_ATENDIDA`).
+
+| ID do Comando (`tipo`) | Fase(s) Permitida(s) | Payload Obrigatório | Pré-Condição / Regra de Validação no Motor | Marcador de Rejeição Principal |
+| :--- | :---: | :--- | :--- | :--- |
+| `ALOCAR_ENERGIA` | `COMBATE, MAPA, EVENTO, LOJA` | `{ camaraId, deltaBarras }` | `deltaBarras` $\in \{+1, -1\}$, $0 \le \text{energiaAlocada} \le \text{integridade} - \text{ion}$ e `reator.barrasDisponiveis >= 0` | `PRECONDICAO_NAO_ATENDIDA` |
+| `MOVER_TRIPULANTE` | `COMBATE, MAPA, EVENTO, LOJA` | `{ tripulanteId, camaraDestinoId }` | `localizacao === 'NAVE_JOGADOR'`, `!inflado` e lotação da câmara destino $< 2\text{ aliados}$ (Seção 1.6.B) | `PRECONDICAO_NAO_ATENDIDA` |
+| `MIRAR_ARMA` | `COMBATE` | `{ slotIndex, salaAlvoId, trincaSalasBeam }` | Arma energizada; *Beam* exige 3 salas ortogonais distintas (Seção 1.6.C); Torpedo exige sala submersa (Seção 5.1) | `PRECONDICAO_NAO_ATENDIDA` |
+| `ALTERNAR_VALVULA` | `COMBATE` | `{ camaraId, aberta }` | Permitido **exclusivamente** em `estadoFisico === '1_NO_FOIL'` (Matriz 6.2 Células 2C e 3C) | `BLOQUEADO_TRAVA_HIDROSTATICA` |
+| `DRENAR_TUDO` | `COMBATE` | `{ abrirTodas }` | Atalho tecla `[V]` (Seção 2.2); permitido **exclusivamente** em `estadoFisico === '1_NO_FOIL'` (Matriz 6.2) | `BLOQUEADO_TRAVA_HIDROSTATICA` |
+| `ATIVAR_BAIACU` | `COMBATE` | `{ tripulanteId, inflado }` | `especie === 'BAIACU'`; veda $100\%$ de rombo na sala, velocidade $= 0$ e reflete $50\%$ DPS (Seções 1.5 e 1.6.B) | `PRECONDICAO_NAO_ATENDIDA` |
+| `ATIVAR_PULSO_ENZIMAS` | `COMBATE` | `{ camaraId: 3 }` | Bomba Branquial $\ge 1\text{ barra}$ e `recargaPulsoEnzimasSeg === 0` ($+8\text{ HP/s}$ por $6\text{s}$, recarga $25\text{s}$) | `PRECONDICAO_NAO_ATENDIDA` |
+| `ATIVAR_TINTA_FURTIVA` | `COMBATE` | `{ camaraId: 8 }` | Glândula de Tinta $\ge 1\text{ barra}$ e `recargaFurtividadeSeg === 0` ($+60\%$ esquiva por $5\text{s}/8\text{s}$, recarga $20\text{s}$) | `PRECONDICAO_NAO_ATENDIDA` |
+| `LANCAR_ABORDAGEM` | `COMBATE` | `{ tripulantesIds, salaAlvoId }` | Tubo Pressurizado $\ge 1\text{ barra}$, $1..2\text{ aliados}$ na Câmara 7 e `blindagemTermicaExternaPts === 0` (Seção 5.5) | `PRECONDICAO_NAO_ATENDIDA` |
+| `MERGULHO_TATICO` | `COMBATE` | `{ recolherFoil }` | Em `1_NO_FOIL`, força `2_TOUCHDOWN` voluntário ($S_{\text{atual}} = 0$); ao desativar, inicia `3_SPOOL_UP` ($3.0\text{s}$) | `REJEITADO_FASE_INVALIDA` |
+| `SALTO_FUGA` | `COMBATE` | `{ idNoDestino }` | `progressoFugaSeg >= 20.0`, Córtex $\ge 1\text{ barra}$, Sifão $\ge 1\text{ barra}$ e `combustivel >= 1` (Matriz 6.2 Linha G) | `PRECONDICAO_NAO_ATENDIDA` |
+| `ESCOLHER_OPCAO_EVENTO` | `EVENTO` | `{ idEvento, opcao }` | `opcao` $\in \{\text{'A'}, \text{'B'}, \text{'C'}\}$; `'B'` exige *Blue Option*; `'C'` proibida em nó `PERIGO` (Seção 4.5.A) | `BLOQUEADO_COMBATE_OBRIGATORIO` |
+| `COMPRAR_OU_VENDER_LOJA` | `LOJA, MAPA` | `{ operacao, itemOuSistemaId, moeda }` | Respeita preços/venda ($50\%\text{ floor}$) da Seção 5.6; enxerto de órgãos proibido em `COMBATE` (Seção 5.2) | `REJEITADO_FASE_INVALIDA` |
+| `VIAJAR_NO_MAPA` | `MAPA` | `{ idNoDestino, descartarCargaIds }` | Fecha válvulas, nivela $8 \times 12.5\text{ kg} = 100.0\text{ kg}$ de água; aplica Modo Deriva ($2.0\times\text{h}$, $5.0\text{s}$ frio) se $0\text{ Comb.}$ | `PRECONDICAO_NAO_ATENDIDA` |
+
+### B. Persistência: Meta-Progresso (`profile.json`) vs. Estado da Run (`run_save.json`)
+
+* **`run_save.json` (*Permadeath* / Run Atual):** Serialização direta e determinística do `GameState` da Seção 8.1. Gravado a cada transição de nó ou saída para o menu; **apagado permanentemente** se `naveJogador.hpCascoAtual <= 0` ou se todos os tripulantes aliados morrerem ($0\text{ sobreviventes}$).
+* **`profile.json` (Meta-Progresso Imune ao *Permadeath*):** Arquivo separado que armazena as estatísticas globais e o registro booleano das **5 Carcaças Desbloqueáveis da Seção 5.4**, avaliado por predicados puros ao fim de cada combate/transição de setor:
+
+| ID da Carcaça (`idArquitetura`) | Nome Canônico (Seção 5.4) | Estado Inicial no `profile.json` | Predicado Puro de Desbloqueio (Cruzamento `N1` com a Seção 5.4) |
+| :--- | :--- | :---: | :--- |
+| `CARCACA_ALFA` | **1. Carcaça Alfa** | `true` | `sempreDesbloqueada === true` (Disponível desde o início) |
+| `MANTA_VOLT` | **2. Manta-Volt** | `false` | `setorNumero >= 4 && vitoriaCombate === true && danoCascoCausadoAoInimigoNestaLuta === 0` |
+| `COURACA_LIMIAR` | **3. Couraça-Limiar** | `false` | `barcosCapturadosIntactosNestaRun >= 5` |
+| `SOMBRA_ABISSAL` | **4. Sombra-Abissal** | `false` | `orgaosIntactosExtraidosNestaRun >= 4` |
+| `COLMEIA_VIVA` | **5. Colmeia-Viva** | `false` | `setorNumeroAlcanceMaxNestaRun >= 8` |
+
+### C. Empacotamento Visual Pixel-Perfect ($960\times 540 \xrightarrow{2\times} 1920\times 1080$) e 8 Cues Sonoros Táticos da Onda 6
+
+1. **Target Visual e Geometria do Framebuffer (`src/onda6-ui/presenter-wireframe.mjs`):**
+   * **Resolução Lógica Nativa ($16:9$):** **$960\times 540\text{ pixels}$** (*pixel art hi-bit* com `image-rendering: pixelated`), escalada por **fator inteiro $2\times$ para $1920\times 1080\text{ pixels}$** (Full HD) e $4\times$ para $3840\times 2160\text{ pixels}$ (4K), garantindo zero distorção de subpixel nos frames F1 a F5.
+   * **Dimensões Internas Cravadas com a Seção 2.2:** Cada uma das 8 câmaras tem área útil interna de **$100\times 70\text{ pixels}$**, e a queda de `1_NO_FOIL` para `2_TOUCHDOWN` desloca a nave verticalmente em **$+60\text{ px}$ nativos** (**$+120\text{ pixels}$** na tela $1920\times 1080$, conforme Seção 2.2.2) e aplica um filtro de áudio passa-baixa subaquático em **$400\text{ Hz}$**.
+2. **Tabela dos 8 Cues Sonoros Táticos Obrigatórios (Leitura Cega de Sobrevivência):**
+
+| ID do Cue Sonoro | Gatilho Determinístico no `GameState` | Parâmetro Temporal / Acústico Canônico | Cruzamento GDD (`N1`) |
+| :--- | :--- | :---: | :--- |
+| `CUE_ESTOL_TOUCHDOWN` | Transição `1_NO_FOIL` $\rightarrow$ `2_TOUCHDOWN` ($P_{\text{total}} > S_{\text{atual}}$ ou `MERGULHO_TATICO`) | Deslocamento $+120\text{ px}$ (1080p) + passa-baixa $400\text{ Hz}$ | Seção 2.2 (Itens 1 e 2) |
+| `CUE_SPOOL_UP_DECOLAGEM` | Estado `3_SPOOL_UP` ativo (`progressoSpoolUpSeg > 0`) até decolar | Ramp-up contínuo de $3.0\text{s}$ ($5.0\text{s}$ pós-Deriva) | Tabela 6.1 (`TEMPO_SPOOL_UP`) |
+| `CUE_ALARME_FERVURA_4S` | `alvoCombate.alarmeFervuraAtivoSeg > 0` antes da Fervura na Fase 3 | Alarme antecedente de **$4.0\text{s}$** (Fervura dura **$5.0\text{s}$**) | Matriz 6.2 (Célula 3H) e Seção 5.5 |
+| `CUE_CURTO_CIRCUITO_AGUA` | Qualquer câmara com `curtoCircuitoAtivo === true` | Cessa após **$3.0\text{s}$** contínuos a $0.0\text{ kg}$ de água | Seção 1.4 e Seção 2.2.3 |
+| `CUE_CAVITACAO_SIFAO` | Soma de `aguaKg` das 8 câmaras $< 62.5\text{ kg}$ | Alerta de perda de $-2.0\text{ kg}$ de sustentação por kg | Tabela 6.1 (`RESERVA_MIN_SIFAO`) |
+| `CUE_HIPOXIA_CRITICA` | Qualquer câmara ocupada com `oxigenioPct < 20.0` | Alerta antes da asfixia de $-10\text{ HP/s}$ em $0\%\text{ O}_2$ | Seção 1.4 e Seção 2.2.3 |
+| `CUE_TRAVA_HIDROSTATICA` | Comando `ALTERNAR_VALVULA` ou `DRENAR_TUDO` rejeitado no mar | Disparo imediato ($0.0\text{s}$) ao retornar `BLOQUEADO_TRAVA_HIDROSTATICA` | Matriz 6.2 (Células 2C e 3C) |
+| `CUE_POWER_SURGE_CHEFE` | Disparo de *Power Surge* da Draga Continental | Ciclos de **$22\text{s}$** (Fase 1), **$20\text{s}$** (Fase 2) e **$18\text{s}$** (Fase 3) | Seção 5.5 (Fases 1, 2 e 3) |
+
+---
+
 # CONTRA-AUDITORIA #8 (Auditoria do Contrato de Estado e Arquitetura)
 
 1. **Existe algum timer ou regra das Contra-Auditorias #1 a #6 que ficou sem campo explícito no `GameState`?**
@@ -234,3 +292,8 @@ Nenhum módulo conversa por efeito colateral; todas as junções (`N1`) usam con
 2. **Existe risco de duas Ondas disputarem o mesmo arquivo (`Lei N5`)?**
    * *Verificação:* Cada Onda (`onda1-fisica` até `onda6-ui`) escreve em sua própria subpasta em `src/` e em seu próprio arquivo de teste numerado em `tests/03..08`.
    * *Resultado:* **Zero conflito de arquivos entre frentes.**
+3. **Existe risco da UI mutar o `GameState` em cliques inválidos ou de *Save Scumming* corromper o meta-progresso (`profile.json`)?**
+   * *Verificação:*
+     * Qualquer clique proibido pela física (como abrir válvulas em `2_TOUCHDOWN` / `3_SPOOL_UP` ou enxertar órgãos em `COMBATE`) é interceptado pela tabela da Seção 8.5.A antes de alterar o estado, emitindo apenas o marcador de rejeição e o `CUE_TRAVA_HIDROSTATICA`.
+     * A separação física entre `run_save.json` (run efêmera com *permadeath*) e `profile.json` (meta-progresso avaliado por predicados puros na Seção 8.5.B) garante que a morte do jogador apague a run sem jamais perder carcaças desbloqueadas.
+   * *Resultado:* **Zero mutação ilegal de UI e zero corrupção entre *permadeath* e meta-progresso.**
