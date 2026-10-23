@@ -285,7 +285,7 @@ export function gerarMapaSetorial(
   );
   const loja2 =
     candidatosLoja.find((n) => n.id !== loja1.id && !adjacentesLoja1.has(n.id)) ??
-    candidatosLoja.find((n) => n.id !== loja1.id);
+    candidatosLoja[1];
 
   const idsLojas = new Set([loja1.id, loja2.id]);
   const restantesInternos = embaralharDeterministico(

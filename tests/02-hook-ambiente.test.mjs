@@ -6,6 +6,19 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { CADEIA_CANONICA_ONDAS_SRC, CADEIA_CANONICA_SRC, verificarCadeiaTestesEMutacoes } from '../src/gdd-parser.mjs';
+import {
+  CATALOGO_FERRAMENTAS_MCP,
+  CATALOGO_PROMPTS_MCP,
+  CATALOGO_RECURSOS_MCP,
+  auditarAmbienteN5Secao5,
+  avaliarPoliticaAgenteMcp,
+  criarServidorHttpMcp,
+  inspecionarAlvoL3Mcp,
+  inspecionarCodigo14Leis,
+  invocarFerramentaMcp,
+  processarMensagemJsonRpc,
+} from '../scripts/mcp-testes-agentes.mjs';
+import { criarEstadoInicialPartida, congelarProfundo } from '../src/onda1-fisica/estado-inicial.mjs';
 
 const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -224,4 +237,251 @@ test('Seção 5 + L5 + N3 + N4: hooks contêm o unset no topo; tripwires de 6 á
   console.log(
     `[N4] Hooks examinados: ${hooksVerificados.length}, suítes de teste: ${auditoria.totalTestesExaminados}, portões: ${auditoria.totalPortoesExaminados} (${auditoria.totalPortoesObrigatorios} obrigatórios), mutações registradas: ${auditoria.totalMutacoesExaminadas}`
   );
+});
+
+test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos, 2 prompts, stdio real e HTTP c/ DNS Rebinding', async () => {
+  console.log(
+    `[N4] MCP Testes de Agentes examinado: ${CATALOGO_FERRAMENTAS_MCP.length} ferramentas, ${CATALOGO_RECURSOS_MCP.length} recursos, ${CATALOGO_PROMPTS_MCP.length} prompts`
+  );
+  assert.equal(CATALOGO_FERRAMENTAS_MCP.length, 8, 'O servidor MCP deve expor exatamente 8 ferramentas agent_test_*');
+  assert.equal(CATALOGO_RECURSOS_MCP.length, 3, 'O servidor MCP deve expor os 3 recursos canônicos');
+  assert.equal(CATALOGO_PROMPTS_MCP.length, 2, 'O servidor MCP deve expor os 2 prompts de auditoria');
+
+  for (const tool of CATALOGO_FERRAMENTAS_MCP) {
+    assert.ok(tool.name.startsWith('agent_test_'), `Ferramenta ${tool.name} deve usar prefixo agent_test_`);
+    assert.equal(tool.annotations.readOnlyHint, true);
+    assert.equal(tool.annotations.destructiveHint, false);
+    assert.equal(tool.annotations.idempotentHint, true);
+  }
+
+  // 1. JSON-RPC 2.0: initialize, ping, tools/list, resources/list, resources/read, prompts/list, prompts/get
+  const initRes = processarMensagemJsonRpc({
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: { protocolVersion: '2025-03-26' },
+  });
+  assert.equal(Object.isFrozen(initRes), true, '[Lei L2] Resposta JSON-RPC deve ser imutável');
+  assert.equal(initRes.result.serverInfo.name, 'agent-testing-mcp-server');
+  assert.equal(
+    processarMensagemJsonRpc({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+    null,
+    'Notificação sem id deve retornar null'
+  );
+  assert.deepEqual(processarMensagemJsonRpc({ jsonrpc: '2.0', id: 2, method: 'ping' }).result, {});
+  assert.equal(
+    processarMensagemJsonRpc({ jsonrpc: '2.0', id: 3, method: 'tools/list' }).result.tools.length,
+    8
+  );
+  assert.equal(
+    processarMensagemJsonRpc({ jsonrpc: '2.0', id: 4, method: 'resources/list' }).result.resources.length,
+    3
+  );
+  const resLeis = processarMensagemJsonRpc({
+    jsonrpc: '2.0',
+    id: 5,
+    method: 'resources/read',
+    params: { uri: 'leis://protocolo/14-leis' },
+  });
+  assert.match(resLeis.result.contents[0].text, /As 14 Leis/);
+  const resPortoes = processarMensagemJsonRpc({
+    jsonrpc: '2.0',
+    id: 6,
+    method: 'resources/read',
+    params: { uri: 'leis://protocolo/portoes' },
+  });
+  assert.match(resPortoes.result.contents[0].text, /OBRIGATORIO/);
+  const resSsot = processarMensagemJsonRpc({
+    jsonrpc: '2.0',
+    id: 7,
+    method: 'resources/read',
+    params: { uri: 'biofoil://gdd/ssot-matriz' },
+  });
+  assert.equal(JSON.parse(resSsot.result.contents[0].text).totalConstantes, 27);
+  assert.equal(
+    processarMensagemJsonRpc({ jsonrpc: '2.0', id: 8, method: 'prompts/list' }).result.prompts.length,
+    2
+  );
+  const prompt1 = processarMensagemJsonRpc({
+    jsonrpc: '2.0',
+    id: 9,
+    method: 'prompts/get',
+    params: { name: 'auditar_frente_14_leis', arguments: { frente: 'frente-mcp' } },
+  });
+  assert.match(prompt1.result.messages[0].content.text, /frente-mcp/);
+  const prompt2 = processarMensagemJsonRpc({
+    jsonrpc: '2.0',
+    id: 10,
+    method: 'prompts/get',
+    params: { name: 'avaliar_agente_combate_biofoil', arguments: { idArquitetura: 'MANTA_VOLT' } },
+  });
+  assert.match(prompt2.result.messages[0].content.text, /MANTA_VOLT/);
+
+  // 2. Ferramenta 1: agent_test_auditar_ambiente_n5_secao5 + MUT-MCP-01 (core.bare=true) + L3
+  const ambOk = auditarAmbienteN5Secao5({ diretorioRaiz: DIRETORIO_RAIZ, limiteCargaMaquina: 99 });
+  assert.equal(ambOk.isError, false);
+  assert.equal(ambOk.structuredContent.status, 'APROVADO');
+  assert.equal(ambOk.structuredContent.metricas.coreBare, 'false');
+
+  const ambBareTrue = auditarAmbienteN5Secao5(
+    { diretorioRaiz: DIRETORIO_RAIZ, limiteCargaMaquina: 99 },
+    { forcarCoreBareTrue: true }
+  );
+  assert.equal(
+    ambBareTrue.structuredContent.status,
+    'REPROVADO',
+    '[MUT-MCP-01 / Seção 5] auditarAmbienteN5Secao5 deve reprovar quando core.bare=true'
+  );
+  const ambSemPerm = auditarAmbienteN5Secao5({ autorizado: false });
+  assert.equal(ambSemPerm.structuredContent.canalPermissao, 'NEGADO');
+  assert.equal(ambSemPerm.structuredContent.status, 'SEM_PERMISSAO');
+  const ambNaoExiste = auditarAmbienteN5Secao5({ diretorioRaiz: path.join(DIRETORIO_RAIZ, 'pasta-inexistente-xyz') });
+  assert.equal(ambNaoExiste.structuredContent.status, 'NAO_ENCONTRADO');
+  assert.notEqual(
+    ambSemPerm.structuredContent.marcadorExplicito,
+    ambNaoExiste.structuredContent.marcadorExplicito,
+    '[Lei L3] Sem permissão e não encontrado devem ter marcadores distintos no MCP'
+  );
+
+  // 3. Ferramenta 2: agent_test_inspecionar_codigo_14_leis + MUT-MCP-02 (detecção de tautologia L4 e test.skip N2)
+  const inspOk = inspecionarCodigo14Leis({ diretorioRaiz: DIRETORIO_RAIZ, response_format: 'json' });
+  assert.equal(inspOk.isError, false);
+  assert.equal(inspOk.structuredContent.status, 'APROVADO');
+  assert.equal(inspOk.structuredContent.arquivosTesteExaminadosN4, 9);
+
+  const tmpTautologia = fs.mkdtempSync(path.join(os.tmpdir(), 'ftl-mcp-l4-'));
+  try {
+    fs.mkdirSync(path.join(tmpTautologia, 'tests'), { recursive: true });
+    const metodoSkip = `test.${'skip'}`;
+    const exprTautologia = `assert.equal(${'peso'}, ${'peso'})`;
+    fs.writeFileSync(
+      path.join(tmpTautologia, 'tests', '01-portao-gdd.test.mjs'),
+      `import test from 'node:test';\nimport assert from 'node:assert/strict';\n${metodoSkip}('pulado', () => {\n  const peso = 225;\n  ${exprTautologia};\n});\n`,
+      'utf8'
+    );
+    const inspRuim = inspecionarCodigo14Leis({ diretorioRaiz: tmpTautologia });
+    assert.equal(inspRuim.structuredContent.status, 'REPROVADO');
+    assert.ok(
+      inspRuim.structuredContent.violacoes.some((v) => v.includes('[Lei L4]')),
+      '[MUT-MCP-02 / Lei L4] inspecionarCodigo14Leis deve reprovar asserção tautológica que compara o símbolo consigo mesmo'
+    );
+    assert.ok(
+      inspRuim.structuredContent.violacoes.some((v) => v.includes('[Lei N2]')),
+      'inspecionarCodigo14Leis deve detectar test.skip proibido pela Lei N2'
+    );
+  } finally {
+    fs.rmSync(tmpTautologia, { recursive: true, force: true });
+  }
+
+  // 4. Ferramenta 3 e 4: agent_test_executar_portoes e agent_test_executar_mutacoes_l6
+  const portaoExec = invocarFerramentaMcp('agent_test_executar_portoes', {
+    diretorioRaiz: DIRETORIO_RAIZ,
+    filtroSuite: '03-onda1-fisica',
+  });
+  assert.equal(portaoExec.isError, false);
+  assert.equal(portaoExec.structuredContent.status, 'VERDE');
+  assert.equal(portaoExec.structuredContent.suitesExaminadasN4, 1);
+
+  const mutExec = invocarFerramentaMcp('agent_test_executar_mutacoes_l6', {
+    diretorioRaiz: DIRETORIO_RAIZ,
+    ids: ['MUT-61'],
+  });
+  assert.equal(mutExec.isError, false);
+  assert.equal(mutExec.structuredContent.status, 'TODAS_MORTAS_MOTIVO_CERTO');
+  assert.equal(mutExec.structuredContent.mortasPeloMotivoCerto, 1);
+
+  // 5. Ferramentas 5, 6, 7 e 8 (Domínio B: Bio-Foil Agent Harness + MUT-MCP-03 e MUT-MCP-04)
+  for (const tipoCenario of ['COMBATE_BARCO', 'COMBATE_MONSTRO', 'CHEFE_FASE_3', 'MAPA_SETORIAL', 'LOJA_FORJA']) {
+    const cen = invocarFerramentaMcp('agent_test_iniciar_cenario_biofoil', {
+      seedPartida: 'seed-mcp-cenario',
+      idArquitetura: 'CARCACA_ALFA',
+      setorNumero: 1,
+      tipoCenario,
+    });
+    assert.equal(cen.isError, false);
+    assert.equal(cen.structuredContent.status, 'OK');
+  }
+
+  const cenarioCombate = invocarFerramentaMcp('agent_test_iniciar_cenario_biofoil', {
+    seedPartida: 'seed-mcp-combate',
+    tipoCenario: 'COMBATE_BARCO',
+  });
+  const passoSim = invocarFerramentaMcp('agent_test_simular_passo_agente', {
+    estado: cenarioCombate.structuredContent.estado,
+    comandos: [{ tipo: 'MERGULHO_TATICO', payload: { recolherFoil: true } }],
+    passosTick: 2,
+    dtSeg: 0.25,
+  });
+  assert.equal(passoSim.isError, false);
+  assert.equal(passoSim.structuredContent.resumoPosPasso.estadoFisico, '2_TOUCHDOWN');
+  assert.ok(passoSim.structuredContent.cuesAtivosIds.includes('CUE_ESTOL_TOUCHDOWN'));
+
+  // Lei L3 no MCP (MUT-MCP-03)
+  const baseCego = structuredClone(criarEstadoInicialPartida());
+  baseCego.alvoCombate.canalVisibilidadeSonar = 'NEGADO_SONAR';
+  const inspL3 = inspecionarAlvoL3Mcp({ estado: congelarProfundo(baseCego), salaId: 'SALA_MOTOR' });
+  assert.equal(inspL3.structuredContent.leiturasL3[0].canalPermissao, 'NEGADO_SONAR');
+  assert.equal(
+    inspL3.structuredContent.leiturasL3[0].dados,
+    undefined,
+    '[MUT-MCP-03 / Lei L3] inspecionarAlvoL3Mcp deve retornar dados=undefined quando cego por NEGADO_SONAR'
+  );
+
+  // Benchmark de Política de Agente (MUT-MCP-04)
+  const benchOtima = avaliarPoliticaAgenteMcp({ estrategia: 'CANONICA_OTIMA' });
+  assert.equal(
+    benchOtima.structuredContent.pontuacaoTotal,
+    100,
+    '[MUT-MCP-04 / Benchmark Agente] Estratégia CANONICA_OTIMA deve atingir 100/100 nos 5 cenários táticos'
+  );
+  const benchIngenua = avaliarPoliticaAgenteMcp({ estrategia: 'INGENUA_VIOLA_LEIS' });
+  assert.equal(benchIngenua.structuredContent.pontuacaoTotal, 0);
+
+  // Validação de erros e schema
+  assert.equal(invocarFerramentaMcp('ferramenta_inexistente').isError, true);
+  assert.equal(
+    invocarFerramentaMcp('agent_test_iniciar_cenario_biofoil', { propIntrusa: 123 }).isError,
+    true
+  );
+
+  // 6. Transporte REAL stdio via subprocesso (Lei L1)
+  const entradaStdio = [
+    JSON.stringify({ jsonrpc: '2.0', id: 101, method: 'initialize', params: { protocolVersion: '2025-03-26' } }),
+    JSON.stringify({ jsonrpc: '2.0', id: 102, method: 'tools/call', params: { name: 'agent_test_avaliar_politica_agente', arguments: { estrategia: 'CANONICA_OTIMA' } } }),
+  ].join('\n') + '\n';
+  const procStdio = spawnSync(process.execPath, [path.join(DIRETORIO_RAIZ, 'scripts', 'mcp-testes-agentes.mjs')], {
+    cwd: DIRETORIO_RAIZ,
+    env: ambienteSemGit(),
+    input: entradaStdio,
+    encoding: 'utf8',
+  });
+  assert.equal(procStdio.status, 0);
+  const linhasStdio = procStdio.stdout.trim().split('\n').map((l) => JSON.parse(l));
+  assert.equal(linhasStdio.length, 2);
+  assert.equal(linhasStdio[0].id, 101);
+  assert.equal(linhasStdio[1].result.structuredContent.pontuacaoTotal, 100);
+
+  // 7. Transporte REAL Streamable HTTP + proteção DNS Rebinding
+  const srvHttp = criarServidorHttpMcp();
+  await new Promise((resolve) => srvHttp.listen(0, '127.0.0.1', resolve));
+  const porta = srvHttp.address().port;
+  try {
+    const respOk = await fetch(`http://127.0.0.1:${porta}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: `http://127.0.0.1:${porta}` },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 201, method: 'tools/list' }),
+    });
+    assert.equal(respOk.status, 200);
+    const jsonOk = await respOk.json();
+    assert.equal(jsonOk.result.tools.length, 8);
+
+    const respRebinding = await fetch(`http://127.0.0.1:${porta}/mcp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'http://dominio-malicioso.evil' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 202, method: 'ping' }),
+    });
+    assert.equal(respRebinding.status, 403, 'Servidor HTTP MCP deve rejeitar Origin externo (DNS Rebinding)');
+  } finally {
+    await new Promise((resolve) => srvHttp.close(resolve));
+  }
 });

@@ -173,6 +173,7 @@ Para cumprir a **Lei N5 ("Um dono por arquivo compartilhado")** e a **Lei N6 ("O
 │   └── MUTACOES.md                      # [Ondas 0..6] Bloco gerado pelo executor real (nunca editar à mão)
 ├── scripts/
 │   ├── auditar-frente.sh                # [Onda 0] Pré-voo/fechamento: carga, core.bare, hooksPath, N7, 3 corridas
+│   ├── mcp-testes-agentes.mjs           # [Onda 0] Servidor MCP (JSON-RPC 2.0 stdio/HTTP) para Testes de Agentes sob as 14 Leis
 │   ├── rodar-mutacoes.mjs               # [Onda 0] Executor real de mutações numa cópia descartável
 │   └── hooks/
 │       ├── pre-commit                   # [Onda 0] unset 7 vars + índice do commit + bloqueio N5 + portões OBRIGATORIO

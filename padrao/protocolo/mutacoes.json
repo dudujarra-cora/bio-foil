@@ -1316,6 +1316,70 @@
         "tests/08-onda6-ui-juncao.test.mjs"
       ],
       "falhaEsperada": "[MUT-O6-03 / Lei L3] Quando cego por Águas Turvas, tripulantesVisiveis deve ser undefined, nunca []"
+    },
+    {
+      "id": "MUT-83",
+      "arquivo": "scripts/mcp-testes-agentes.mjs",
+      "lei": "Seção 5 / N5 (MUT-MCP-01)",
+      "descricao": "Ferramenta MCP agent_test_auditar_ambiente_n5_secao5 deixa de reprovar quando core.bare=true no repositório",
+      "trocas": [
+        {
+          "buscar": "  if (coreBare !== 'false') {\n    violacoes.push(`[Seção 5] core.bare='${coreBare}' (esperado 'false')`);\n  }",
+          "substituir": "  if (false && coreBare !== 'false') {\n    violacoes.push(`[Seção 5] core.bare='${coreBare}' (esperado 'false')`);\n  }"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-MCP-01 / Seção 5] auditarAmbienteN5Secao5 deve reprovar quando core.bare=true"
+    },
+    {
+      "id": "MUT-84",
+      "arquivo": "scripts/mcp-testes-agentes.mjs",
+      "lei": "L4 (MUT-MCP-02)",
+      "descricao": "Ferramenta MCP agent_test_inspecionar_codigo_14_leis ignora asserção tautológica que compara símbolo consigo mesmo",
+      "trocas": [
+        {
+          "buscar": "    if (matchesTautologiaL4.length > 0 && !opcoesDebug.ignorarTautologiaL4) {",
+          "substituir": "    if (false && matchesTautologiaL4.length > 0 && !opcoesDebug.ignorarTautologiaL4) {"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-MCP-02 / Lei L4] inspecionarCodigo14Leis deve reprovar asserção tautológica que compara o símbolo consigo mesmo"
+    },
+    {
+      "id": "MUT-85",
+      "arquivo": "scripts/mcp-testes-agentes.mjs",
+      "lei": "L3 (MUT-MCP-03)",
+      "descricao": "Ferramenta MCP agent_test_inspecionar_alvo_l3 devolve lista vazia [] em vez de undefined quando o sonar está cego (NEGADO_SONAR)",
+      "trocas": [
+        {
+          "buscar": "    if (opcoesDebug.vazarVazioQuandoCegoL3 === true && leitura.status === 'SEM_PERMISSAO_VISAO') {",
+          "substituir": "    if (true && leitura.status === 'SEM_PERMISSAO_VISAO') {"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-MCP-03 / Lei L3] inspecionarAlvoL3Mcp deve retornar dados=undefined quando cego por NEGADO_SONAR"
+    },
+    {
+      "id": "MUT-86",
+      "arquivo": "scripts/mcp-testes-agentes.mjs",
+      "lei": "N1 / L1 (MUT-MCP-04)",
+      "descricao": "Benchmark MCP agent_test_avaliar_politica_agente zera a pontuação da estratégia CANONICA_OTIMA nos 5 cenários táticos",
+      "trocas": [
+        {
+          "buscar": "  const pontuacaoTotal = opcoesDebug.forcarPontuacaoZero\n    ? 0\n    : cenarios.reduce((acc, c) => acc + c.pontos, 0);",
+          "substituir": "  const pontuacaoTotal = 0;"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-MCP-04 / Benchmark Agente] Estratégia CANONICA_OTIMA deve atingir 100/100 nos 5 cenários táticos"
     }
   ]
 }

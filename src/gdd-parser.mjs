@@ -54,6 +54,7 @@ export const CADEIA_CANONICA_SCRIPTS = Object.freeze([
   'auditar-frente.sh',
   'hooks/pre-commit',
   'hooks/pre-push',
+  'mcp-testes-agentes.mjs',
   'rodar-mutacoes.mjs',
 ]);
 

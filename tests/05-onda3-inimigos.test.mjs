@@ -283,4 +283,13 @@ test('Onda 3 (Junção N1 Hidráulica Barco + IA Marinheiros): rombo submerso (+
   assert.equal(vitBrutaMonstro.modalidade, 'DESTRUICAO_BRUTA');
   assert.equal(vitBrutaMonstro.recompensa.biomassa, 15);
   assert.equal(vitBrutaMonstro.recompensa.sucata, 0);
+
+  // Fallback de avaliarCondicaoDeVitoria quando tripulacaoInimiga é omitido (lê de salasOuOrgaos.flatMap)
+  const barcoSemListaGlobal = structuredClone(criarEstadoInicialPartida());
+  delete barcoSemListaGlobal.alvoCombate.tripulacaoInimiga;
+  for (const s of barcoSemListaGlobal.alvoCombate.salasOuOrgaos) {
+    s.tripulantes = [];
+  }
+  const vitFallback = avaliarCondicaoDeVitoria(congelarProfundo(barcoSemListaGlobal));
+  assert.equal(vitFallback.modalidade, 'CAPTURA_INTACTA');
 });
