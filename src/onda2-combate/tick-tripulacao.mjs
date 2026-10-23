@@ -359,19 +359,24 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25) {
         );
         camara.barrasIntegridade += 1;
       }
-    } else if (camara.rombosCasco > 0) {
+    } else if (camara.rombosCasco > 0 || camara.brechaAtiva) {
+      if ((camara.rombosCasco ?? 0) <= 0 && camara.brechaAtiva) {
+        camara.rombosCasco = 1;
+      }
       camara.progressoReparoRomboSeg = arredondar4(camara.progressoReparoRomboSeg + dtSeg * multReparo);
       if (camara.progressoReparoRomboSeg >= CONSTANTES_TRIPULACAO.TEMPO_REPARO_ROMBO_BASE_SEG) {
         camara.progressoReparoRomboSeg = arredondar4(
           camara.progressoReparoRomboSeg - CONSTANTES_TRIPULACAO.TEMPO_REPARO_ROMBO_BASE_SEG
         );
-        camara.rombosCasco -= 1;
+        camara.rombosCasco = Math.max(0, (camara.rombosCasco ?? 1) - 1);
+        camara.brechaAtiva = camara.rombosCasco > 0;
         if (camara.rombosCasco === 0) {
-          if (camara.baiacuInfladoId !== null) {
-            const baiacu = nave.tripulacao.find((b) => b.id === camara.baiacuInfladoId);
-            if (baiacu) baiacu.inflado = false;
-            camara.baiacuInfladoId = null;
+          for (const b of nave.tripulacao) {
+            if (b.especie === 'BAIACU' && b.camaraAtualId === camara.id && b.inflado) {
+              b.inflado = false;
+            }
           }
+          camara.baiacuInfladoId = null;
         }
       }
     }

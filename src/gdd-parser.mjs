@@ -30,6 +30,26 @@ export const CADEIA_CANONICA_SRC = Object.freeze([
   'oraculos-referencia.mjs',
 ]);
 
+export const CADEIA_CANONICA_ONDAS_SRC = Object.freeze([
+  'onda1-fisica/estado-inicial.mjs',
+  'onda1-fisica/hash32-streams.mjs',
+  'onda1-fisica/tick-hidraulica-foil.mjs',
+  'onda2-combate/tick-sistemas-armas.mjs',
+  'onda2-combate/tick-tripulacao.mjs',
+  'onda3-inimigos/abordagem-vitoria.mjs',
+  'onda3-inimigos/ia-barco-monstro.mjs',
+  'onda4-mapa/ciclo-partida.mjs',
+  'onda4-mapa/eventos-nos.mjs',
+  'onda4-mapa/gerador-poisson.mjs',
+  'onda4-mapa/relogio-viagem.mjs',
+  'onda5-catalogo-chefe/catalogo-naves-itens.mjs',
+  'onda5-catalogo-chefe/chefe-draga.mjs',
+  'onda6-ui/cues-audio.mjs',
+  'onda6-ui/despacho-comandos.mjs',
+  'onda6-ui/persistencia-perfil.mjs',
+  'onda6-ui/presenter-wireframe.mjs',
+]);
+
 export const CADEIA_CANONICA_SCRIPTS = Object.freeze([
   'auditar-frente.sh',
   'hooks/pre-commit',
@@ -1428,14 +1448,27 @@ export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
     );
   }
 
+  const listarRecursivo = (dir, prefixo = '') => {
+    const itens = [];
+    const entradas = fs.readdirSync(dir, { withFileTypes: true });
+    if (entradas.length === 0 && prefixo) {
+      itens.push(`${prefixo}/`);
+    }
+    for (const entrada of entradas) {
+      const rel = prefixo ? `${prefixo}/${entrada.name}` : entrada.name;
+      if (entrada.isDirectory()) {
+        itens.push(...listarRecursivo(path.join(dir, entrada.name), rel));
+      } else if (entrada.isFile()) {
+        itens.push(rel);
+      }
+    }
+    return itens;
+  };
+
   const pastaSrc = path.join(diretorioRaiz, 'src');
   if (fs.existsSync(pastaSrc)) {
-    const arquivosSrcNoDisco = fs
-      .readdirSync(pastaSrc, { withFileTypes: true })
-      .filter((e) => e.isFile())
-      .map((e) => e.name)
-      .sort();
-    const esperadosSrc = [...CADEIA_CANONICA_SRC].sort();
+    const arquivosSrcNoDisco = listarRecursivo(pastaSrc).sort();
+    const esperadosSrc = [...CADEIA_CANONICA_SRC, ...CADEIA_CANONICA_ONDAS_SRC].sort();
     const faltandoSrc = esperadosSrc.filter((f) => !arquivosSrcNoDisco.includes(f));
     const extrasSrc = arquivosSrcNoDisco.filter((f) => !esperadosSrc.includes(f));
     if (faltandoSrc.length > 0 || extrasSrc.length > 0) {
@@ -1447,18 +1480,6 @@ export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
 
   const pastaScripts = path.join(diretorioRaiz, 'scripts');
   if (fs.existsSync(pastaScripts)) {
-    const listarRecursivo = (dir, prefixo = '') => {
-      const itens = [];
-      for (const entrada of fs.readdirSync(dir, { withFileTypes: true })) {
-        const rel = prefixo ? `${prefixo}/${entrada.name}` : entrada.name;
-        if (entrada.isDirectory()) {
-          itens.push(...listarRecursivo(path.join(dir, entrada.name), rel));
-        } else if (entrada.isFile()) {
-          itens.push(rel);
-        }
-      }
-      return itens;
-    };
     const scriptsNoDisco = listarRecursivo(pastaScripts).sort();
     const esperadosScripts = [...CADEIA_CANONICA_SCRIPTS].sort();
     const faltandoScripts = esperadosScripts.filter((f) => !scriptsNoDisco.includes(f));

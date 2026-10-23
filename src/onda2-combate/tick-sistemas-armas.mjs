@@ -221,10 +221,12 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25) {
     nave.recargaTuboAbordagemSeg = Math.max(0.0, arredondar4(nave.recargaTuboAbordagemSeg - dtSeg));
   }
 
-  // 2. Glândula de Barreira (Câmara 4): 2 barras por camada ativa
+  // 2. Glândula de Barreira (Câmara 4): 2 barras por camada ativa (descontando barras ionizadas se em choque)
   const camaraBarreira = nave.camaras.find((c) => c.id === 4);
+  const ionBarreiraAtivo = (camaraBarreira?.tempoParalisiaIonSeg ?? camaraBarreira?.tempoRestanteIonSeg ?? 0) > 0;
+  const barrasIonizadasBarreira = ionBarreiraAtivo ? Math.max(0, Number(camaraBarreira?.danoIonizado ?? 0)) : 0;
   const maxCamadasBarreira = camaraBarreira
-    ? Math.floor(Math.max(0, camaraBarreira.barrasEnergiaAlocada) / 2)
+    ? Math.floor(Math.max(0, camaraBarreira.barrasEnergiaAlocada - barrasIonizadasBarreira) / 2)
     : 0;
   if (nave.camadasBarreiraAtivas > maxCamadasBarreira) {
     nave.camadasBarreiraAtivas = maxCamadasBarreira;
@@ -242,19 +244,30 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25) {
   } else {
     nave.progressoRegenBarreiraSeg = 0.0;
   }
+  nave.barreira = {
+    ...(nave.barreira ?? {}),
+    bolhasAtuais: nave.camadasBarreiraAtivas,
+    bolhasMax: maxCamadasBarreira,
+  };
 
   // 3. Bomba Branquial (Câmara 3): Oxigênio (-4%/s desligada, +8%/s ligada) e Curto-Circuito por câmara
   const camaraBranquial = nave.camaras.find((c) => c.id === 3);
+  const ionBranquialAtivo = (camaraBranquial?.tempoParalisiaIonSeg ?? camaraBranquial?.tempoRestanteIonSeg ?? 0) > 0;
+  const barrasIonizadasBranquial = ionBranquialAtivo ? Math.max(0, Number(camaraBranquial?.danoIonizado ?? 0)) : 0;
   const branquialLigada =
     camaraBranquial &&
     camaraBranquial.barrasIntegridade >= 1 &&
-    camaraBranquial.barrasEnergiaAlocada >= 1;
+    camaraBranquial.barrasEnergiaAlocada - barrasIonizadasBranquial >= 1;
 
   for (const camara of nave.camaras) {
     // Timers de Choque/Íon e Isolamento Residual Pós-Choque (5.0s)
-    if (camara.tempoParalisiaIonSeg > 0) {
-      camara.tempoParalisiaIonSeg = Math.max(0.0, arredondar4(camara.tempoParalisiaIonSeg - dtSeg));
-      if (camara.tempoParalisiaIonSeg === 0) {
+    const ionSegAtual = Math.max(Number(camara.tempoParalisiaIonSeg ?? 0), Number(camara.tempoRestanteIonSeg ?? 0));
+    if (ionSegAtual > 0) {
+      const novoIonSeg = Math.max(0.0, arredondar4(ionSegAtual - dtSeg));
+      camara.tempoParalisiaIonSeg = novoIonSeg;
+      camara.tempoRestanteIonSeg = novoIonSeg;
+      if (novoIonSeg === 0) {
+        camara.danoIonizado = 0;
         camara.isolamentoResidualChoqueSeg = 5.0;
       }
     } else if (camara.isolamentoResidualChoqueSeg > 0) {

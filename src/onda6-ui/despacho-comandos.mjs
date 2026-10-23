@@ -124,14 +124,20 @@ function recalcularFoilEPesoNave(nave) {
   const pesoTotalKg = calcularPesoTotalNave(nave);
   const sustentacaoAtualKg = calcularSustentacaoFoil(nave);
   let estadoFisico = nave.estadoFisico;
+  let progressoSpoolUpSeg = nave.progressoSpoolUpSeg ?? 0.0;
+  let camaras = nave.camaras;
   if (pesoTotalKg > sustentacaoAtualKg && estadoFisico === '1_NO_FOIL') {
     estadoFisico = '2_TOUCHDOWN';
+    progressoSpoolUpSeg = 0.0;
+    camaras = nave.camaras.map((c) => ({ ...c, valvulaExternaAberta: false }));
   }
   return {
     ...nave,
     pesoTotalKg,
     sustentacaoAtualKg,
     estadoFisico,
+    progressoSpoolUpSeg,
+    camaras,
   };
 }
 
@@ -283,9 +289,10 @@ export function despacharComandoUi(estado, comando) {
 
     case 'ATIVAR_BAIACU': {
       const trip = nave.tripulacao.find((t) => t.id === p.tripulanteId);
-      if (!trip || trip.especie !== 'BAIACU') {
+      if (!trip || trip.especie !== 'BAIACU' || trip.localizacao !== 'NAVE_JOGADOR' || trip.hpAtual <= 0) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
+      const inflado = Boolean(p.inflado);
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
@@ -294,8 +301,13 @@ export function despacharComandoUi(estado, comando) {
           ...estado,
           naveJogador: {
             ...nave,
+            camaras: nave.camaras.map((c) =>
+              c.id === trip.camaraAtualId
+                ? { ...c, baiacuInfladoId: inflado ? trip.id : (c.baiacuInfladoId === trip.id ? null : c.baiacuInfladoId) }
+                : c
+            ),
             tripulacao: nave.tripulacao.map((t) =>
-              t.id === trip.id ? { ...t, inflado: Boolean(p.inflado) } : t
+              t.id === trip.id ? { ...t, inflado, acopladoBulbo: inflado ? false : t.acopladoBulbo } : t
             ),
           },
         },
@@ -379,9 +391,15 @@ export function despacharComandoUi(estado, comando) {
       const ctxInt = Number(camCtx?.barrasIntegridade ?? camCtx?.integridade ?? 0);
       const sifEne = Number(camSif?.barrasEnergiaAlocada ?? camSif?.energiaAlocada ?? 0);
       const comb = Number(estado.economia?.combustivel ?? estado.recursos?.combustivel ?? 0);
-      if ((nave.progressoFugaSeg ?? 0) < 20.0 || ctxInt < 1 || sifEne < 1 || comb < 1) {
+      const cargaPronta = (nave.progressoFugaSeg ?? 0) >= 20.0 || (nave.cargaSaltoPct ?? 0) >= 100;
+      if (!cargaPronta || ctxInt < 1 || sifEne < 1 || comb < 1) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
+      const novaCarteira = {
+        ...(estado.economia ?? {}),
+        ...(estado.recursos ?? {}),
+        combustivel: comb - 1,
+      };
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
@@ -389,6 +407,14 @@ export function despacharComandoUi(estado, comando) {
         estado: {
           ...estado,
           meta: { ...estado.meta, faseJogo: 'MAPA' },
+          economia: novaCarteira,
+          recursos: novaCarteira,
+          naveJogador: {
+            ...nave,
+            progressoFugaSeg: 0.0,
+            tripulacao: nave.tripulacao.filter((t) => t.localizacao !== 'BORDO_INIMIGO'),
+          },
+          alvoCombate: estado.alvoCombate ? { ...estado.alvoCombate, ativo: false } : null,
         },
       });
     }
@@ -404,7 +430,7 @@ export function despacharComandoUi(estado, comando) {
       const resVisita = resolverVisitaNoMapa({
         seedPartida: estado.meta?.seedPartida ?? 'seed',
         setorNumero: estado.mapaSetorial?.setorNumero ?? 1,
-        relogioSetorHoras: estado.mapaSetorial?.relogioSetorHoras ?? 0,
+        relogioSetorHoras: estado.mapaSetorial?.relogioSetorHoras ?? estado.mapaSetorial?.relogioHoras ?? 0,
         noMapa: noEvento,
         kitOuNave: nave,
         opcaoEscolhida: p.opcao,
@@ -412,22 +438,104 @@ export function despacharComandoUi(estado, comando) {
       if (resVisita.aceito === false) {
         return rejeitarComando(estado, comando, resVisita.marcadorRejeicao ?? 'PRECONDICAO_NAO_ATENDIDA');
       }
+      const danoCasco = Number(resVisita.danoCasco ?? 0);
+      const reparoHp = Number(resVisita.recompensaBlueOption?.reparaCascoHp ?? 0);
+      const novoHpCasco = Math.min(
+        nave.hpCascoMax,
+        Math.max(0, nave.hpCascoAtual - danoCasco) + reparoHp
+      );
+      const baseCarteira = {
+        sucata: 30,
+        biomassa: 15,
+        combustivel: 12,
+        municao: 8,
+        ...(estado.economia ?? {}),
+        ...(estado.recursos ?? {}),
+      };
+      const novaCarteiraEvento = {
+        ...baseCarteira,
+        sucata: baseCarteira.sucata + Number(resVisita.moedaGerada?.sucata ?? 0),
+        biomassa: baseCarteira.biomassa + Number(resVisita.moedaGerada?.biomassa ?? 0),
+        combustivel: baseCarteira.combustivel + Number(resVisita.recompensaBlueOption?.combustivel ?? 0),
+        municao: baseCarteira.municao + Number(resVisita.recompensaBlueOption?.municao ?? 0),
+      };
+      const novaFase =
+        novoHpCasco <= 0
+          ? 'FIM_DE_RUN'
+          : resVisita.combateObrigatorio
+            ? 'COMBATE'
+            : 'MAPA';
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
         cueEmitido: null,
-        estado,
+        estado: {
+          ...estado,
+          meta: { ...estado.meta, faseJogo: novaFase },
+          economia: novaCarteiraEvento,
+          recursos: novaCarteiraEvento,
+          naveJogador: {
+            ...nave,
+            hpCascoAtual: novoHpCasco,
+          },
+        },
       });
     }
 
     case 'COMPRAR_OU_VENDER_LOJA': {
-      const item = CATALOGO_LOJA_56B.find((i) => i.id === p.itemOuSistemaId);
+      const aliasItem = {
+        CELULA_COMBUSTIVEL: 'INSUMO_COMBUSTIVEL',
+        MUNICAO_TORPEDO_ESPORO: 'INSUMO_MUNICAO',
+      }[p.itemOuSistemaId] ?? p.itemOuSistemaId;
+      const item = CATALOGO_LOJA_56B.find((i) => i.id === aliasItem);
       if (!item) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      const acao = p.acao ?? 'COMPRAR';
+      const chaveMoeda = item.moeda === 'BIOMASSA' ? 'biomassa' : 'sucata';
+      const baseCarteira = {
+        sucata: 30,
+        biomassa: 15,
+        combustivel: 12,
+        municao: 8,
+        ...(estado.economia ?? {}),
+        ...(estado.recursos ?? {}),
+      };
+      let novaCarteiraLoja = { ...baseCarteira };
+      let novoHpCascoLoja = nave.hpCascoAtual;
+      if (acao === 'VENDER') {
+        if ((item.valorVenda ?? 0) <= 0) {
+          return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+        }
+        novaCarteiraLoja[chaveMoeda] += item.valorVenda;
+      } else {
+        const setorAtual = estado.mapaSetorial?.setorNumero ?? 1;
+        const preco =
+          item.categoria === 'REPARO'
+            ? (setorAtual <= 3 ? 2 : setorAtual <= 6 ? 3 : 4)
+            : item.precoCompra;
+        if (novaCarteiraLoja[chaveMoeda] < preco) {
+          return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+        }
+        if (item.categoria === 'REPARO' && novoHpCascoLoja >= nave.hpCascoMax) {
+          return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+        }
+        novaCarteiraLoja[chaveMoeda] -= preco;
+        if (item.id === 'INSUMO_COMBUSTIVEL') novaCarteiraLoja.combustivel += 1;
+        if (item.id === 'INSUMO_MUNICAO') novaCarteiraLoja.municao += 1;
+        if (item.categoria === 'REPARO') novoHpCascoLoja = Math.min(nave.hpCascoMax, novoHpCascoLoja + 1);
+      }
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
         cueEmitido: null,
-        estado,
+        estado: {
+          ...estado,
+          economia: novaCarteiraLoja,
+          recursos: novaCarteiraLoja,
+          naveJogador: {
+            ...nave,
+            hpCascoAtual: novoHpCascoLoja,
+          },
+        },
       });
     }
 

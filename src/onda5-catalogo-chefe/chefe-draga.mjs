@@ -119,16 +119,20 @@ export function criarEstadoChefeDraga(fase = 1, tripulacaoSobrevivente = null) {
   const iaBackupAtiva = tripulacaoInimiga.length === 0;
 
   return clonarProfundoCongelado({
+    ativo: true,
     idTemplate: `CHEFE_DRAGA_FASE_${fase}`,
+    classeAlvo: 'CHEFE_DRAGA',
     classeInimigo: 'CHEFE_DRAGA',
     nome: `Draga Continental — Fase ${fase}: ${spec.nome}`,
     faseChefe: fase,
     hpCascoAtual: spec.hpCascoMax,
     hpCascoMax: spec.hpCascoMax,
     blindagemTermicaExternaPts: spec.blindagemTermicaExternaPts,
+    camadasBarreiraAtivas: spec.barreiraBolhasMax,
     barreiraBolhasAtual: spec.barreiraBolhasMax,
     barreiraBolhasMax: spec.barreiraBolhasMax,
     progressoRegenBarreiraSeg: 0,
+    esquivaBasePct: spec.esquivaBasePct,
     esquivaEfetivaPct: spec.esquivaBasePct,
     intervaloPowerSurgeSeg: spec.intervaloPowerSurgeSeg,
     progressoPowerSurgeSeg: 0,
@@ -139,11 +143,15 @@ export function criarEstadoChefeDraga(fase = 1, tripulacaoSobrevivente = null) {
     tripulacaoInimiga,
     salasOuOrgaos: spec.salas.map((s) => ({
       ...s,
+      integridadeAtual: s.integridade,
+      integridadeMax: s.barrasMax,
       aguaKg: 0,
       brechaAtiva: false,
       danoIonizado: 0,
+      paralisiaIonSeg: 0,
       tempoRestanteIonSeg: 0,
       isolamentoResidualChoqueSeg: 0,
+      tripulantes: tripulacaoInimiga.filter((t) => t.salaId === s.id),
     })),
   });
 }

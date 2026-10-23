@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { verificarCadeiaTestesEMutacoes } from '../src/gdd-parser.mjs';
+import { CADEIA_CANONICA_ONDAS_SRC, CADEIA_CANONICA_SRC, verificarCadeiaTestesEMutacoes } from '../src/gdd-parser.mjs';
 
 const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -202,6 +202,20 @@ test('Seção 5 + L5 + N3 + N4: hooks contêm o unset no topo; tripwires de 6 á
       () => verificarCadeiaTestesEMutacoes(tmpProjeto),
       /\[L5 TRIPWIRE TESTES FALHOU\]/,
       'Arquivo .test.mjs fora da cadeia canônica deve reprovar no tripwire L5'
+    );
+    fs.unlinkSync(path.join(tmpProjeto, 'tests', '99-intruso-nao-declarado.test.mjs'));
+
+    // Prova recursiva do Tripwire L5 em src/: arquivo intruso dentro de subpasta de Onda deve dar vermelho
+    for (const relSrc of [...CADEIA_CANONICA_SRC, ...CADEIA_CANONICA_ONDAS_SRC]) {
+      const destinoSrc = path.join(tmpProjeto, 'src', relSrc);
+      fs.mkdirSync(path.dirname(destinoSrc), { recursive: true });
+      fs.writeFileSync(destinoSrc, '// ok\n', 'utf8');
+    }
+    fs.writeFileSync(path.join(tmpProjeto, 'src', 'onda1-fisica', 'intruso-nao-declarado.mjs'), '// intruso\n', 'utf8');
+    assert.throws(
+      () => verificarCadeiaTestesEMutacoes(tmpProjeto),
+      /\[L5 TRIPWIRE SRC FALHOU\].*onda1-fisica\/intruso-nao-declarado\.mjs/,
+      'Arquivo intruso dentro de subpasta src/onda1-fisica/ deve reprovar no tripwire recursivo L5'
     );
   } finally {
     fs.rmSync(tmpProjeto, { recursive: true, force: true });

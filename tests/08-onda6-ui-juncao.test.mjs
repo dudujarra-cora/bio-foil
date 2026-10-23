@@ -12,7 +12,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { criarEstadoInicialPartida } from '../src/onda1-fisica/estado-inicial.mjs';
+import { criarEstadoInicialPartida, congelarProfundo } from '../src/onda1-fisica/estado-inicial.mjs';
+import { avancarTickFisicaHidraulica } from '../src/onda1-fisica/tick-hidraulica-foil.mjs';
 import { criarAlvoSetor1Canonico } from '../src/onda3-inimigos/ia-barco-monstro.mjs';
 import { inspecionarSalaAlvo } from '../src/onda2-combate/tick-tripulacao.mjs';
 import {
@@ -272,4 +273,52 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
   assert.ok(idsCues.includes('CUE_HIPOXIA_CRITICA'));
   assert.ok(idsCues.includes('CUE_TRAVA_HIDROSTATICA'));
   assert.ok(idsCues.includes('CUE_POWER_SURGE_CHEFE'));
+
+  // Junção Cross-Wave Onda 6 <-> Onda 1: ATIVAR_BAIACU veda rombo real no tick de física e Presenter reflete Barreira e Brecha
+  const copiaComRombo = structuredClone(estadoCombate);
+  copiaComRombo.naveJogador.camaras.find((c) => c.id === 5).rombosCasco = 1;
+  const estadoComRombo = congelarProfundo(copiaComRombo);
+  const vmComRombo = projetarViewModelWireframe(estadoComRombo);
+  assert.equal(vmComRombo.barraSuperior.barreiraBolhas, 1);
+  assert.equal(vmComRombo.camaras.find((c) => c.id === 5).brechaAtiva, true);
+
+  const cmdInflar = despacharComandoUi(estadoComRombo, {
+    tipo: 'ATIVAR_BAIACU',
+    payload: { tripulanteId: 'trip-baiacu-1', inflado: true },
+  });
+  assert.equal(cmdInflar.aceito, true);
+  assert.equal(cmdInflar.estado.naveJogador.camaras.find((c) => c.id === 5).baiacuInfladoId, 'trip-baiacu-1');
+  const posTickVedado = avancarTickFisicaHidraulica(cmdInflar.estado, 1.0);
+  assert.equal(
+    posTickVedado.naveJogador.camaras.find((c) => c.id === 5).aguaKg,
+    12.5,
+    'Baiacu inflado via comando da UI deve estancar o vazamento do rombo na Câmara 5'
+  );
+
+  // SALTO_FUGA desconta 1 combustível, desativa alvo e abandona invasores a bordo do inimigo
+  const copiaProntaFuga = structuredClone(estadoCombate);
+  copiaProntaFuga.naveJogador.progressoFugaSeg = 20.0;
+  copiaProntaFuga.naveJogador.tripulacao[0].localizacao = 'BORDO_INIMIGO';
+  const resFuga = despacharComandoUi(congelarProfundo(copiaProntaFuga), {
+    tipo: 'SALTO_FUGA',
+    payload: {},
+  });
+  assert.equal(resFuga.aceito, true);
+  assert.equal(resFuga.estado.meta.faseJogo, 'MAPA');
+  assert.equal(resFuga.estado.economia.combustivel, 11);
+  assert.equal(resFuga.estado.alvoCombate.ativo, false);
+  assert.equal(resFuga.estado.naveJogador.tripulacao.length, 2);
+
+  // COMPRAR_OU_VENDER_LOJA debita Sucata e adiciona Combustível
+  const estadoLoja = congelarProfundo({
+    ...structuredClone(estadoCombate),
+    meta: { ...estadoCombate.meta, faseJogo: 'LOJA' },
+  });
+  const resCompra = despacharComandoUi(estadoLoja, {
+    tipo: 'COMPRAR_OU_VENDER_LOJA',
+    payload: { itemOuSistemaId: 'INSUMO_COMBUSTIVEL', acao: 'COMPRAR' },
+  });
+  assert.equal(resCompra.aceito, true);
+  assert.equal(resCompra.estado.economia.sucata, 27);
+  assert.equal(resCompra.estado.economia.combustivel, 13);
 });

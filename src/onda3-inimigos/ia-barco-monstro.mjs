@@ -33,12 +33,14 @@ export function criarAlvoSetor1Canonico(tipo = 'BARCO_HUMANO') {
     return congelarProfundo({
       ativo: true,
       classeAlvo: 'MONSTRO_MARINHO',
+      classeInimigo: 'MONSTRO_MARINHO',
       idInimigo: 'TEUTHIS_COURACADA_S1',
       setorNumero: 1,
-      hpCascoAtual: 18,
-      hpCascoMax: 18,
+      hpCascoAtual: 10,
+      hpCascoMax: 10,
       esquivaBasePct: 20,
       camadasBarreiraAtivas: 0,
+      barreiraBolhasAtual: 0,
       faseChefe: null,
       blindagemTermicaExternaPts: 0,
       timerSurgeSeg: 0.0,
@@ -47,10 +49,10 @@ export function criarAlvoSetor1Canonico(tipo = 'BARCO_HUMANO') {
       iaBackupAtiva: false,
       canalVisibilidadeSonar: 'VISIVEL',
       salasOuOrgaos: [
-        { id: 1, nome: 'TENTACULOS', submersa: false, integridadeMax: 2, integridadeAtual: 2, aguaKg: 12.5, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [{ id: 'anticorpo-1', especie: 'PARASITA', hpAtual: 60, hpMax: 60, dps: 10, imuneAfogamento: true }] },
-        { id: 2, nome: 'BICO_QUITINOSO', submersa: false, integridadeMax: 2, integridadeAtual: 2, aguaKg: 12.5, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
-        { id: 3, nome: 'SIFAO_MUSCULAR', submersa: true, integridadeMax: 2, integridadeAtual: 2, aguaKg: 12.5, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
-        { id: 4, nome: 'GANGLIO_CENTRAL', submersa: true, integridadeMax: 3, integridadeAtual: 3, aguaKg: 12.5, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
+        { id: 1, nome: 'TENTACULOS', submersa: false, integridadeMax: 2, barrasMax: 2, integridadeAtual: 2, integridade: 2, aguaKg: 12.5, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, tempoRestanteIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [{ id: 'anticorpo-1', especie: 'PARASITA', hpAtual: 60, hpMax: 60, dps: 10, imuneAfogamento: true }] },
+        { id: 2, nome: 'BICO_QUITINOSO', submersa: false, integridadeMax: 2, barrasMax: 2, integridadeAtual: 2, integridade: 2, aguaKg: 12.5, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, tempoRestanteIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
+        { id: 3, nome: 'SIFAO_MUSCULAR', submersa: true, integridadeMax: 2, barrasMax: 2, integridadeAtual: 2, integridade: 2, aguaKg: 12.5, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, tempoRestanteIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
+        { id: 4, nome: 'GANGLIO_CENTRAL', submersa: true, integridadeMax: 3, barrasMax: 3, integridadeAtual: 3, integridade: 3, aguaKg: 12.5, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, tempoRestanteIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
       ],
     });
   }
@@ -58,12 +60,14 @@ export function criarAlvoSetor1Canonico(tipo = 'BARCO_HUMANO') {
   return congelarProfundo({
     ativo: true,
     classeAlvo: 'BARCO_HUMANO',
+    classeInimigo: 'BARCO_HUMANO',
     idInimigo: 'LANCHA_PATRULHEIRA_S1',
     setorNumero: 1,
     hpCascoAtual: 8,
     hpCascoMax: 8,
-    esquivaBasePct: 10,
+    esquivaBasePct: 15,
     camadasBarreiraAtivas: 0,
+    barreiraBolhasAtual: 0,
     faseChefe: null,
     blindagemTermicaExternaPts: 0,
     timerSurgeSeg: 0.0,
@@ -72,10 +76,10 @@ export function criarAlvoSetor1Canonico(tipo = 'BARCO_HUMANO') {
     iaBackupAtiva: false,
     canalVisibilidadeSonar: 'VISIVEL',
     salasOuOrgaos: [
-      { id: 1, nome: 'CABINE_COMANDO', submersa: false, integridadeMax: 1, integridadeAtual: 1, aguaKg: 0.0, rombosSubmersos: 0, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [{ id: 'mar-1', especie: 'MARINHEIRO', hpAtual: 100, hpMax: 100, dps: 8, imuneAfogamento: false }] },
-      { id: 2, nome: 'TORRETA_CONVES', submersa: false, integridadeMax: 2, integridadeAtual: 2, aguaKg: 0.0, rombosSubmersos: 0, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
-      { id: 3, nome: 'CASA_DE_MAQUINAS_MOTOR', submersa: true, integridadeMax: 2, integridadeAtual: 2, aguaKg: 0.0, rombosSubmersos: 0, bombaPoraoAtiva: true, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [{ id: 'mar-2', especie: 'MARINHEIRO', hpAtual: 100, hpMax: 100, dps: 8, imuneAfogamento: false }] },
-      { id: 4, nome: 'TUBO_DE_TORPEDO', submersa: true, integridadeMax: 1, integridadeAtual: 1, aguaKg: 0.0, rombosSubmersos: 0, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
+      { id: 1, nome: 'CABINE_COMANDO', submersa: false, integridadeMax: 1, barrasMax: 1, integridadeAtual: 1, integridade: 1, aguaKg: 0.0, rombosSubmersos: 0, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, tempoRestanteIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [{ id: 'mar-1', especie: 'MARINHEIRO', hpAtual: 100, hpMax: 100, dps: 8, imuneAfogamento: false }] },
+      { id: 2, nome: 'TORRETA_CONVES', submersa: false, integridadeMax: 2, barrasMax: 2, integridadeAtual: 2, integridade: 2, aguaKg: 0.0, rombosSubmersos: 0, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, tempoRestanteIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
+      { id: 3, nome: 'CASA_DE_MAQUINAS_MOTOR', submersa: true, integridadeMax: 2, barrasMax: 2, integridadeAtual: 2, integridade: 2, aguaKg: 0.0, rombosSubmersos: 0, bombaPoraoAtiva: true, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, tempoRestanteIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [{ id: 'mar-2', especie: 'MARINHEIRO', hpAtual: 100, hpMax: 100, dps: 8, imuneAfogamento: false }] },
+      { id: 4, nome: 'TUBO_DE_TORPEDO', submersa: true, integridadeMax: 1, barrasMax: 1, integridadeAtual: 1, integridade: 1, aguaKg: 0.0, rombosSubmersos: 0, bombaPoraoAtiva: false, cegoTintaSeg: 0.0, paralisiaIonSeg: 0.0, tempoRestanteIonSeg: 0.0, isolamentoResidualChoqueSeg: 0.0, tripulantes: [] },
     ],
   });
 }
@@ -89,23 +93,30 @@ export function avancarTickIaInimiga(estado, dtSeg = 0.25) {
   }
   const proximo = structuredClone(estado);
   const alvo = proximo.alvoCombate;
-  if (!alvo || !alvo.ativo) return congelarProfundo(proximo);
+  if (!alvo || alvo.ativo === false) return congelarProfundo(proximo);
+  alvo.classeAlvo = alvo.classeAlvo ?? alvo.classeInimigo ?? 'BARCO_HUMANO';
+  alvo.classeInimigo = alvo.classeAlvo;
 
   let salasExaminadas = 0;
   const salaMotor = alvo.salasOuOrgaos.find((s) => /MOTOR|MAQUINAS|PROPULSAO|REATOR/i.test(s.nome));
   const bombaPoraoOperacional =
-    alvo.classeAlvo === 'BARCO_HUMANO' && (!salaMotor || salaMotor.integridadeAtual > 0);
+    alvo.classeAlvo === 'BARCO_HUMANO' && (!salaMotor || (salaMotor.integridadeAtual ?? salaMotor.integridade ?? 1) > 0);
 
   for (const sala of alvo.salasOuOrgaos) {
     salasExaminadas += 1;
+    sala.integridadeAtual = sala.integridadeAtual ?? sala.integridade ?? sala.integridadeMax ?? sala.barrasMax ?? 1;
+    sala.integridade = sala.integridadeAtual;
 
     // 1. Timers de cegueira por tinta e paralisia por choque/íon + isolamento residual de 5s
     if (sala.cegoTintaSeg > 0) {
       sala.cegoTintaSeg = Math.max(0.0, arredondar4(sala.cegoTintaSeg - dtSeg));
     }
-    if (sala.paralisiaIonSeg > 0) {
-      sala.paralisiaIonSeg = Math.max(0.0, arredondar4(sala.paralisiaIonSeg - dtSeg));
-      if (sala.paralisiaIonSeg === 0) {
+    const ionSeg = Math.max(Number(sala.paralisiaIonSeg ?? 0), Number(sala.tempoRestanteIonSeg ?? 0));
+    if (ionSeg > 0) {
+      const novoIon = Math.max(0.0, arredondar4(ionSeg - dtSeg));
+      sala.paralisiaIonSeg = novoIon;
+      sala.tempoRestanteIonSeg = novoIon;
+      if (novoIon === 0) {
         sala.isolamentoResidualChoqueSeg = 5.0;
       }
     } else if (sala.isolamentoResidualChoqueSeg > 0) {

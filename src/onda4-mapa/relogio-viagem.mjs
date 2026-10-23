@@ -27,9 +27,12 @@ export function nivelarTanquesAntesDeViajar(naveJogador) {
   const camarasNiveladas = naveJogador.camaras.map((c) => ({
     ...c,
     aguaKg: 12.5,
+    alagamentoPesadoKg: 0.0,
     oxigenioPct: 100,
     valvulaExternaAberta: false,
+    rombosCasco: 0,
     brechaAtiva: false,
+    baiacuInfladoId: null,
     curtoCircuitoAtivo: false,
     progressoExtincaoSecoSeg: 0,
   }));
@@ -155,7 +158,7 @@ export function iniciarTravessiaMapa(
   );
   const distanciaEfetivaMn = rota ? rota.distanciaEfetivaMn : (opcoesDebug.distanciaEfetivaMn ?? 22.0);
 
-  const combustivelAtual = estado.recursos?.combustivel ?? 0;
+  const combustivelAtual = estado.recursos?.combustivel ?? estado.economia?.combustivel ?? 0;
   const emModoDeriva = combustivelAtual <= 0;
   const multiplicadorDeriva = opcoesDebug.multiplicadorDerivaOverride ?? MULTIPLICADOR_TEMPO_DERIVA;
 
@@ -170,8 +173,9 @@ export function iniciarTravessiaMapa(
     ? 0
     : Math.max(0, combustivelAtual - metricasCruzeiro.custoCombustivel);
 
+  const relogioBase = estado.mapaSetorial?.relogioSetorHoras ?? estado.mapaSetorial?.relogioHoras ?? 0;
   const novoRelogioHoras =
-    Math.round(((estado.mapaSetorial?.relogioSetorHoras ?? 0) + tempoSalto.horasSalto) * 10) / 10;
+    Math.round((relogioBase + tempoSalto.horasSalto) * 10) / 10;
   const novaFrenteCorporacaoMn =
     Math.round(VELOCIDADE_FRENTE_CORPORATIVA_MN_H * novoRelogioHoras * 100) / 100;
 
@@ -187,6 +191,7 @@ export function iniciarTravessiaMapa(
     estadoFisico: novoEstadoFisico,
     progressoSpoolUpSeg: emModoDeriva ? -2.0 : 0,
     spoolUpExigidoSeg: tempoSalto.spoolUpInicialProximoCombateSeg,
+    tempoSpoolUpExigidoSeg: tempoSalto.spoolUpInicialProximoCombateSeg,
   };
 
   // Marca nós SOS expirados e nós engolidos pela frente corporativa
@@ -203,16 +208,21 @@ export function iniciarTravessiaMapa(
     };
   });
 
+  const carteiraBase = {
+    ...(estado.economia ?? {}),
+    ...(estado.recursos ?? {}),
+    combustivel: novoCombustivel,
+  };
+
   return clonarProfundoCongelado({
     ...estado,
-    recursos: {
-      ...estado.recursos,
-      combustivel: novoCombustivel,
-    },
+    economia: carteiraBase,
+    recursos: carteiraBase,
     naveJogador: novaNave,
     mapaSetorial: {
       ...estado.mapaSetorial,
       noAtualId: idNoDestino,
+      relogioHoras: novoRelogioHoras,
       relogioSetorHoras: novoRelogioHoras,
       frenteCorporacaoMn: novaFrenteCorporacaoMn,
       nos: novosNos,

@@ -288,18 +288,21 @@ export function avancarTickFisicaHidraulica(estado, dtSeg = 0.25) {
   // 2. Processar a hidráulica de cada uma das 8 câmaras
   for (const camara of nave.camaras) {
     camarasExaminadas += 1;
-    const baiacuVedando =
-      camara.baiacuInfladoId !== null &&
-      nave.tripulacao.some(
-        (t) =>
-          t.id === camara.baiacuInfladoId &&
-          t.especie === 'BAIACU' &&
-          t.inflado === true &&
-          t.camaraAtualId === camara.id &&
-          t.localizacao === 'NAVE_JOGADOR' &&
-          t.hpAtual > 0
-      );
-    const rombosAtivos = baiacuVedando ? 0 : Math.max(0, Number(camara.rombosCasco ?? 0));
+    const baiacuInfladoNaSala = (nave.tripulacao ?? []).find(
+      (t) =>
+        (camara.baiacuInfladoId === null || camara.baiacuInfladoId === undefined || t.id === camara.baiacuInfladoId) &&
+        t.especie === 'BAIACU' &&
+        t.inflado === true &&
+        t.camaraAtualId === camara.id &&
+        t.localizacao === 'NAVE_JOGADOR' &&
+        t.hpAtual > 0
+    );
+    const baiacuVedando = Boolean(baiacuInfladoNaSala);
+    camara.baiacuInfladoId = baiacuInfladoNaSala ? baiacuInfladoNaSala.id : null;
+    const totalRombos = Math.max(0, Number(camara.rombosCasco ?? 0), camara.brechaAtiva ? 1 : 0);
+    camara.rombosCasco = totalRombos;
+    camara.brechaAtiva = totalRombos > 0;
+    const rombosAtivos = baiacuVedando ? 0 : totalRombos;
 
     if (noAr) {
       let perdaKg = 0.0;

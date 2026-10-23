@@ -212,7 +212,7 @@ export const CATALOGO_TEMPLATES_EVENTOS_45A = Object.freeze([
 export const KITS_INICIAIS_5_CARCACAS = Object.freeze({
   CARCACA_ALFA: Object.freeze({
     tripulacao: { POLVO: 1, ARRAIA: 1, BAIACU: 1, CARANGUEJO: 0 },
-    armas: ['Arpão de Cabo', 'Emissor de Pulso Acústico I'],
+    armas: ['Canhão de Arpão de Cabo', 'Emissor Acústico I'],
     orgaos: [],
     sistemas: {
       'Artilharia Dorsal': 3,
@@ -220,7 +220,7 @@ export const KITS_INICIAIS_5_CARCACAS = Object.freeze({
       'Bomba Branquial': 1,
       'Glândula de Barreira': 2,
       'Sifão de Propulsão': 2,
-      'Mastro do Foil': 2,
+      'Mastro do Foil': 1,
       'Tubo Pressurizado': 0,
       'Glândula de Tinta Furtiva': 0,
       'Placas de Blindagem': 0,
@@ -228,15 +228,15 @@ export const KITS_INICIAIS_5_CARCACAS = Object.freeze({
   }),
   MANTA_VOLT: Object.freeze({
     tripulacao: { POLVO: 1, ARRAIA: 2, BAIACU: 0, CARANGUEJO: 0 },
-    armas: ['Emissor de Pulso Acústico I', 'Emissor de Pulso Acústico I'],
+    armas: ['Emissor Acústico I', 'Emissor Acústico I'],
     orgaos: ['Eletro-Placa de Arraia'],
     sistemas: {
-      'Artilharia Dorsal': 2,
+      'Artilharia Dorsal': 3,
       'Córtex de Navegação': 1,
       'Bomba Branquial': 1,
       'Glândula de Barreira': 2,
       'Sifão de Propulsão': 2,
-      'Mastro do Foil': 2,
+      'Mastro do Foil': 1,
       'Tubo Pressurizado': 0,
       'Glândula de Tinta Furtiva': 0,
       'Placas de Blindagem': 0,
@@ -244,24 +244,8 @@ export const KITS_INICIAIS_5_CARCACAS = Object.freeze({
   }),
   COURACA_LIMIAR: Object.freeze({
     tripulacao: { POLVO: 0, ARRAIA: 0, BAIACU: 1, CARANGUEJO: 2 },
-    armas: ['Arpão de Cabo', 'Emissor de Pulso Acústico I'],
+    armas: ['Emissor Acústico I', 'Canhão de Arpão de Cabo'],
     orgaos: [],
-    sistemas: {
-      'Artilharia Dorsal': 2,
-      'Córtex de Navegação': 1,
-      'Bomba Branquial': 1,
-      'Glândula de Barreira': 2,
-      'Sifão de Propulsão': 2,
-      'Mastro do Foil': 2,
-      'Tubo Pressurizado': 1,
-      'Glândula de Tinta Furtiva': 0,
-      'Placas de Blindagem': 0,
-    },
-  }),
-  SOMBRA_ABISSAL: Object.freeze({
-    tripulacao: { POLVO: 1, ARRAIA: 0, BAIACU: 0, CARANGUEJO: 1 },
-    armas: ['Arpão de Cabo', 'Emissor de Pulso Acústico I'],
-    orgaos: ['Glândula de Baiacu'],
     sistemas: {
       'Artilharia Dorsal': 3,
       'Córtex de Navegação': 1,
@@ -269,6 +253,22 @@ export const KITS_INICIAIS_5_CARCACAS = Object.freeze({
       'Glândula de Barreira': 0,
       'Sifão de Propulsão': 2,
       'Mastro do Foil': 2,
+      'Tubo Pressurizado': 2,
+      'Glândula de Tinta Furtiva': 0,
+      'Placas de Blindagem': 0,
+    },
+  }),
+  SOMBRA_ABISSAL: Object.freeze({
+    tripulacao: { POLVO: 1, ARRAIA: 0, BAIACU: 0, CARANGUEJO: 1 },
+    armas: ['Emissor Acústico I', 'Canhão de Arpão de Cabo'],
+    orgaos: ['Glândula de Baiacu'],
+    sistemas: {
+      'Artilharia Dorsal': 3,
+      'Córtex de Navegação': 1,
+      'Bomba Branquial': 1,
+      'Glândula de Barreira': 2,
+      'Sifão de Propulsão': 2,
+      'Mastro do Foil': 1,
       'Tubo Pressurizado': 0,
       'Glândula de Tinta Furtiva': 1,
       'Placas de Blindagem': 0,
@@ -276,7 +276,7 @@ export const KITS_INICIAIS_5_CARCACAS = Object.freeze({
   }),
   COLMEIA_VIVA: Object.freeze({
     tripulacao: { POLVO: 0, ARRAIA: 1, BAIACU: 2, CARANGUEJO: 0 },
-    armas: ['Canhão de Rajada Hidráulica II', 'Morteiro de Esporos Abissais'],
+    armas: ['Rajada Hidropneumática II', 'Morteiro de Esporos'],
     orgaos: [],
     sistemas: {
       'Artilharia Dorsal': 3,
@@ -284,7 +284,7 @@ export const KITS_INICIAIS_5_CARCACAS = Object.freeze({
       'Bomba Branquial': 1,
       'Glândula de Barreira': 2,
       'Sifão de Propulsão': 2,
-      'Mastro do Foil': 2,
+      'Mastro do Foil': 1,
       'Tubo Pressurizado': 0,
       'Glândula de Tinta Furtiva': 0,
       'Placas de Blindagem': 0,
@@ -326,6 +326,30 @@ export function sortearTemplatesDoSetor(seedPartida, setorNumero = 1, idsTemplat
   });
 }
 
+const MAPA_NOME_CANONICO_ARMA = Object.freeze({
+  EMISSOR_ACUSTICO_I: 'Emissor Acústico I',
+  RAJADA_HIDROPNEUMATICA_II: 'Rajada Hidropneumática II',
+  EMISSOR_RAJADA_ACUSTICA_II: 'Rajada Hidropneumática II',
+  CANHAO_ARPAO_CABO: 'Canhão de Arpão de Cabo',
+  DISPERSOR_ESTILHACOS: 'Dispersor de Estilhaços',
+  DISPARADOR_ESTILHACOS_QUITINA: 'Dispersor de Estilhaços',
+  CORTADOR_TERMICO_PLASMA: 'Cortador Térmico a Plasma',
+  CORTADOR_TERMICO: 'Cortador Térmico a Plasma',
+  LANCADOR_TORPEDO_ABISSAL: 'Lançador de Torpedo Abissal',
+  MORTEIRO_ESPOROS: 'Morteiro de Esporos',
+  MORTEIRO_ESPOROS_ACIDOS: 'Morteiro de Esporos',
+});
+
+const MAPA_NOME_CANONICO_ORGAO = Object.freeze({
+  GLANDULA_BAIACU: 'Glândula de Baiacu',
+  GLANDULA_VENENO_BAIACU: 'Glândula de Baiacu',
+  ELETRO_PLACA_ARRAIA: 'Eletro-Placa de Arraia',
+  BEXIGA_ALTA_PRESSAO: 'Bexiga de Alta Pressão',
+  BOLSA_TINTA_ABISSAL: 'Bolsa de Tinta Abissal',
+  DENTE_SERRILHADO_LEVIATA: 'Dente Serrilhado de Leviatã',
+  GLANDULA_TERMOFILICA: 'Glândula Termofílica',
+});
+
 /**
  * Extrai o kit atual de uma nave em GameState para verificar requisitos de Blue Option.
  */
@@ -336,22 +360,46 @@ export function extrairKitDaNave(naveJogador) {
       tripulacao[t.especie] = (tripulacao[t.especie] ?? 0) + 1;
     }
   }
-  const armas = [
-    ...(naveJogador.armasAtivas ?? []).map((a) => a.nome ?? a.idArma),
-    ...(naveJogador.poraoCarga ?? []).filter((i) => i.tipo === 'ARMA').map((i) => i.nome ?? i.id),
-  ];
-  const orgaos = [
-    ...(naveJogador.armasAtivas ?? []).flatMap((a) => (a.orgaosEnxertados ?? []).map((o) => o.nome ?? o)),
-    ...(naveJogador.poraoCarga ?? []).filter((i) => i.tipo === 'ORGAO').map((i) => i.nome ?? i.id),
-  ];
-  const camaraNivel = (id) => naveJogador.camaras?.find((c) => c.id === id)?.nivelMax ?? 0;
+  const normalizarArma = (idOuNome) => MAPA_NOME_CANONICO_ARMA[idOuNome] ?? String(idOuNome ?? '').replace(/^\d+\.\s*/, '');
+  const normalizarOrgao = (idOuNome) => MAPA_NOME_CANONICO_ORGAO[idOuNome] ?? String(idOuNome ?? '').replace(/^\d+\.\s*/, '');
+
+  const armas = [];
+  const orgaos = [];
+  for (const slot of naveJogador.armasAtivas ?? []) {
+    const objArma = slot?.arma !== undefined ? slot.arma : slot;
+    if (!objArma) continue;
+    const chaveArma = objArma.chassiId ?? objArma.idArma ?? objArma.id ?? objArma.nome;
+    if (chaveArma) armas.push(normalizarArma(chaveArma));
+    for (const o of objArma.orgaosEnxertados ?? []) {
+      const chaveOrgao = typeof o === 'object' && o !== null ? (o.id ?? o.nome) : o;
+      if (chaveOrgao) orgaos.push(normalizarOrgao(chaveOrgao));
+    }
+  }
+  for (const entradaPorao of naveJogador.poraoCarga ?? []) {
+    const item = entradaPorao?.item !== undefined ? entradaPorao.item : entradaPorao;
+    if (!item) continue;
+    const chave = item.chassiId ?? item.idArma ?? item.id ?? item.nome;
+    if (item.tipo === 'ARMA' || MAPA_NOME_CANONICO_ARMA[chave]) {
+      armas.push(normalizarArma(chave));
+    } else if (item.tipo === 'ORGAO' || MAPA_NOME_CANONICO_ORGAO[chave]) {
+      orgaos.push(normalizarOrgao(chave));
+    }
+  }
+
+  const camaraObj = (id) => naveJogador.camaras?.find((c) => c.id === id);
+  const camaraNivel = (id) => {
+    const c = camaraObj(id);
+    return Number(c?.nivelMax ?? c?.nivelMaxBarras ?? 0);
+  };
+  const mastroBruto = camaraNivel(6);
+  const nivelMastro = mastroBruto >= 4 ? mastroBruto - 3 : mastroBruto;
   const sistemas = {
     'Artilharia Dorsal': camaraNivel(1),
     'Córtex de Navegação': camaraNivel(2),
     'Bomba Branquial': camaraNivel(3),
     'Glândula de Barreira': camaraNivel(4),
     'Sifão de Propulsão': camaraNivel(5),
-    'Mastro do Foil': camaraNivel(6),
+    'Mastro do Foil': nivelMastro,
     'Tubo Pressurizado': camaraNivel(7),
     'Glândula de Tinta Furtiva': camaraNivel(8),
     'Placas de Blindagem': naveJogador.nivelBlindagem ?? 0,

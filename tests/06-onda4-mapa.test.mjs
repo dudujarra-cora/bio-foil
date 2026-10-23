@@ -23,10 +23,13 @@ import {
 } from '../src/onda4-mapa/relogio-viagem.mjs';
 import {
   CATALOGO_TEMPLATES_EVENTOS_45A,
+  KITS_INICIAIS_5_CARCACAS,
+  extrairKitDaNave,
   avaliarMatrizElegibilidadeInicial45C,
   sortearTemplatesDoSetor,
   resolverVisitaNoMapa,
 } from '../src/onda4-mapa/eventos-nos.mjs';
+import { kitCumpreRequisitoBlueOption } from '../src/oraculos-referencia.mjs';
 import {
   FASES_JOGO_CANONICAS,
   TRANSICOES_CICLO_92,
@@ -165,6 +168,30 @@ test('[PORTÃO 06.3 | N4] 17 Templates de Eventos, Raridade das Blue Options (5 
   assert.deepEqual(matrizEleg.COURACA_LIMIAR.templatesElegiveis, ['SOS_1_REDE_ARRASTO']);
   assert.deepEqual(matrizEleg.SOMBRA_ABISSAL.templatesElegiveis, ['EXP_3_CARDUME_SIMBIOTICO']);
   assert.deepEqual(matrizEleg.COLMEIA_VIVA.templatesElegiveis, ['SOS_3_NINHO_SITIADO']);
+
+  // Junção Cross-Wave Onda 1 <-> Onda 4: extrairKitDaNave sobre criarEstadoInicialPartida real das 5 carcaças
+  // deve bater 100% com a Matriz de Elegibilidade Inicial 4.5.C e iniciarTravessiaMapa não pode entrar em Deriva com 12 comb.
+  for (const idArq of Object.keys(KITS_INICIAIS_5_CARCACAS)) {
+    const estadoOnda1 = criarEstadoInicialPartida({ idArquitetura: idArq });
+    const kitReal = extrairKitDaNave(estadoOnda1.naveJogador);
+    const elegiveisReais = CATALOGO_TEMPLATES_EVENTOS_45A.filter((t) =>
+      kitCumpreRequisitoBlueOption(t.requisitoBlueOption, kitReal)
+    ).map((t) => t.id);
+    assert.deepEqual(
+      elegiveisReais,
+      matrizEleg[idArq].templatesElegiveis,
+      `Kit extraído de criarEstadoInicialPartida(${idArq}) deve produzir a mesma elegibilidade de Blue Options da Seção 4.5.C`
+    );
+  }
+  const travessiaDeEstadoOnda1 = iniciarTravessiaMapa(
+    criarEstadoInicialPartida({ idArquitetura: 'CARCACA_ALFA', faseJogo: 'MAPA' }),
+    'NO_1_A'
+  );
+  assert.equal(travessiaDeEstadoOnda1.mapaSetorial.ultimoSalto.emModoDeriva, false);
+  assert.equal(travessiaDeEstadoOnda1.economia.combustivel, 11);
+  assert.equal(travessiaDeEstadoOnda1.recursos.combustivel, 11);
+  assert.equal(travessiaDeEstadoOnda1.mapaSetorial.relogioHoras, 2.0);
+  assert.equal(travessiaDeEstadoOnda1.mapaSetorial.relogioSetorHoras, 2.0);
 
   // Sorteio por setor sem repetir o setor anterior (STREAM_6)
   const s1 = sortearTemplatesDoSetor('seed-eventos', 1, []);

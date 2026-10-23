@@ -23,6 +23,13 @@ test('Onda 3 (N1 + N4): 2 classes de inimigos (Metal vs. Carne), 3 condições d
     const alvo = criarAlvoSetor1Canonico(c);
     assert.equal(alvo.classeAlvo, c);
     assert.equal(alvo.salasOuOrgaos.length, 4);
+    if (c === 'BARCO_HUMANO') {
+      assert.equal(alvo.hpCascoMax, 8, 'Lancha Patrulheira S1 deve ter 8 HP de casco (Vol. 03 / 5.7.B)');
+      assert.equal(alvo.esquivaBasePct, 15, 'Lancha Patrulheira S1 deve ter 15% de esquiva base (Vol. 03 / 5.7.B)');
+    } else {
+      assert.equal(alvo.hpCascoMax, 10, 'Teuthis Couraçada S1 deve ter 10 HP de casco (Vol. 03 / 5.7.B)');
+      assert.equal(alvo.esquivaBasePct, 20, 'Teuthis Couraçada S1 deve ter 20% de esquiva base (Vol. 03 / 5.7.B)');
+    }
     classesExaminadas += 1;
   }
 

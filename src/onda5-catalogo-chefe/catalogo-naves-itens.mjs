@@ -460,7 +460,12 @@ export function aplicarChoqueEletroPlacaEmSala(salaAlvo, opcoesDebug = {}) {
       sala: salaAlvo,
     });
   }
-  if (!ignorarIsolamento && (salaAlvo.tempoRestanteIonSeg ?? 0) > 0) {
+  const ionRestante = Math.max(
+    Number(salaAlvo.tempoRestanteIonSeg ?? 0),
+    Number(salaAlvo.tempoParalisiaIonSeg ?? 0),
+    Number(salaAlvo.paralisiaIonSeg ?? 0)
+  );
+  if (!ignorarIsolamento && ionRestante > 0) {
     return clonarProfundoCongelado({
       choqueAplicado: false,
       motivoBloqueio: 'CHOQUE_JA_ATIVO',
@@ -474,6 +479,8 @@ export function aplicarChoqueEletroPlacaEmSala(salaAlvo, opcoesDebug = {}) {
       ...salaAlvo,
       danoIonizado: (salaAlvo.danoIonizado ?? 0) + 1,
       tempoRestanteIonSeg: DURACAO_CHOQUE_ELETRO_PLACA_SEG,
+      tempoParalisiaIonSeg: DURACAO_CHOQUE_ELETRO_PLACA_SEG,
+      paralisiaIonSeg: DURACAO_CHOQUE_ELETRO_PLACA_SEG,
     },
   });
 }
@@ -484,7 +491,11 @@ export function aplicarChoqueEletroPlacaEmSala(salaAlvo, opcoesDebug = {}) {
 export function avancarTickChoqueEIsolamentoSala(salaAlvo, dtSeg = 1.0, opcoesDebug = {}) {
   const ignorarIsolamento = opcoesDebug.ignorarIsolamentoResidualChoque === true;
   let danoIonizado = salaAlvo.danoIonizado ?? 0;
-  let tempoRestanteIonSeg = salaAlvo.tempoRestanteIonSeg ?? 0;
+  let tempoRestanteIonSeg = Math.max(
+    Number(salaAlvo.tempoRestanteIonSeg ?? 0),
+    Number(salaAlvo.tempoParalisiaIonSeg ?? 0),
+    Number(salaAlvo.paralisiaIonSeg ?? 0)
+  );
   let isolamentoResidualChoqueSeg = salaAlvo.isolamentoResidualChoqueSeg ?? 0;
 
   if (tempoRestanteIonSeg > 0) {
@@ -505,6 +516,8 @@ export function avancarTickChoqueEIsolamentoSala(salaAlvo, dtSeg = 1.0, opcoesDe
     ...salaAlvo,
     danoIonizado,
     tempoRestanteIonSeg,
+    tempoParalisiaIonSeg: tempoRestanteIonSeg,
+    paralisiaIonSeg: tempoRestanteIonSeg,
     isolamentoResidualChoqueSeg,
   });
 }
@@ -517,12 +530,19 @@ export function avancarTickChoqueEIsolamentoSala(salaAlvo, dtSeg = 1.0, opcoesDe
 export function avancarTickBiomaEColmeiaViva(estado, dtSeg = 1.0, opcoesDebug = {}) {
   const nave = estado.naveJogador;
   const alvo = estado.alvoCombate;
+  const classeInimigo = alvo?.classeInimigo ?? alvo?.classeAlvo ?? 'BARCO_HUMANO';
+  const tripulacaoAlvo =
+    alvo?.tripulacaoInimiga ?? (alvo?.salasOuOrgaos ?? []).flatMap((s) => s.tripulantes ?? []);
+  const ganglioCentral = alvo?.salasOuOrgaos?.find(
+    (s) => s.ehGanglioCentral || /GANGLIO/i.test(s.nome)
+  );
   const inimigoVivo =
     alvo &&
+    alvo.ativo !== false &&
     alvo.hpCascoAtual > 0 &&
-    (alvo.classeInimigo === 'MONSTRO_MARINHO'
-      ? (alvo.salasOuOrgaos?.find((s) => s.ehGanglioCentral)?.integridade ?? 1) > 0
-      : (alvo.tripulacaoInimiga ?? []).some((t) => t.hpAtual > 0) || alvo.iaBackupAtiva === true);
+    (classeInimigo === 'MONSTRO_MARINHO'
+      ? (ganglioCentral?.integridadeAtual ?? ganglioCentral?.integridade ?? 1) > 0
+      : tripulacaoAlvo.some((t) => t.hpAtual > 0) || alvo.iaBackupAtiva === true);
 
   let hpCascoAtual = nave.hpCascoAtual;
   let tempoTouchdownContinuoSeg = nave.tempoTouchdownContinuoSeg ?? 0;

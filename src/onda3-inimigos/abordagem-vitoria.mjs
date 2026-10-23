@@ -34,13 +34,19 @@ export function resolverImpactoNoAlvo(estado, evento) {
   }
   const proximo = structuredClone(estado);
   const alvo = proximo.alvoCombate;
-  if (!alvo || !alvo.ativo) return congelarProfundo(proximo);
+  if (!alvo || alvo.ativo === false) return congelarProfundo(proximo);
+  alvo.classeAlvo = alvo.classeAlvo ?? alvo.classeInimigo ?? 'BARCO_HUMANO';
+  alvo.classeInimigo = alvo.classeAlvo;
+  alvo.camadasBarreiraAtivas = Number(alvo.camadasBarreiraAtivas ?? alvo.barreiraBolhasAtual ?? 0);
+  alvo.barreiraBolhasAtual = alvo.camadasBarreiraAtivas;
 
   const tipoEvento = evento.tipo ?? 'DISPARO_ARMA';
   const sala = alvo.salasOuOrgaos.find((s) => s.id === evento.salaAlvoId);
   if (!sala) {
     throw new Error(`[resolverImpactoNoAlvo] Sala alvo inexistente: ${evento.salaAlvoId}`);
   }
+  sala.integridadeAtual = sala.integridadeAtual ?? sala.integridade ?? sala.integridadeMax ?? sala.barrasMax ?? 1;
+  sala.integridade = sala.integridadeAtual;
 
   // 1. Blindagem Térmica Externa da Fase 3 (10 pts): bloqueia tudo até zerar
   if (Number(alvo.blindagemTermicaExternaPts ?? 0) > 0) {
@@ -78,6 +84,7 @@ export function resolverImpactoNoAlvo(estado, evento) {
   if (tipoEvento === 'SABOTAGEM_INTERNA') {
     if (sala.integridadeAtual > 0) {
       sala.integridadeAtual -= 1;
+      sala.integridade = sala.integridadeAtual;
       alvo.hpCascoAtual = Math.max(0, alvo.hpCascoAtual - 1);
       alvo.ultimoDanoFonte = 'SABOTAGEM_INTERNA';
     }
@@ -88,6 +95,7 @@ export function resolverImpactoNoAlvo(estado, evento) {
   const consomeMunicao = Number(evento.municaoCusto ?? 0) > 0;
   if (!consomeMunicao && Number(alvo.camadasBarreiraAtivas ?? 0) > 0) {
     alvo.camadasBarreiraAtivas -= 1;
+    alvo.barreiraBolhasAtual = alvo.camadasBarreiraAtivas;
     proximo.logDeterministico.push({
       tick: proximo.meta.tickAtual,
       tipo: 'DISPARO_BLOQUEADO_BARREIRA',
@@ -102,6 +110,7 @@ export function resolverImpactoNoAlvo(estado, evento) {
   alvo.hpCascoAtual = Math.max(0, alvo.hpCascoAtual - danoCasco);
   alvo.ultimoDanoFonte = 'DISPARO_EXTERNO';
   sala.integridadeAtual = Math.max(0, sala.integridadeAtual - danoSistema);
+  sala.integridade = sala.integridadeAtual;
 
   const danoAntipessoal = danoSistema * CONSTANTES_SISTEMAS_ARMAS.DANO_ANTIPESSOAL_POR_PONTO_SISTEMA_HP;
   if (danoAntipessoal > 0) {
@@ -124,6 +133,7 @@ export function resolverImpactoNoAlvo(estado, evento) {
   // Órgãos de enxerto: Eletro-Placa (respeita Isolamento Residual de 5s!) e Bolsa de Tinta
   if (orgaos.includes('ELETRO_PLACA_ARRAIA') && Number(sala.isolamentoResidualChoqueSeg ?? 0) === 0) {
     sala.paralisiaIonSeg = 6.0;
+    sala.tempoRestanteIonSeg = 6.0;
   }
   if (orgaos.includes('BOLSA_TINTA_ABISSAL')) {
     sala.cegoTintaSeg = 8.0;
@@ -184,9 +194,10 @@ export function avaliarCondicaoDeVitoria(estado) {
     throw new Error('[Lei L2] avaliarCondicaoDeVitoria exige estado de entrada congelado (Object.freeze)');
   }
   const alvo = estado.alvoCombate;
-  if (!alvo || !alvo.ativo) {
+  if (!alvo || alvo.ativo === false) {
     return congelarProfundo({ encerrado: false, modalidade: null, recompensa: null, animaisResgatadosIds: [] });
   }
+  const classeAlvo = alvo.classeAlvo ?? alvo.classeInimigo ?? 'BARCO_HUMANO';
 
   const setor = Math.min(8, Math.max(1, Number(alvo.setorNumero ?? estado.mapaSetorial?.setorNumero ?? 1)));
   const linhaSaque = CURVA_SAQUE_SETORIAL_56C[setor];
@@ -194,17 +205,16 @@ export function avaliarCondicaoDeVitoria(estado) {
   let modalidade = null;
   if (alvo.hpCascoAtual <= 0) {
     modalidade = 'DESTRUICAO_BRUTA';
-  } else if (alvo.classeAlvo === 'BARCO_HUMANO') {
-    const humanosVivos = alvo.salasOuOrgaos.reduce(
-      (acc, s) => acc + (s.tripulantes ?? []).filter((t) => t.hpAtual > 0).length,
-      0
-    );
+  } else if (classeAlvo === 'BARCO_HUMANO') {
+    const listaTripulantes = alvo.tripulacaoInimiga
+      ?? (alvo.salasOuOrgaos ?? []).flatMap((s) => s.tripulantes ?? []);
+    const humanosVivos = listaTripulantes.filter((t) => t.hpAtual > 0).length;
     if (humanosVivos === 0) {
       modalidade = 'CAPTURA_INTACTA';
     }
-  } else if (alvo.classeAlvo === 'MONSTRO_MARINHO') {
-    const ganglio = alvo.salasOuOrgaos.find((s) => /GANGLIO/i.test(s.nome));
-    if (ganglio && ganglio.integridadeAtual <= 0 && alvo.hpCascoAtual > 0) {
+  } else if (classeAlvo === 'MONSTRO_MARINHO') {
+    const ganglio = (alvo.salasOuOrgaos ?? []).find((s) => /GANGLIO/i.test(s.nome));
+    if (ganglio && (ganglio.integridadeAtual ?? ganglio.integridade ?? 1) <= 0 && alvo.hpCascoAtual > 0) {
       modalidade = 'EXTRACAO_CIRURGICA';
     }
   }
@@ -214,7 +224,7 @@ export function avaliarCondicaoDeVitoria(estado) {
   }
 
   let recompensa;
-  if (alvo.classeAlvo === 'BARCO_HUMANO') {
+  if (classeAlvo === 'BARCO_HUMANO') {
     if (modalidade === 'CAPTURA_INTACTA') {
       recompensa = {
         sucata: linhaSaque.barcoCapturaSucata,
