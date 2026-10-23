@@ -149,6 +149,49 @@ Cada uma das **8 câmaras internas** tem capacidade normal de **$12.5\text{ kg}$
 
 ---
 
+## 1.6. Topologia de Adjacência da Grade $2 \times 4$, Limite de Ocupação e Geometria do Cortador Térmico (*Beam*)
+
+Para que os módulos da Onda 2 (`src/onda2-combate/tick-tripulacao.mjs` e `src/onda2-combate/tick-sistemas-armas.mjs`) executem movimentação, combate corpo-a-corpo e traçado de feixes sem ambiguidade geométrica, as 3 regras espaciais da nave e dos alvos ficam travadas abaixo.
+
+### A. Grafo Explícito de Portas e Adjacência da Bio-Nave (Grade $2 \times 4 +$ Duto Hidráulico Ventral)
+
+As **8 câmaras** da bio-nave (`id: 1..8`) distribuem-se em **$2\text{ Colunas} \times 4\text{ Andares}$** (`Coluna` $\in \{0, 1\}$, `Andar` $\in \{0, 1, 2, 3\}$ de cima para baixo), conectadas pelas **$10\text{ válvulas ortogonais}$** da grade ($4\text{ horizontais}$: $1\leftrightarrow 7,\; 2\leftrightarrow 3,\; 4\leftrightarrow 5,\; 6\leftrightarrow 8$; e $6\text{ verticais}$: $1\leftrightarrow 2\leftrightarrow 4\leftrightarrow 6$ na Coluna 0 e $7\leftrightarrow 3\leftrightarrow 5\leftrightarrow 8$ na Coluna 1) mais **$1\text{ Duto Hidráulico Ventral}$ ($5 \leftrightarrow 6$)** que liga a base do *Sifão de Propulsão* (Sala 5) diretamente ao *Poço da Quilha* (Sala 6, conforme desenhado no Wireframe 2.1 e percorrido em $1\text{ salto}$ na Simulação 3.4 em $t = 22.5\text{s}$), totalizando **$11\text{ conexões bidirecionais}$** (soma dos graus $= \mathbf{22}$):
+
+| ID da Câmara | Nome Canônico (`GameState`) | Coordenada `(Coluna, Andar)` | Câmaras Adjacentes ($1\text{ salto} = 1.5\text{s}$ base) | Grau (Portas) |
+| :---: | :--- | :---: | :---: | :---: |
+| **1** | `ARTILHARIA_DORSAL` | `(0, 0)` | $2, 7$ | $2$ |
+| **2** | `CORTEX_NAVEGACAO` | `(0, 1)` | $1, 3, 4$ | $3$ |
+| **3** | `BOMBA_BRANQUIAL` | `(1, 1)` | $2, 5, 7$ | $3$ |
+| **4** | `GLANDULA_BARREIRA` | `(0, 2)` | $2, 5, 6$ | $3$ |
+| **5** | `SIFAO_PROPULSAO` | `(1, 2)` | $3, 4, 6, 8$ | $4$ |
+| **6** | `POCO_DA_QUILHA_MASTRO` | `(0, 3)` | $4, 5, 8$ | $3$ |
+| **7** | `CAMARA_ENXERTO_A` | `(1, 0)` | $1, 3$ | $2$ |
+| **8** | `CAMARA_ENXERTO_B` | `(1, 3)` | $5, 6$ | $2$ |
+
+* **Regra Determinística de Desempate de Rota (*Shortest-Path Tie-Break*):** Quando existem duas rotas mínimas com o mesmo número de saltos (ex.: do *Córtex* na Sala $2$ ao *Sifão* na Sala $5$ em $t = 10.0\text{s}$ da Simulação 3.4, onde $d(2, 5) = \mathbf{2\text{ saltos}}$ tanto por $2 \rightarrow 4 \rightarrow 5$ quanto por $2 \rightarrow 3 \rightarrow 5$), o navegador escolhe prioritariamente **o passo vertical na mesma coluna antes do passo horizontal** ($2 \rightarrow 4 \rightarrow 5$), exceto se a sala vertical estiver seca ($0\text{ kg}$) ou com Curto-Circuito ativo e a alternativa horizontal estiver inundada e segura.
+
+### B. Limite de Lotação por Câmara (*Stacking Limit*) e Foco de Dano Corpo-a-Corpo ($2\times 1$ e $2\times 2$)
+
+* **Capacidade Máxima por Sala (`4 unidades`):** Cada câmara da bio-nave (ou sala/órgão inimigo) comporta no máximo **$2\text{ Tripulantes Aliados} + 2\text{ Invasores Inimigos}$** estacionados simultaneamente:
+  1. **Slot 1 Aliado (Posto do Bulbo Neural):** O primeiro aliado estacionado numa câmara de sistema acopla-se automaticamente ao Bulbo (`acopladoBulbo = true`, desde que não haja inimigo nem rombo ativo na sala).
+  2. **Slot 2 Aliado (Posto Auxiliar / Guarda / Reparo Duplo):** O segundo aliado ocupa o slot auxiliar (`acopladoBulbo = false`), somando sua velocidade de reparo aditivamente ao Slot 1 quando ambos consertam o mesmo sistema ou rombo.
+  3. **Trava de Passagem Livre (*Pass-Through*):** Um $3^\circ\text{ aliado}$ pode **atravessar em trânsito** uma sala já lotada ($2/2$), mas **não pode escolher uma sala com $2\text{ aliados}$ como destino final**.
+* **Regra de Engajamento e Foco de Dano Corpo-a-Corpo (*Focus-Fire Sem Divisão de DPS*):**
+  1. **Pausa de Operação/Reparo:** Enquanto houver $\ge 1\text{ aliado}$ e $\ge 1\text{ inimigo}$ estacionados na mesma sala, o Bulbo Neural e qualquer reparo naquela sala pausam imediatamente (`acopladoBulbo = false`).
+  2. **Foco Integral no Slot 1 Adversário:** Em combates $2\times 1$ ou $2\times 2$, o DPS **nunca é dividido**: ambos os atacantes de um lado **concentram $100\%$ do seu DPS somado no ocupante do Slot 1 adversário** (o primeiro a ter entrado na sala; em caso de empate, menor `id`). Somente quando o ocupante do Slot 1 morre ou sai da sala é que o ocupante do Slot 2 passa a receber o dano. *(Isso garante a consistência matemática com o Limite Extremo 3 do Passo 6, onde $2\text{ Mergulhadores}$ somam $2 \times 12 = 24.0\text{ DPS}$ sobre o mesmo defensor na Bomba Branquial Nv.3).*
+  3. **Reflexão do Baiacu Inflado ($50\%$):** Quando o defensor focado no Slot 1 é um **Baiacu Espinhoso com `inflado = true`**, cada atacante corpo-a-corpo na sala sofre individualmente **$50\%$ do seu próprio DPS refletido** ($4.0\text{ HP/s}$ contra Marinheiro de $8\text{ DPS}$; $6.0\text{ HP/s}$ contra Mergulhador de $12\text{ DPS}$).
+
+### C. Geometria e Regra de Traçado do *Cortador Térmico a Plasma (Beam)*
+
+O **Cortador Térmico a Plasma** (Catálogo 5.1: $2\text{ Energia}$, $25\text{ kg}$, $14\text{s}$ de recarga) e o **Cortador Industrial a Plasma Pesado** (Fase 2 da Draga Continental: $15\text{s}$ de recarga) cortam até **$3\text{ salas adjacentes}$** causando **$2\text{ de dano por sala}$** ($6\text{ de dano total}$) quando a Barreira do alvo está em $0\text{ bolhas}$:
+1. **Caminho Simples Ortogonal de Comprimento $3$:** O traçado do feixe é uma **trinca ordenada de salas distintas** $(S_1, S_2, S_3)$ onde $S_2$ é ortogonalmente adjacente a $S_1$ e $S_3$ é ortogonalmente adjacente a $S_2$, com **$S_3 \neq S_1$** (proibido repetir sala ou voltar de $S_2$ para $S_1$).
+2. **Geometria em cada Classe de Alvo:**
+   * **Na Bio-Nave ($2 \times 4$, $8\text{ câmaras}$):** Traça $3\text{ salas}$ em linha vertical (ex.: $1 \rightarrow 2 \rightarrow 4$) ou em **"L" ortogonal** (ex.: $1 \rightarrow 7 \rightarrow 3$ ou $2 \rightarrow 4 \rightarrow 5$), causando $3 \times 2 = \mathbf{6\text{ dano}}$.
+   * **Em Barcos Inimigos $2 \times 2$ ($4\text{ salas}$, ex.: *Lancha Patrulheira*):** Como o grafo $2 \times 2$ (`CABINE` $\leftrightarrow$ `TORRETA` sobre `MOTOR SUB` $\leftrightarrow$ `TORP. SUB`) é um ciclo ortogonal de $4\text{ salas}$, o feixe traça um **"L" ortogonal** cobrindo quaisquer **$3\text{ salas conectadas}$ das $4$** (ex.: `CABINE` $\rightarrow$ `TORRETA` $\rightarrow$ `TORP. SUB`), causando $3 \times 2 = \mathbf{6\text{ dano}}$.
+   * **Em Monstros Colossais ($4\text{ órgãos}$ em Coluna no Sonar: $O_1 \leftrightarrow O_2 \leftrightarrow O_3 \leftrightarrow O_4$):** O feixe percorre **$3\text{ órgãos consecutivos}$** ($O_1 \rightarrow O_2 \rightarrow O_3$ ou $O_2 \rightarrow O_3 \rightarrow O_4$), causando $3 \times 2 = \mathbf{6\text{ dano}}$ ao corpo da criatura.
+
+---
+
 # CONTRA-AUDITORIA #1 (Análise Brutal da Matemática do Passo 1)
 
 Agora vamos atacar a nossa própria criação para procurar **exploits, quebras de equilíbrio e falhas matemáticas**:
@@ -177,3 +220,13 @@ Agora vamos atacar a nossa própria criação para procurar **exploits, quebras 
     * Com **1 Barra**: Oxigena todas as salas normalmente e cura a **$+5\text{ HP/s}$ apenas quem estiver dentro da sala da Bomba Branquial**.
     * Com **2 Barras**: Cura a **$+12\text{ HP/s}$ dentro da sala da Bomba Branquial** e libera a habilidade ativa **Pulso de Enzimas** ($6\text{s}$ de duração, $+5\text{ HP/s}$ na nave toda, $25\text{s}$ de recarga).
   * *Resultado da Correção:* Preserva a necessidade tática de recuar tripulantes feridos para a Bomba Branquial, mantendo uma válvula de emergência com *cooldown*.
+
+### Falha Encontrada 4: O Exploit do "Vai-e-Volta" do Cortador Térmico e a Ambiguidade de Rota / Foco $2\times 1$
+* **O Problema Triplo:**
+  1. Se o *Cortador Térmico a Plasma* ($3\text{ salas}$, $2\text{ dano/sala}$) pudesse fazer um movimento de "vai-e-volta" ($S_1 \rightarrow S_2 \rightarrow S_1$), o jogador acertaria $2\times$ a mesma sala no mesmo disparo ($4\text{ de dano}$ num único sistema ou no Gânglio Central do monstro!).
+  2. Se em um combate corpo-a-corpo $2\times 1$ o DPS dos 2 atacantes fosse dividido ($12\text{ DPS}$ para cada lado) ou alternado, um único defensor na Bomba Branquial ficaria imortal.
+  3. Na grade $2\times 4$, sem o **Duto Hidráulico Ventral ($5 \leftrightarrow 6$)** ligando o Sifão ao Poço da Quilha (conforme desenhado no Wireframe 2.1), o Polvo levaria $2\text{ saltos}$ ($2.5\text{s}$) em vez de $1\text{ salto}$ ($1.25\text{s}$) para ir do Sifão ao Poço da Quilha em $t = 22.5\text{s}$ da Simulação 3.4!
+* **Correção Obrigatória Aplicada ao Design (Travada na Seção 1.6):**
+  1. **Restrição de Caminho Simples ($S_1 \neq S_2 \neq S_3$):** Todo traçado de *Beam* exige $3\text{ salas estritamente distintas}$ conectadas ortogonalmente, proibindo atingir a mesma sala duas vezes no mesmo feixe.
+  2. **Foco Integral no Slot 1 (*Focus-Fire*):** Em $2\times 1$ ou $2\times 2$, $100\%$ do DPS somado dos atacantes recai sobre o ocupante do Slot 1 adversário até sua morte ou retirada.
+  3. **Grafo Canônico de $11\text{ Conexões}$ ($10\text{ Ortogonais} + \text{Duto } 5\leftrightarrow 6$):** Garante simultaneamente $d(2, 5) = 2\text{ saltos}$ ($2.5\text{s}$) em $t = 10.0\text{s}$ e $d(5, 6) = 1\text{ salto}$ ($1.25\text{s}$) em $t = 22.5\text{s}$ na Simulação do Passo 3!

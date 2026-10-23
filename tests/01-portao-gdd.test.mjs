@@ -23,6 +23,11 @@ import {
   extrairSimulacaoVolume03,
   extrairContratoEstadoVolume08,
   extrairTripulacaoVolume01,
+  extrairTopologiaOcupacaoBeamVolume01,
+  calcularRotaMinimaCamaras,
+  resolverTickCombateCorpoACorpoSala,
+  validarTracadoBeamOrtogonal,
+  enumerarTracadosBeamValidos,
   extrairParametrosMarinheiros,
   normalizarTexto,
 } from '../src/gdd-parser.mjs';
@@ -426,10 +431,13 @@ test('Junção N1 + N4: recalcula no motor as 5 Naves, 7 Armas, 6 Órgãos e Sim
   const simVol03 = extrairSimulacaoVolume03(cadeia.volumes[2].conteudo);
   const sim = simVol03.textoNormalizado;
 
-  // B3: a linha do tempo é RECALCULADA a partir das fontes (Vol. 01 tripulação + motor + SSOT), não copiada do texto.
+  // B3: a linha do tempo é RECALCULADA a partir das fontes (Vol. 01 tripulação + topologia 1.6.A + motor + SSOT), não copiada do texto.
   const trip = extrairTripulacaoVolume01(cadeia.volumes[0].conteudo);
+  const topologia = extrairTopologiaOcupacaoBeamVolume01(cadeia.volumes[0].conteudo);
   const polvo = trip.especies.find((e) => e.especie === 'POLVO');
   const nadoPolvo = 1.5 / polvo.velNado; // TEMPO_NADO_SALA ÷ velocidade da espécie
+  const saltosCortexParaSifao = calcularRotaMinimaCamaras(topologia.camaras, 2, 5).saltos;
+  const saltosSifaoParaPoco = calcularRotaMinimaCamaras(topologia.camaras, 5, 6).saltos;
   const tTouchdown = 13.0; // torpedo inimigo de 13 s quebra o Mastro
   const restanteNoMar = (tDisparoAnterior, recargaBase) =>
     tTouchdown + calcularTempoRecargaArma({ tempoChassiSeg: recargaBase - (tTouchdown - tDisparoAnterior), emTouchdown: true });
@@ -440,10 +448,10 @@ test('Junção N1 + N4: recalcula no motor as 5 Naves, 7 Armas, 6 Órgãos e Sim
   const tArpao2 = restanteNoMar(tArpao1, 11); // 2 s no ar + 9 s x 0.75
   const tAcustico3 = tAcustico2 + recargaAcusticoTouchdown;
   const tAcustico4 = tAcustico3 + recargaAcusticoTouchdown;
-  const tPolvoNoSifao = 10.0 + 2 * nadoPolvo; // Córtex -> Sifão (2 salas)
+  const tPolvoNoSifao = 10.0 + saltosCortexParaSifao * nadoPolvo; // Córtex (2) -> Sifão (5) pelo grafo 1.6.A
   const tSifaoReparado = tPolvoNoSifao + polvo.reparoSistSeg;
   const tFuroFechado = tSifaoReparado + polvo.reparoFuroSeg;
-  const tPolvoNoPoco = tFuroFechado + nadoPolvo;
+  const tPolvoNoPoco = tFuroFechado + saltosSifaoParaPoco * nadoPolvo; // Sifão (5) -> Poço da Quilha (6) pelo grafo 1.6.A
   const tMastroReparado = tPolvoNoPoco + polvo.reparoSistSeg;
   const tDecolagem = tMastroReparado + 3.0; // TEMPO_SPOOL_UP
   const tMotorInimigoInundado = tArpao1 + 12.5 / 5.0; // TAXA_FURO_MAR enche 12.5 kg
@@ -950,6 +958,192 @@ test('Junção N1 + L4 + N4: audita as 3 Fases da Draga Continental (5.5) e o Be
     ciclosSurgeFase3Calculados,
     'Ciclos de Power Surge da Fase 3 declarados na Falha Global 7 divergem de floor(67.2 / 18) = 3'
   );
+});
+
+test('Junção N1 + L4 + N4: audita Topologia 2x4 + Duto 5<->6 (1.6.A), Lotação/Foco Corpo-a-Corpo (1.6.B) e Geometria do Beam (1.6.C) contra Vols. 02, 03, 05, 06 e 08', () => {
+  const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const vol01 = cadeia.volumes[0].conteudo;
+  const vol02 = cadeia.volumes[1].conteudo;
+  const vol03 = normalizarTexto(cadeia.volumes[2].conteudo);
+  const vol05 = cadeia.volumes[4].conteudo;
+  const vol08 = extrairContratoEstadoVolume08(cadeia.volumes[7].conteudo);
+
+  const topologia = extrairTopologiaOcupacaoBeamVolume01(vol01);
+  const tripVol01 = extrairTripulacaoVolume01(vol01);
+
+  console.log(
+    `[N4] Topologia Vol. 01 examinada: ${topologia.camaras.length} câmaras, ${topologia.conexoesBidirecionaisDeclaradas} conexões bidirecionais, lotação máx=${topologia.lotacaoTotalSala}, Beam=${topologia.beamMaxSalas} salas`
+  );
+
+  // 1. Auditoria do Grafo 2x4 + Duto Hidráulico Ventral (5<->6) contra o GameState (Vol. 08) e a Simulação (Vol. 03)
+  assert.equal(topologia.camaras.length, 8, 'Seção 1.6.A deve listar exatamente as 8 câmaras da bio-nave');
+  const camarasVol08 = vol08.gameState.naveJogador.camaras;
+  assert.equal(camarasVol08.length, 8);
+
+  let somaGrausCalculada = 0;
+  for (let i = 0; i < 8; i += 1) {
+    const cTopo = topologia.camaras[i];
+    const cState = camarasVol08[i];
+    assert.equal(cTopo.id, cState.id, `ID da câmara ${i + 1} na Seção 1.6.A diverge do GameState (Vol. 08)`);
+    assert.equal(cTopo.nome, cState.nome, `Nome da câmara ${cTopo.id} na Seção 1.6.A diverge do GameState (Vol. 08)`);
+    assert.ok(cTopo.coluna === 0 || cTopo.coluna === 1, `Coluna inválida na câmara ${cTopo.id}`);
+    assert.ok(cTopo.andar >= 0 && cTopo.andar <= 3, `Andar inválido na câmara ${cTopo.id}`);
+    assert.equal(
+      cTopo.vizinhos.length,
+      cTopo.grauDeclarado,
+      `Grau declarado da câmara ${cTopo.id} (${cTopo.grauDeclarado}) diverge da lista de vizinhos (${cTopo.vizinhos.length})`
+    );
+    somaGrausCalculada += cTopo.vizinhos.length;
+
+    // Simetria bidirecional: u vizinho de v <=> v vizinho de u
+    for (const v of cTopo.vizinhos) {
+      const vizCamara = topologia.camaras.find((x) => x.id === v);
+      assert.ok(vizCamara, `Vizinho ${v} da câmara ${cTopo.id} não existe`);
+      assert.ok(
+        vizCamara.vizinhos.includes(cTopo.id),
+        `Grafo de câmaras assimétrico: ${cTopo.id} lista ${v}, mas ${v} não lista ${cTopo.id}`
+      );
+    }
+  }
+
+  assert.equal(somaGrausCalculada, 22, 'Soma dos graus das 8 câmaras deve ser 22 (11 conexões bidirecionais)');
+  assert.equal(topologia.somaGrausDeclarada, somaGrausCalculada, 'Soma dos graus declarada na Seção 1.6.A diverge de 22');
+  assert.equal(
+    topologia.conexoesBidirecionaisDeclaradas,
+    somaGrausCalculada / 2,
+    'Total de conexões bidirecionais declarado diverge de 11'
+  );
+
+  // Verifica desempate determinístico de rota (2 -> 4 -> 5 em 2 saltos) e o Duto Hidráulico (5 -> 6 em 1 salto) contra o Vol. 02 e Vol. 03
+  const rotaCortexSifao = calcularRotaMinimaCamaras(topologia.camaras, 2, 5);
+  assert.equal(rotaCortexSifao.saltos, 2, 'Distância Córtex (2) -> Sifão (5) deve ser de 2 saltos');
+  assert.deepEqual(
+    rotaCortexSifao.rota,
+    [2, 4, 5],
+    'Regra de desempate (vertical na mesma coluna antes de horizontal) deve escolher [2, 4, 5]'
+  );
+  assert.deepEqual(rotaCortexSifao.todasRotasMinimas, [
+    [2, 4, 5],
+    [2, 3, 5],
+  ]);
+  assert.ok(
+    vol03.includes(`atravessando ${rotaCortexSifao.saltos} salas (${rotaCortexSifao.saltos} x 1.25s = 2.5s`),
+    'Vol. 03 deve concordar com os 2 saltos da rota Córtex -> Sifão'
+  );
+
+  const rotaSifaoPoco = calcularRotaMinimaCamaras(topologia.camaras, 5, 6);
+  assert.equal(rotaSifaoPoco.saltos, 1, 'Duto Hidráulico Ventral (5 <-> 6) deve ligar Sifão (5) ao Poço da Quilha (6) em 1 salto');
+  assert.deepEqual(rotaSifaoPoco.rota, [5, 6]);
+  assert.ok(
+    vol02.includes('| [6. POÇO DA QUILHA]   | [8. ENXERTO B]   |'),
+    'Wireframe Vol. 02 deve posicionar o Poço da Quilha (6) sob a junção ventral com o Sifão (5)'
+  );
+  assert.ok(
+    vol03.includes('nada do Sifão até o Poço da Quilha adjacente (1.25s'),
+    'Vol. 03 deve concordar com 1 salto (1.25s) entre Sifão (5) e Poço da Quilha (6)'
+  );
+
+  // 2. Auditoria de Lotação (2 aliados + 2 inimigos = 4) e Foco Corpo-a-Corpo sem divisão de DPS (Seção 1.6.B vs. Limite Extremo 3 do Vol. 06)
+  assert.equal(topologia.lotacaoMaxAliados, 2, 'Limite de aliados estacionados por câmara deve ser 2');
+  assert.equal(topologia.lotacaoMaxInimigos, 2, 'Limite de inimigos estacionados por câmara deve ser 2');
+  assert.equal(
+    topologia.lotacaoMaxAliados + topologia.lotacaoMaxInimigos,
+    topologia.lotacaoTotalSala,
+    'Capacidade máxima da sala deve ser 2 aliados + 2 inimigos = 4 unidades'
+  );
+  assert.equal(topologia.lotacaoTotalSala, 4);
+  assert.equal(topologia.focoSemDivisaoDps, true, 'Seção 1.6.B deve travar Foco Integral no Slot 1 sem divisão de DPS');
+  assert.equal(topologia.reflexaoBaiacuPct, 50, 'Reflexão de espinhos do Baiacu inflado deve ser de 50%');
+
+  const baiacuSpec = tripVol01.especies.find((e) => e.especie === 'BAIACU');
+  const polvoSpec = tripVol01.especies.find((e) => e.especie === 'POLVO');
+  const resultadoCombateSala = resolverTickCombateCorpoACorpoSala({
+    aliados: [
+      { id: 'baiacu-1', hpAtual: baiacuSpec.hpMax, dps: baiacuSpec.dps, inflado: true, acopladoBulbo: true },
+      { id: 'polvo-1', hpAtual: polvoSpec.hpMax, dps: polvoSpec.dps, inflado: false, acopladoBulbo: false },
+    ],
+    inimigos: [
+      { id: 'merg-1', hpAtual: 100, dps: tripVol01.mergulhadorDps },
+      { id: 'merg-2', hpAtual: 100, dps: tripVol01.mergulhadorDps },
+    ],
+    dtSeg: 1.0,
+  });
+
+  // Ambos os aliados pausam acoplamento ao Bulbo durante combate na sala
+  assert.equal(resultadoCombateSala.aliados[0].acopladoBulbo, false);
+  // Slot 1 aliado (Baiacu 150 HP) recebe 100% do DPS dos 2 Mergulhadores (2 x 12 = 24 HP -> 126 HP); Slot 2 aliado (Polvo 80 HP) recebe 0 dano!
+  assert.equal(resultadoCombateSala.aliados[0].hpAtual, 150 - 2 * tripVol01.mergulhadorDps);
+  assert.equal(resultadoCombateSala.aliados[1].hpAtual, 80);
+  // Slot 1 inimigo recebe 100% do DPS de Baiacu+Polvo (14 + 5 = 19) + 50% de reflexão do próprio DPS (6) = 25 dano -> 75 HP!
+  assert.equal(resultadoCombateSala.inimigos[0].hpAtual, 100 - (baiacuSpec.dps + polvoSpec.dps) - 0.5 * tripVol01.mergulhadorDps);
+  // Slot 2 inimigo recebe 0 de foco corpo-a-corpo, mas sofre os 50% de reflexão dos espinhos do Baiacu ao atacá-lo (6 dano -> 94 HP)!
+  assert.equal(resultadoCombateSala.inimigos[1].hpAtual, 100 - 0.5 * tripVol01.mergulhadorDps);
+
+  assert.throws(
+    () =>
+      resolverTickCombateCorpoACorpoSala({
+        aliados: [{ id: '1', hpAtual: 80, dps: 5 }, { id: '2', hpAtual: 80, dps: 5 }, { id: '3', hpAtual: 80, dps: 5 }],
+        inimigos: [],
+      }),
+    /\[Seção 1\.6\.B Stacking Limit\]/,
+    'Exceder 2 aliados estacionados na mesma câmara deve lançar erro de Stacking Limit'
+  );
+
+  // 3. Auditoria da Geometria do Cortador Térmico a Plasma (Beam — Seção 1.6.C vs. Vol. 05)
+  assert.equal(topologia.beamMaxSalas, 3, 'Cortador Térmico deve cortar exatamente até 3 salas adjacentes');
+  assert.equal(topologia.beamDanoPorSala, 2, 'Cortador Térmico deve causar 2 de dano por sala');
+  assert.equal(
+    topologia.beamMaxSalas * topologia.beamDanoPorSala,
+    topologia.beamDanoTotal,
+    'Dano total do Cortador Térmico sem escudo deve ser 3 x 2 = 6'
+  );
+  assert.equal(topologia.beamProibeRepetirSala, true, 'Seção 1.6.C deve proibir repetir sala (vai-e-volta S1->S2->S1)');
+  assert.ok(
+    normalizarTexto(vol05).includes('corta 3 salas adjacentes (2 dano por sala'),
+    'Catálogo 5.1 (Vol. 05) deve concordar com 3 salas adjacentes e 2 de dano por sala'
+  );
+
+  // Grafo ortogonal puro 2x4 da bio-nave (10 conexões ortogonais: |colA - colB| + |andarA - andarB| === 1)
+  const grafoOrtogonalBioNave = {};
+  for (const a of topologia.camaras) {
+    grafoOrtogonalBioNave[a.id] = topologia.camaras
+      .filter((b) => Math.abs(a.coluna - b.coluna) + Math.abs(a.andar - b.andar) === 1)
+      .map((b) => b.id);
+  }
+  const tracadosBioNave = enumerarTracadosBeamValidos(grafoOrtogonalBioNave);
+  assert.equal(tracadosBioNave.length, 32, 'Grade ortogonal 2x4 (4 cantos grau 2 + 4 internos grau 3) deve admitir exatamente 32 trincas ordenadas simples de Beam');
+  assert.equal(validarTracadoBeamOrtogonal(grafoOrtogonalBioNave, [1, 2, 4]), true);
+  assert.equal(validarTracadoBeamOrtogonal(grafoOrtogonalBioNave, [1, 7, 3]), true);
+  assert.equal(validarTracadoBeamOrtogonal(grafoOrtogonalBioNave, [1, 2, 1]), false, 'Vai-e-volta [1, 2, 1] deve ser rejeitado');
+  assert.equal(validarTracadoBeamOrtogonal(grafoOrtogonalBioNave, [1, 4, 6]), false, 'Salto não adjacente [1, 4, 6] deve ser rejeitado');
+
+  // Grafo 2x2 de Barco Humano (Lancha Patrulheira: 4 salas em ciclo ortogonal)
+  const grafoBarco2x2 = {
+    CABINE: ['TORRETA', 'MOTOR_SUB'],
+    TORRETA: ['CABINE', 'TORP_SUB'],
+    MOTOR_SUB: ['CABINE', 'TORP_SUB'],
+    TORP_SUB: ['TORRETA', 'MOTOR_SUB'],
+  };
+  const tracadosBarco2x2 = enumerarTracadosBeamValidos(grafoBarco2x2);
+  assert.equal(tracadosBarco2x2.length, 8, 'Barco 2x2 (4 salas) deve admitir exatamente 8 traçados em L de 3 salas distintas');
+  assert.equal(validarTracadoBeamOrtogonal(grafoBarco2x2, ['CABINE', 'TORRETA', 'TORP_SUB']), true);
+  assert.equal(validarTracadoBeamOrtogonal(grafoBarco2x2, ['CABINE', 'TORRETA', 'CABINE']), false);
+
+  // Grafo 1x4 de Monstro Colossal (4 órgãos em coluna linear no Sonar)
+  const grafoMonstro1x4 = {
+    1: [2],
+    2: [1, 3],
+    3: [2, 4],
+    4: [3],
+  };
+  const tracadosMonstro1x4 = enumerarTracadosBeamValidos(grafoMonstro1x4);
+  assert.equal(tracadosMonstro1x4.length, 4, 'Monstro de 4 órgãos em coluna deve admitir exatamente 4 traçados de 3 órgãos consecutivos');
+  assert.deepEqual(tracadosMonstro1x4, [
+    [1, 2, 3],
+    [2, 3, 4],
+    [3, 2, 1],
+    [4, 3, 2],
+  ]);
 });
 
 test('Lei N2: verificação da Lista-Catraca (nenhum item resolvido pode permanecer na catraca)', () => {

@@ -128,6 +128,213 @@ export function extrairTripulacaoVolume01(conteudoVol01) {
   });
 }
 
+/**
+ * Extrai a Seção 1.6 do Volume 01 (Topologia de Adjacência 2x4 + Duto 5<->6, Limite de Ocupação/Foco 2x1 e Geometria do Beam).
+ */
+export function extrairTopologiaOcupacaoBeamVolume01(conteudoVol01) {
+  const secao16Bruta = conteudoVol01.split('## 1.6.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const secao16Norm = normalizarTexto(secao16Bruta);
+
+  const camaras = [];
+  const grafoAdjacencia = {};
+
+  for (const linhaBruta of secao16Bruta.split('\n')) {
+    if (!/^\| \*\*\d+\*\* \|/.test(linhaBruta)) continue;
+    const cols = normalizarTexto(linhaBruta)
+      .split('|')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (cols.length >= 5) {
+      const id = Number(cols[0]);
+      const nome = cols[1];
+      const matchCoord = cols[2].match(/\((\d+),\s*(\d+)\)/);
+      const coluna = Number(matchCoord?.[1] ?? NaN);
+      const andar = Number(matchCoord?.[2] ?? NaN);
+      const vizinhos = cols[3]
+        .split(',')
+        .map((v) => Number(v.trim()))
+        .filter((v) => !Number.isNaN(v));
+      const grauDeclarado = Number(cols[4]);
+      camaras.push({ id, nome, coluna, andar, vizinhos, grauDeclarado });
+      grafoAdjacencia[id] = vizinhos;
+    }
+  }
+
+  const conexoesBidirecionaisDeclaradas = Number(
+    secao16Norm.match(/totalizando (\d+) conexões bidirecionais/)?.[1] ?? NaN
+  );
+  const somaGrausDeclarada = Number(secao16Norm.match(/soma dos graus\s*=\s*(\d+)/)?.[1] ?? NaN);
+
+  const matchLotacao = secao16Norm.match(
+    /Capacidade Máxima por Sala \((\d+) unidades\):[^\n]*?(\d+) Tripulantes Aliados \+ (\d+) Invasores Inimigos/
+  );
+  const lotacaoTotalSala = Number(matchLotacao?.[1] ?? NaN);
+  const lotacaoMaxAliados = Number(matchLotacao?.[2] ?? NaN);
+  const lotacaoMaxInimigos = Number(matchLotacao?.[3] ?? NaN);
+
+  const focoSemDivisaoDps = /o DPS nunca é dividido: ambos os atacantes de um lado concentram 100% do seu DPS somado no ocupante do Slot 1 adversário/.test(
+    secao16Norm
+  );
+  const reflexaoBaiacuPct = Number(
+    secao16Norm.match(/sofre individualmente (\d+)% do seu próprio DPS refletido/)?.[1] ?? NaN
+  );
+
+  const matchBeam = secao16Norm.match(
+    /cortam até (\d+) salas adjacentes causando (\d+) de dano por sala \((\d+) de dano total\)/
+  );
+  const beamMaxSalas = Number(matchBeam?.[1] ?? NaN);
+  const beamDanoPorSala = Number(matchBeam?.[2] ?? NaN);
+  const beamDanoTotal = Number(matchBeam?.[3] ?? NaN);
+  const beamProibeRepetirSala = /proibido repetir sala ou voltar de S_2 para S_1/.test(secao16Norm);
+
+  return clonarProfundoCongelado({
+    camaras,
+    grafoAdjacencia,
+    conexoesBidirecionaisDeclaradas,
+    somaGrausDeclarada,
+    lotacaoTotalSala,
+    lotacaoMaxAliados,
+    lotacaoMaxInimigos,
+    focoSemDivisaoDps,
+    reflexaoBaiacuPct,
+    beamMaxSalas,
+    beamDanoPorSala,
+    beamDanoTotal,
+    beamProibeRepetirSala,
+  });
+}
+
+/**
+ * Calcula a rota mínima entre duas câmaras da bio-nave aplicando a regra determinística de desempate da Seção 1.6.A:
+ * prioriza o passo vertical na mesma coluna antes do passo horizontal/ventral quando dois caminhos têm o mesmo número de saltos.
+ */
+export function calcularRotaMinimaCamaras(camaras, idOrigem, idDestino) {
+  if (idOrigem === idDestino) {
+    return clonarProfundoCongelado({ saltos: 0, rota: [idOrigem] });
+  }
+  const porId = Object.fromEntries(camaras.map((c) => [c.id, c]));
+  if (!porId[idOrigem] || !porId[idDestino]) {
+    throw new Error(`Câmara inválida em calcularRotaMinimaCamaras: ${idOrigem} -> ${idDestino}`);
+  }
+
+  const fila = [[idOrigem]];
+  const menorDistPorNo = { [idOrigem]: 0 };
+  const rotasMinimas = [];
+
+  while (fila.length > 0) {
+    const caminho = fila.shift();
+    const atual = caminho[caminho.length - 1];
+    const distAtual = caminho.length - 1;
+
+    if (rotasMinimas.length > 0 && distAtual >= rotasMinimas[0].length - 1) {
+      continue;
+    }
+
+    const camaraAtual = porId[atual];
+    // Ordena vizinhos priorizando passo vertical na mesma coluna antes de passo horizontal/ventral
+    const vizinhosOrdenados = [...camaraAtual.vizinhos].sort((a, b) => {
+      const ca = porId[a];
+      const cb = porId[b];
+      const aMesmaColuna = ca.coluna === camaraAtual.coluna ? 0 : 1;
+      const bMesmaColuna = cb.coluna === camaraAtual.coluna ? 0 : 1;
+      return aMesmaColuna - bMesmaColuna || a - b;
+    });
+
+    for (const viz of vizinhosOrdenados) {
+      if (caminho.includes(viz)) continue;
+      const novoCaminho = [...caminho, viz];
+      const novaDist = novoCaminho.length - 1;
+      if (viz === idDestino) {
+        rotasMinimas.push(novoCaminho);
+      } else if (menorDistPorNo[viz] === undefined || novaDist <= menorDistPorNo[viz]) {
+        menorDistPorNo[viz] = novaDist;
+        fila.push(novoCaminho);
+      }
+    }
+  }
+
+  if (rotasMinimas.length === 0) {
+    throw new Error(`Sem caminho entre câmaras ${idOrigem} e ${idDestino}`);
+  }
+
+  return clonarProfundoCongelado({
+    saltos: rotasMinimas[0].length - 1,
+    rota: rotasMinimas[0],
+    todasRotasMinimas: rotasMinimas,
+  });
+}
+
+/**
+ * Resolve 1 tick de combate corpo-a-corpo numa sala conforme a Seção 1.6.B:
+ * - Limite de lotação: máx. 2 aliados + 2 inimigos estacionados;
+ * - Foco determinístico integral (100% do DPS somado) no Slot 1 adversário (índice 0);
+ * - Reflexão de 50% do próprio DPS de cada atacante quando o defensor no Slot 1 é um Baiacu inflado.
+ */
+export function resolverTickCombateCorpoACorpoSala({ aliados, inimigos, dtSeg = 1.0 }) {
+  if (aliados.length > 2 || inimigos.length > 2) {
+    throw new Error(
+      `[Seção 1.6.B Stacking Limit] Sala excedeu limite de 2 aliados (${aliados.length}) ou 2 inimigos (${inimigos.length})`
+    );
+  }
+  const novosAliados = aliados.map((a) => ({ ...a, acopladoBulbo: aliados.length > 0 && inimigos.length > 0 ? false : a.acopladoBulbo }));
+  const novosInimigos = inimigos.map((i) => ({ ...i }));
+
+  if (novosAliados.length > 0 && novosInimigos.length > 0) {
+    const dpsTotalAliados = novosAliados.reduce((acc, a) => acc + a.dps, 0);
+    const dpsTotalInimigos = novosInimigos.reduce((acc, i) => acc + i.dps, 0);
+
+    // 100% do DPS aliado foca no Slot 1 inimigo (índice 0)
+    novosInimigos[0].hpAtual = Math.max(0, novosInimigos[0].hpAtual - dpsTotalAliados * dtSeg);
+
+    // 100% do DPS inimigo foca no Slot 1 aliado (índice 0)
+    novosAliados[0].hpAtual = Math.max(0, novosAliados[0].hpAtual - dpsTotalInimigos * dtSeg);
+
+    // Se o Slot 1 aliado for Baiacu inflado, reflete 50% do próprio DPS de cada atacante inimigo
+    if (novosAliados[0].inflado === true) {
+      for (const inimigo of novosInimigos) {
+        inimigo.hpAtual = Math.max(0, inimigo.hpAtual - 0.5 * inimigo.dps * dtSeg);
+      }
+    }
+  }
+
+  return clonarProfundoCongelado({
+    aliados: novosAliados,
+    inimigos: novosInimigos,
+  });
+}
+
+/**
+ * Valida e enumera traçados de 3 salas distintas (S1 -> S2 -> S3, com S3 != S1) do Cortador Térmico a Plasma (Seção 1.6.C).
+ */
+export function validarTracadoBeamOrtogonal(grafoOrtogonal, trincaSalas) {
+  if (!Array.isArray(trincaSalas) || trincaSalas.length !== 3) {
+    return false;
+  }
+  const [s1, s2, s3] = trincaSalas;
+  if (s1 === s2 || s2 === s3 || s1 === s3) {
+    return false;
+  }
+  const vizS1 = grafoOrtogonal[s1] ?? [];
+  const vizS2 = grafoOrtogonal[s2] ?? [];
+  return vizS1.includes(s2) && vizS2.includes(s3);
+}
+
+export function enumerarTracadosBeamValidos(grafoOrtogonal) {
+  const nos = Object.keys(grafoOrtogonal);
+  const tracados = [];
+  for (const s1 of nos) {
+    for (const s2 of grafoOrtogonal[s1] ?? []) {
+      for (const s3 of grafoOrtogonal[s2] ?? []) {
+        const s1Norm = typeof s2 === 'number' ? Number(s1) : s1;
+        if (validarTracadoBeamOrtogonal(grafoOrtogonal, [s1Norm, s2, s3])) {
+          tracados.push([s1Norm, s2, s3]);
+        }
+      }
+    }
+  }
+  return clonarProfundoCongelado(tracados);
+}
+
 function clonarProfundoCongelado(obj) {
   const copia = structuredClone(obj);
   const congelar = (alvo) => {

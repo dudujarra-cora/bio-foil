@@ -532,6 +532,54 @@
         "tests/01-portao-gdd.test.mjs"
       ],
       "falhaEsperada": "HP de casco da Fase 3 diverge do canônico"
+    },
+    {
+      "id": "MUT-34",
+      "arquivo": "01_matematica_base_e_auditoria.md",
+      "lei": "N1 / L1 (B3)",
+      "descricao": "Remove o Duto Hidráulico Ventral (5 <-> 6) da Seção 1.6.A: Sifão (5) -> Poço da Quilha (6) vira 2 saltos e quebra a linha do tempo do Vol. 03",
+      "trocas": [
+        {
+          "buscar": "| **5** | `SIFAO_PROPULSAO` | `(1, 2)` | $3, 4, 6, 8$ | $4$ |\n| **6** | `POCO_DA_QUILHA_MASTRO` | `(0, 3)` | $4, 5, 8$ | $3$ |",
+          "substituir": "| **5** | `SIFAO_PROPULSAO` | `(1, 2)` | $3, 4, 8$ | $3$ |\n| **6** | `POCO_DA_QUILHA_MASTRO` | `(0, 3)` | $4, 8$ | $2$ |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Linha do tempo do Vol. 03 diverge da linha do tempo recalculada a partir do Vol. 01 + motor + SSOT"
+    },
+    {
+      "id": "MUT-35",
+      "arquivo": "01_matematica_base_e_auditoria.md",
+      "lei": "L4 / L6",
+      "descricao": "Capacidade de lotação por câmara muda de 2 para 3 aliados estacionados (quebra regra 2+2=4 da Seção 1.6.B)",
+      "trocas": [
+        {
+          "buscar": "comporta no máximo **$2\\text{ Tripulantes Aliados} + 2\\text{ Invasores Inimigos}$** estacionados",
+          "substituir": "comporta no máximo **$3\\text{ Tripulantes Aliados} + 2\\text{ Invasores Inimigos}$** estacionados"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Limite de aliados estacionados por câmara deve ser 2"
+    },
+    {
+      "id": "MUT-36",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "L1 / L6",
+      "descricao": "Validador de traçado do Cortador Térmico (Beam) deixa de proibir vai-e-volta (S1 === S3 passa a ser aceito)",
+      "trocas": [
+        {
+          "buscar": "  if (s1 === s2 || s2 === s3 || s1 === s3) {",
+          "substituir": "  if (s1 === s2 || s2 === s3) {"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Grade ortogonal 2x4 (4 cantos grau 2 + 4 internos grau 3) deve admitir exatamente 32 trincas ordenadas simples de Beam"
     }
   ]
 }
