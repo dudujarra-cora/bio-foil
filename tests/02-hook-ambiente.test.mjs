@@ -5,7 +5,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { CADEIA_CANONICA_ONDAS_SRC, CADEIA_CANONICA_SRC, verificarCadeiaTestesEMutacoes } from '../src/gdd-parser.mjs';
+import {
+  CADEIA_CANONICA_ONDAS_SRC,
+  CADEIA_CANONICA_SRC,
+  clonarProfundoCongelado,
+  verificarCadeiaTestesEMutacoes,
+  verificarRegraTestesParaTudo,
+} from '../src/gdd-parser.mjs';
 import {
   CATALOGO_FERRAMENTAS_MCP,
   CATALOGO_PROMPTS_MCP,
@@ -13,11 +19,19 @@ import {
   auditarAmbienteN5Secao5,
   avaliarPoliticaAgenteMcp,
   criarServidorHttpMcp,
+  executarMutacoesL6Mcp,
+  executarPortoesMcp,
+  iniciarCenarioBiofoilMcp,
+  iniciarTransporteStdio,
   inspecionarAlvoL3Mcp,
   inspecionarCodigo14Leis,
   invocarFerramentaMcp,
+  lerRecursoMcp,
+  obterPromptMcp,
   processarMensagemJsonRpc,
+  simularPassoAgenteMcp,
 } from '../scripts/mcp-testes-agentes.mjs';
+import { copiarProjeto, primeiraLinhaDeFalha } from '../scripts/rodar-mutacoes.mjs';
 import { criarEstadoInicialPartida, congelarProfundo } from '../src/onda1-fisica/estado-inicial.mjs';
 
 const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -343,11 +357,35 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
     '[Lei L3] Sem permissão e não encontrado devem ter marcadores distintos no MCP'
   );
 
-  // 3. Ferramenta 2: agent_test_inspecionar_codigo_14_leis + MUT-MCP-02 (detecção de tautologia L4 e test.skip N2)
+  // 3. Ferramenta 2: agent_test_inspecionar_codigo_14_leis + MUT-MCP-02 + Regra Testes-Para-Tudo (MUT-MCP-05)
   const inspOk = inspecionarCodigo14Leis({ diretorioRaiz: DIRETORIO_RAIZ, response_format: 'json' });
   assert.equal(inspOk.isError, false);
   assert.equal(inspOk.structuredContent.status, 'APROVADO');
   assert.equal(inspOk.structuredContent.arquivosTesteExaminadosN4, 9);
+  assert.equal(inspOk.structuredContent.arquivosCodigoTestadosN4, 24);
+  assert.ok(inspOk.structuredContent.funcoesExportadasTestadasN4 >= 139);
+
+  const relatorioTudo = verificarRegraTestesParaTudo(DIRETORIO_RAIZ);
+  assert.equal(relatorioTudo.arquivosCodigoExaminados, 24);
+  assert.equal(Object.isFrozen(clonarProfundoCongelado({ ok: true })), true);
+  assert.equal(fs.existsSync(path.join(DIRETORIO_RAIZ, 'scripts', 'auditar-frente.sh')), true);
+  assert.equal(typeof iniciarTransporteStdio, 'function');
+  assert.equal(typeof copiarProjeto, 'function');
+  assert.equal(
+    primeiraLinhaDeFalha('failing tests:\nAssertionError [ERR_ASSERTION]: falha simulada\n'),
+    'AssertionError [ERR_ASSERTION]: falha simulada'
+  );
+  assert.equal(lerRecursoMcp('leis://protocolo/14-leis').contents.length, 1);
+  assert.equal(obterPromptMcp('auditar_frente_14_leis', { frente: 'f1' }).messages.length, 1);
+
+  assert.throws(
+    () =>
+      verificarRegraTestesParaTudo(DIRETORIO_RAIZ, {
+        funcaoOrfaSimulada: { nome: `funcao_${'orfa_sem_teste'}`, arquivo: 'src/gdd-parser.mjs' },
+      }),
+    /\[REGRA TESTES-PARA-TUDO FALHOU\] Função exportada "funcao_orfa_/,
+    '[MUT-MCP-05 / Regra Testes-Para-Tudo] Qualquer função exportada sem teste direto em tests/*.test.mjs deve reprovar'
+  );
 
   const tmpTautologia = fs.mkdtempSync(path.join(os.tmpdir(), 'ftl-mcp-l4-'));
   try {
@@ -374,7 +412,7 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
   }
 
   // 4. Ferramenta 3 e 4: agent_test_executar_portoes e agent_test_executar_mutacoes_l6
-  const portaoExec = invocarFerramentaMcp('agent_test_executar_portoes', {
+  const portaoExec = executarPortoesMcp({
     diretorioRaiz: DIRETORIO_RAIZ,
     filtroSuite: '03-onda1-fisica',
   });
@@ -382,7 +420,7 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
   assert.equal(portaoExec.structuredContent.status, 'VERDE');
   assert.equal(portaoExec.structuredContent.suitesExaminadasN4, 1);
 
-  const mutExec = invocarFerramentaMcp('agent_test_executar_mutacoes_l6', {
+  const mutExec = executarMutacoesL6Mcp({
     diretorioRaiz: DIRETORIO_RAIZ,
     ids: ['MUT-61'],
   });
@@ -392,7 +430,7 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
 
   // 5. Ferramentas 5, 6, 7 e 8 (Domínio B: Bio-Foil Agent Harness + MUT-MCP-03 e MUT-MCP-04)
   for (const tipoCenario of ['COMBATE_BARCO', 'COMBATE_MONSTRO', 'CHEFE_FASE_3', 'MAPA_SETORIAL', 'LOJA_FORJA']) {
-    const cen = invocarFerramentaMcp('agent_test_iniciar_cenario_biofoil', {
+    const cen = iniciarCenarioBiofoilMcp({
       seedPartida: 'seed-mcp-cenario',
       idArquitetura: 'CARCACA_ALFA',
       setorNumero: 1,
@@ -406,7 +444,7 @@ test('MCP para Testes de Agentes (L1/L2/L3/L4/L6/N4): 8 ferramentas, 3 recursos,
     seedPartida: 'seed-mcp-combate',
     tipoCenario: 'COMBATE_BARCO',
   });
-  const passoSim = invocarFerramentaMcp('agent_test_simular_passo_agente', {
+  const passoSim = simularPassoAgenteMcp({
     estado: cenarioCombate.structuredContent.estado,
     comandos: [{ tipo: 'MERGULHO_TATICO', payload: { recolherFoil: true } }],
     passosTick: 2,

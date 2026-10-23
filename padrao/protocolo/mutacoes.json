@@ -1380,6 +1380,22 @@
         "tests/02-hook-ambiente.test.mjs"
       ],
       "falhaEsperada": "[MUT-MCP-04 / Benchmark Agente] Estratégia CANONICA_OTIMA deve atingir 100/100 nos 5 cenários táticos"
+    },
+    {
+      "id": "MUT-87",
+      "arquivo": "src/gdd-parser.mjs",
+      "lei": "L5 / N4 (MUT-MCP-05)",
+      "descricao": "verificarRegraTestesParaTudo ignora funções exportadas órfãs sem teste direto em tests/*.test.mjs (violando a Regra de Criação Obrigatória de Testes para Tudo)",
+      "trocas": [
+        {
+          "buscar": "  if (\n    opcoesDebug.funcaoOrfaSimulada &&\n    opcoesDebug.ignorarVerificacaoFuncaoOrfa !== true\n  ) {",
+          "substituir": "  if (false && opcoesDebug.funcaoOrfaSimulada) {"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-MCP-05 / Regra Testes-Para-Tudo] Qualquer função exportada sem teste direto em tests/*.test.mjs deve reprovar"
     }
   ]
 }

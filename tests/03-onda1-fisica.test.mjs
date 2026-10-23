@@ -2,12 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  criarCamarasIniciais,
   criarEstadoInicialPartida,
   clonarCongelado,
   congelarProfundo,
 } from '../src/onda1-fisica/estado-inicial.mjs';
 import {
   CONSTANTES_FISICA_HIDRAULICA,
+  calcularAguaInternaNormalTotalKg,
+  calcularAlagamentoPesadoTotalKg,
+  calcularPesoArmasECargaKg,
   calcularPesoTotalNave,
   calcularSustentacaoFoil,
   calcularPenalidadeCavitacaoKg,
@@ -18,6 +22,7 @@ import {
   avancarTickFisicaHidraulica,
 } from '../src/onda1-fisica/tick-hidraulica-foil.mjs';
 import {
+  formatarChaveHash32,
   hash32,
   hash32Uniforme01,
   hash32Percentual100,
@@ -55,6 +60,12 @@ test('Onda 1 (L2 + L4 + N4): fábrica imutável das 5 carcaças, 8 câmaras, 5 e
     assert.equal(peso, esp.peso, `Peso inicial de ${esp.id} deve ser ${esp.peso} kg`);
     assert.equal(sust, esp.sust, `Sustentação inicial de ${esp.id} deve ser ${esp.sust} kg`);
     assert.equal(sust - peso, esp.margem, `Margem de ${esp.id} deve ser ${esp.margem} kg`);
+    assert.equal(calcularAguaInternaNormalTotalKg(estado.naveJogador), 100.0);
+    assert.equal(calcularAlagamentoPesadoTotalKg(estado.naveJogador), 0.0);
+    assert.equal(
+      calcularPesoArmasECargaKg(estado.naveJogador),
+      esp.peso - estado.naveJogador.pesoChassiKg - 100.0
+    );
 
     const barrasMastro = estado.naveJogador.camaras.find((c) => c.id === 6).barrasIntegridade;
     const sustOraculo =
@@ -102,6 +113,9 @@ test('Onda 1 (L2 + L4 + N4): fábrica imutável das 5 carcaças, 8 câmaras, 5 e
   assert.equal(navesExaminadas, 5);
   assert.equal(estadosExaminados, 5);
   assert.equal(patamaresExaminados, 7);
+  const camarasAlfa = criarCamarasIniciais('CARCACA_ALFA');
+  assert.equal(camarasAlfa.length, 8);
+  assert.equal(formatarChaveHash32('seed-a', 'STREAM_1', 1, 'X'), 'seed-a::STREAM_1::1:X');
 });
 
 test('Onda 1 (MUT-O1-01 + MUT-O1-04 + N1): queda por Sifão=0/Mastro=0 e Cavitação ao drenar 4 câmaras no ar', () => {

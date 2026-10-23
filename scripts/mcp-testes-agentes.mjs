@@ -31,6 +31,7 @@ import {
   carregarCadeiaCanonicaGdd,
   extrairSsotEMatrizDoVolume06,
   verificarCadeiaTestesEMutacoes,
+  verificarRegraTestesParaTudo,
 } from '../src/gdd-parser.mjs';
 import { congelarProfundo, criarEstadoInicialPartida } from '../src/onda1-fisica/estado-inicial.mjs';
 import { calcularPesoTotalNave, calcularSustentacaoFoil } from '../src/onda1-fisica/tick-hidraulica-foil.mjs';
@@ -264,8 +265,10 @@ export function inspecionarCodigo14Leis(params = {}, opcoesDebug = {}) {
 
   const violacoes = [];
   let auditoriaCadeia = null;
+  let auditoriaTestesParaTudo = null;
   try {
     auditoriaCadeia = verificarCadeiaTestesEMutacoes(diretorioAlvo);
+    auditoriaTestesParaTudo = verificarRegraTestesParaTudo(diretorioAlvo, opcoesDebug);
   } catch (err) {
     violacoes.push(err instanceof Error ? err.message : String(err));
   }
@@ -329,6 +332,8 @@ export function inspecionarCodigo14Leis(params = {}, opcoesDebug = {}) {
     status,
     marcadorExplicito: status === 'APROVADO' ? 'CODIGO_CONFORME_14_LEIS' : 'CODIGO_VIOLA_14_LEIS',
     arquivosTesteExaminadosN4: arquivosTeste.length,
+    arquivosCodigoTestadosN4: auditoriaTestesParaTudo?.arquivosCodigoExaminados ?? 0,
+    funcoesExportadasTestadasN4: auditoriaTestesParaTudo?.totalFuncoesExportadasExaminadas ?? 0,
     totalPortoesObrigatorios: auditoriaCadeia?.totalPortoesObrigatorios ?? 0,
     totalMutacoesRegistradas: auditoriaCadeia?.totalMutacoesExaminadas ?? 0,
     violacoes,
@@ -338,6 +343,7 @@ export function inspecionarCodigo14Leis(params = {}, opcoesDebug = {}) {
   const md = [
     `### Inspeção Estática e Estrutural das 14 Leis: **${status}**`,
     `- **[N4] Suítes examinadas:** \`${arquivosTeste.length}\``,
+    `- **[N4] Arquivos de código testados:** \`${dados.arquivosCodigoTestadosN4}\` (\`${dados.funcoesExportadasTestadasN4}\` funções exportadas com teste direto)`,
     `- **Portões obrigatórios (N3):** \`${dados.totalPortoesObrigatorios}\``,
     `- **Mutações registradas (L6):** \`${dados.totalMutacoesRegistradas}\``,
     ...(violacoes.length > 0 ? ['', '#### Violações Detectadas:', ...violacoes.map((v) => `- ${v}`)] : []),

@@ -129,6 +129,14 @@ Para você ter tranquilidade absoluta de que estamos andando para frente sem que
 
 ---
 
+## 7.4. Regra de Criação Obrigatória de Testes para Tudo (`REGRA_TESTES_PARA_TUDO`)
+
+Nenhuma peça entra no repositório sem seu teste real correspondente:
+1. **100% dos Arquivos e Funções Exportadas Testados Diretamente:** Todo módulo em `src/**/*.mjs`, todo script em `scripts/*` e **toda função exportada (`export function` / `export async function`)** em `src/` e `scripts/*.mjs` tem de ser invocada e asserida diretamente pelo nome em pelo menos uma suíte de `tests/*.test.mjs`. Qualquer função exportada ou arquivo órfão sem teste direto dispara erro fatal `[REGRA TESTES-PARA-TUDO FALHOU]` nos portões e no scanner MCP (`agent_test_inspecionar_codigo_14_leis`).
+2. **100% de Cobertura de Funções + Mutações Reais (`L6`):** Toda nova mecânica, script ou ferramenta MCP nasce obrigatoriamente acompanhada de testes reais (Zero Mock em lógica interna — `L1`), verificação de imutabilidade (`L2`), canal explícito (`L3`), literal independente (`L4`), contador `[N4]` e mutação semântica em `padrao/protocolo/mutacoes.json` (`MUT-87`).
+
+---
+
 # CONTRA-AUDITORIA #7 (Auditoria do Plano Mestre de Testes)
 
 1. **Existe algum cálculo dos Passos 1 a 6 que ficou sem Onda correspondente no Plano?**

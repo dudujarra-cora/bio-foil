@@ -13,12 +13,15 @@ import assert from 'node:assert/strict';
 
 import { criarEstadoInicialPartida } from '../src/onda1-fisica/estado-inicial.mjs';
 import {
+  calcularDistanciaEuclidianaMn,
+  calcularTemposRotaMinimaPadrao,
   gerarMapaSetorial,
   auditarInvariantesMapaSetorial,
 } from '../src/onda4-mapa/gerador-poisson.mjs';
 import {
   calcularVelocidadeCruzeiroMapa,
   calcularHorasSaltoMapa,
+  nivelarTanquesAntesDeViajar,
   iniciarTravessiaMapa,
 } from '../src/onda4-mapa/relogio-viagem.mjs';
 import {
@@ -70,6 +73,12 @@ test('[PORTÃO 06.1 | N4 + MUT-O4-03] Lote de 100 seeds procedurais: 18..22 nós
 
   assert.equal(seedsAuditadas, 100, `[N4] Examinados: ${seedsAuditadas}/100 seeds procedurais`);
   assert.ok(totaisVistos.size >= 4, 'O lote de 100 seeds deve exercitar variações reais entre 18 e 22 nós');
+  assert.equal(calcularDistanciaEuclidianaMn({ xMn: 0, yMn: 0 }, { xMn: 3, yMn: 4 }), 5.0);
+  const mapaRef = gerarMapaSetorial('seed-onda4-001', 1);
+  const temposMinimos = calcularTemposRotaMinimaPadrao(mapaRef.nos, mapaRef.rotas);
+  assert.equal(temposMinimos.NO_0_ENTRADA, 0);
+  const naveNivelada = nivelarTanquesAntesDeViajar(criarEstadoInicialPartida().naveJogador);
+  assert.equal(naveNivelada.camaras.reduce((acc, c) => acc + c.aguaKg, 0), 100.0);
 });
 
 test('[PORTÃO 06.2 | N1 + MUT-O4-01..02..04] Junção Porão + Tanques Pós-Combate <-> Velocidade de Cruzeiro, Modo Deriva (<= 4.0h) e Expiração de SOS', () => {

@@ -11,6 +11,12 @@
 
 Verde não é evidência. Teste que passa sem provar nada é pior que teste que não existe, porque ninguém olha para ele. Todo teste novo nasce com a pergunta: *"se esta peça quebrasse, qual teste ficaria vermelho?"*. Se a resposta for nenhum, o teste não serve.
 
+### 1.1. Regra de Criação Obrigatória de Testes para Tudo (`REGRA_TESTES_PARA_TUDO`)
+
+1. **Zero módulo, script ou função exportada sem teste direto:** Todo arquivo de código (`src/**/*.mjs` e `scripts/*`) e **100% das funções exportadas (`export function` / `export async function`)** em `src/` e `scripts/*.mjs` têm de ser invocados e validados diretamente por nome em pelo menos uma suíte de `tests/*.test.mjs`. Criar qualquer módulo, script, rota, ferramenta MCP, comando de UI ou função exportada sem teste direto reprova imediatamente no portão `[REGRA TESTES-PARA-TUDO FALHOU]`.
+2. **Cobertura de 100% de funções em `src/` e `scripts/`:** Toda bateria de testes deve manter `100.00%` de cobertura de funções nos módulos de domínio e scripts executáveis, cobrindo caminho feliz, casos de borda, imutabilidade (`L2`) e canais explícitos de erro/permissão (`L3`).
+3. **Prova de mutação obrigatória (`L6`):** Toda regra ou ferramenta nova exige mutação semântica registrada em `padrao/protocolo/mutacoes.json` e `padrao/protocolo/MUTACOES.md`, provando que o teste correspondente fica vermelho pelo motivo declarado.
+
 ---
 
 ## 2. As 14 Leis

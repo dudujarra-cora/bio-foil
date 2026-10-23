@@ -1638,3 +1638,88 @@ export function verificarCadeiaTestesEMutacoes(diretorioRaiz) {
     mutacoes,
   });
 }
+
+/**
+ * Regra de Criação Obrigatória de Testes para Tudo (REGRA_TESTES_PARA_TUDO — Seção 1.1 de LEIS-DE-TESTE.md e Seção 7.4 do Vol. 07):
+ * Verifica que 100% dos arquivos em src/ e scripts/ e 100% das funções exportadas (export function / export async function)
+ * possuem testes diretos em tests/*.test.mjs.
+ */
+export function verificarRegraTestesParaTudo(diretorioRaiz, opcoesDebug = {}) {
+  const pastaTestes = path.join(diretorioRaiz, 'tests');
+  const codigoTestes = CADEIA_CANONICA_TESTES.map((nome) =>
+    fs.readFileSync(path.join(pastaTestes, nome), 'utf8')
+  ).join('\n');
+
+  const arquivosCodigo = [
+    ...CADEIA_CANONICA_SRC.map((f) => path.join('src', f)),
+    ...CADEIA_CANONICA_ONDAS_SRC.map((f) => path.join('src', f)),
+    ...CADEIA_CANONICA_SCRIPTS.map((f) => path.join('scripts', f)),
+  ];
+
+  let totalFuncoesExportadas = 0;
+  const relatorioPorArquivo = [];
+
+  for (const caminhoRel of arquivosCodigo) {
+    const nomeBase = path.basename(caminhoRel);
+    const nomeSemExt = nomeBase.replace(/\.(mjs|sh)$/, '');
+    if (!codigoTestes.includes(nomeBase) && !codigoTestes.includes(nomeSemExt)) {
+      throw new Error(
+        `[REGRA TESTES-PARA-TUDO FALHOU] Arquivo "${caminhoRel}" não possui nenhum teste em tests/*.test.mjs`
+      );
+    }
+
+    if (caminhoRel.endsWith('.mjs')) {
+      const conteudo = fs.readFileSync(path.join(diretorioRaiz, caminhoRel), 'utf8');
+      const funcoes = [
+        ...conteudo.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)/g),
+      ].map((m) => m[1]);
+
+      if (funcoes.length === 0) {
+        throw new Error(
+          `[REGRA TESTES-PARA-TUDO FALHOU] Módulo "${caminhoRel}" não exporta nenhuma função testável`
+        );
+      }
+
+      for (const fn of funcoes) {
+        totalFuncoesExportadas += 1;
+        const testada =
+          opcoesDebug.ignorarVerificacaoFuncaoOrfa === true
+            ? true
+            : new RegExp(`\\b${fn}\\b`).test(codigoTestes);
+        if (!testada) {
+          throw new Error(
+            `[REGRA TESTES-PARA-TUDO FALHOU] Função exportada "${fn}" em "${caminhoRel}" não possui teste direto em tests/*.test.mjs`
+          );
+        }
+      }
+
+      relatorioPorArquivo.push({
+        arquivo: caminhoRel,
+        funcoesExportadas: funcoes.length,
+      });
+    } else {
+      relatorioPorArquivo.push({
+        arquivo: caminhoRel,
+        funcoesExportadas: 0,
+      });
+    }
+  }
+
+  if (
+    opcoesDebug.funcaoOrfaSimulada &&
+    opcoesDebug.ignorarVerificacaoFuncaoOrfa !== true
+  ) {
+    const { nome, arquivo } = opcoesDebug.funcaoOrfaSimulada;
+    if (!new RegExp(`\\b${nome}\\b`).test(codigoTestes)) {
+      throw new Error(
+        `[REGRA TESTES-PARA-TUDO FALHOU] Função exportada "${nome}" em "${arquivo}" não possui teste direto em tests/*.test.mjs`
+      );
+    }
+  }
+
+  return clonarProfundoCongelado({
+    arquivosCodigoExaminados: arquivosCodigo.length,
+    totalFuncoesExportadasExaminadas: totalFuncoesExportadas,
+    relatorioPorArquivo,
+  });
+}
