@@ -11,8 +11,10 @@ import {
   consultarConstanteSsotComPermissao,
   extrairCatalogoVolume05,
   extrairEconomiaVolume05,
+  extrairChefeEBestiarioVolume05,
   extrairCustosMastroVolume01,
   extrairSaqueSetor1Volume03,
+  extrairInimigosSetor1Volume03,
   calcularPesoTotalNave,
   calcularSustentacaoAtual,
   calcularVelocidadeCruzeiro,
@@ -731,6 +733,222 @@ test('Junção N1 + L4 + N4: audita a Economia Completa do Vol. 05 (Upgrades, Lo
   assert.ok(
     pisoBrutoCalculado < economia.orcamentoTotalDeclarado && economia.orcamentoTotalDeclarado < tetoMaestriaCalculado,
     'Curva econômica deve manter 1473 (piso bruto) < 2330 (maximização total) < 2789 (teto bruto de maestria antes de insumos)'
+  );
+});
+
+test('Junção N1 + L4 + N4: audita as 3 Fases da Draga Continental (5.5) e o Bestiário Escalado Setores 1..7 (5.7) contra Vols. 01, 03, 06 e 08', () => {
+  const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
+  const vol01 = cadeia.volumes[0].conteudo;
+  const vol03 = cadeia.volumes[2].conteudo;
+  const vol05 = cadeia.volumes[4].conteudo;
+  const vol06 = cadeia.volumes[5].conteudo;
+  const vol08 = extrairContratoEstadoVolume08(cadeia.volumes[7].conteudo);
+
+  const catalogo = extrairCatalogoVolume05(vol05);
+  const chefeBestiario = extrairChefeEBestiarioVolume05(vol05);
+  const inimigosS1Vol03 = extrairInimigosSetor1Volume03(vol03);
+  const tripVol01 = extrairTripulacaoVolume01(vol01);
+  const { celulasMatriz } = extrairSsotEMatrizDoVolume06(vol06);
+
+  console.log(
+    `[N4] Chefe e Bestiário Vol. 05 examinados: ${chefeBestiario.fasesResumo.length} fases da Draga Continental, ${chefeBestiario.templatesInimigos.length} arquétipos de inimigos, ${chefeBestiario.escalamentoSetores.length} setores escalados`
+  );
+
+  // 1. Auditoria estrutural e numérica das 3 Fases da Draga Continental (Seção 5.5)
+  assert.equal(chefeBestiario.fasesResumo.length, 3, 'Tabela 5.5 deve especificar exatamente as 3 fases da Draga Continental');
+  const gabaritoFases = [
+    { fase: 1, hpCasco: 20, blindagemTermicaPts: 0, bolhasBarreira: 3, barrasBarreira: 6, esquivaPct: 20, salasTotais: 6, salasSuperiores: 4, salasSubmersas: 2, intervaloSurgeSeg: 22 },
+    { fase: 2, hpCasco: 22, blindagemTermicaPts: 0, bolhasBarreira: 3, barrasBarreira: 6, esquivaPct: 25, salasTotais: 6, salasSuperiores: 3, salasSubmersas: 3, intervaloSurgeSeg: 20 },
+    { fase: 3, hpCasco: 24, blindagemTermicaPts: 10, bolhasBarreira: 4, barrasBarreira: 8, esquivaPct: 30, salasTotais: 5, salasSuperiores: 3, salasSubmersas: 2, intervaloSurgeSeg: 18 },
+  ];
+
+  for (let i = 0; i < 3; i += 1) {
+    const f = chefeBestiario.fasesResumo[i];
+    const esp = gabaritoFases[i];
+    assert.equal(f.fase, esp.fase);
+    assert.equal(f.hpCasco, esp.hpCasco, `HP de casco da Fase ${f.fase} diverge do canônico`);
+    assert.equal(f.blindagemTermicaPts, esp.blindagemTermicaPts, `Blindagem Térmica da Fase ${f.fase} diverge do canônico`);
+    assert.equal(f.bolhasBarreira, esp.bolhasBarreira, `Bolhas de Barreira da Fase ${f.fase} divergem do canônico`);
+    assert.equal(f.barrasBarreira, esp.barrasBarreira, `Barras de Barreira da Fase ${f.fase} divergem de 2x bolhas`);
+    assert.equal(f.esquivaPct, esp.esquivaPct, `Esquiva base da Fase ${f.fase} diverge do canônico`);
+    assert.equal(f.salasTotais, esp.salasTotais, `Total de salas da Fase ${f.fase} diverge do canônico`);
+    assert.equal(f.salasSuperiores + f.salasSubmersas, f.salasTotais, `Soma Sup+Sub da Fase ${f.fase} não fecha`);
+    assert.equal(f.intervaloSurgeSeg, esp.intervaloSurgeSeg, `Intervalo de Power Surge da Fase ${f.fase} diverge do canônico`);
+
+    const salasDetalhadas = chefeBestiario.salasPorFase[f.fase];
+    assert.equal(salasDetalhadas.length, f.salasTotais, `Lista detalhada de salas da Fase ${f.fase} diverge da tabela resumo`);
+    assert.equal(
+      salasDetalhadas.filter((s) => s.convSuperior).length,
+      f.salasSuperiores,
+      `Contagem de salas do Convés Superior na Fase ${f.fase} diverge da tabela resumo`
+    );
+    assert.equal(
+      salasDetalhadas.filter((s) => s.abaixoLinhaDagua).length,
+      f.salasSubmersas,
+      `Contagem de salas Abaixo da Linha d'Água na Fase ${f.fase} diverge da tabela resumo`
+    );
+    const salaEscudo = salasDetalhadas.find((s) => s.nomeSala.includes('Gerador de Escudo'));
+    assert.ok(salaEscudo, `Fase ${f.fase} deve ter sala do Gerador de Escudo`);
+    assert.equal(salaEscudo.barras, f.barrasBarreira, `Barras do Gerador de Escudo na Fase ${f.fase} divergem da tabela resumo`);
+  }
+
+  const somaHpFases = chefeBestiario.fasesResumo.reduce((acc, f) => acc + f.hpCasco, 0);
+  const somaIntegridadeTotal = somaHpFases + chefeBestiario.fasesResumo[2].blindagemTermicaPts;
+  assert.equal(somaHpFases, 66);
+  assert.equal(chefeBestiario.hpTotalDeclarado, somaHpFases, 'HP total das 3 fases declarado diverge da soma 20+22+24');
+  assert.equal(somaIntegridadeTotal, 76);
+  assert.equal(
+    chefeBestiario.integridadeTotalDeclarada,
+    somaIntegridadeTotal,
+    'Integridade estrutural total declarada (casco + blindagem térmica) diverge de 76 pontos'
+  );
+
+  // 2. Junção N1: Tripulação da Draga Continental vs. Vol. 01 + Power Surges vs. Matriz 6.2 (Vol. 06)
+  assert.equal(
+    chefeBestiario.marinheirosIniciais + chefeBestiario.mergulhadoresIniciais,
+    chefeBestiario.humanosIniciaisFase1,
+    'Soma de Marinheiros (4) + Mergulhadores (2) na Fase 1 deve fechar em 6 humanos'
+  );
+  assert.equal(chefeBestiario.humanosIniciaisFase1, 6);
+  assert.equal(chefeBestiario.marinheiroHp, 100);
+  assert.equal(chefeBestiario.marinheiroDps, 8, 'DPS do Marinheiro na Draga Continental diverge do Vol. 01 (8 DPS)');
+  assert.equal(chefeBestiario.mergulhadorHp, 100);
+  assert.equal(
+    chefeBestiario.mergulhadorDps,
+    tripVol01.mergulhadorDps,
+    'DPS do Mergulhador de Assalto na Draga Continental diverge do Vol. 01 (12 DPS)'
+  );
+  assert.equal(chefeBestiario.iaBackupAutoReparoSeg, 15, 'Auto-reparo da IA de Backup deve ser de 1 barra a cada 15s');
+
+  const celula1H = normalizarTexto(
+    celulasMatriz.find((c) => c.evento.startsWith('H. Perigos') && c.estado === '1_NO_FOIL')?.regra ?? ''
+  );
+  const celula2H = normalizarTexto(
+    celulasMatriz.find((c) => c.evento.startsWith('H. Perigos') && c.estado === '2_TOUCHDOWN')?.regra ?? ''
+  );
+  const celula3H = normalizarTexto(
+    celulasMatriz.find((c) => c.evento.startsWith('H. Perigos') && c.estado === '3_SPOOL_UP')?.regra ?? ''
+  );
+  assert.ok(
+    celula1H.includes(`+${chefeBestiario.surgeFase1PesoVirtualKg} kg por ${chefeBestiario.surgeFase1DuracaoSeg}s na Fase 1`),
+    'Onda de Arrasto da Fase 1 no Vol. 05 diverge da Célula 1H da Matriz 6.2 (Vol. 06)'
+  );
+  assert.equal(chefeBestiario.surgeFase2DronesAereos + chefeBestiario.surgeFase2DronesSubaquaticos, chefeBestiario.surgeFase2TotalDrones);
+  assert.equal(chefeBestiario.surgeFase2TotalDrones, 4, 'Power Surge da Fase 2 deve lançar exatamente 4 drones (2 aéreos + 2 subaquáticos)');
+  assert.equal(chefeBestiario.surgeFase3LasersCount, 7, 'Power Surge da Fase 3 deve disparar 7 Lasers Industriais');
+  assert.equal(chefeBestiario.surgeFase3LaserDano, 1, 'Cada Laser Industrial da Fase 3 deve causar 1 de dano');
+  assert.ok(
+    celula2H.includes(`-${chefeBestiario.surgeFase3DanoCascoPorSeg} HP casco/s e -${chefeBestiario.surgeFase3DanoTripulacaoPorSeg} HP/s tripulação`),
+    'Dano da Fervura Oceânica da Fase 3 no Vol. 05 diverge da Célula 2H da Matriz 6.2 (Vol. 06)'
+  );
+  assert.ok(
+    celula3H.includes(`${chefeBestiario.surgeFase3AlarmeFervuraSeg}.0s antes`),
+    'Alarme da Fervura Oceânica da Fase 3 no Vol. 05 diverge da Célula 3H da Matriz 6.2 (Vol. 06)'
+  );
+  assert.equal(
+    chefeBestiario.surgeFase3DuracaoFervuraSeg * chefeBestiario.surgeFase3DanoCascoPorSeg,
+    chefeBestiario.surgeFase3DanoCascoMax,
+    'Dano máximo de casco da Fervura Oceânica deve fechar em duração (5s) x 1 HP/s = 5 HP'
+  );
+
+  // 3. Auditoria dos 8 Arquétipos do Bestiário (5.7.A) e Curva de Escalamento Setores 1..7 (5.7.B) contra Vol. 03 e Vol. 08
+  assert.equal(chefeBestiario.templatesInimigos.length, 8, 'Seção 5.7.A deve definir exatamente 8 arquétipos de inimigos');
+  const barcosTemplates = chefeBestiario.templatesInimigos.filter((t) => t.classe === 'BARCO_HUMANO');
+  const monstrosTemplates = chefeBestiario.templatesInimigos.filter((t) => t.classe === 'MONSTRO_BIOLOGICO');
+  assert.equal(barcosTemplates.length, 4, 'Bestiário deve ter exatamente 4 templates de Barcos Corporativos');
+  assert.equal(monstrosTemplates.length, 4, 'Bestiário deve ter exatamente 4 templates de Monstros Colossais');
+  for (const m of monstrosTemplates) {
+    assert.equal(m.numSalasOuOrgaos, 4, `Monstro ${m.nome} deve ter exatamente 4 órgãos mapeados pelo Sonar`);
+  }
+
+  assert.equal(chefeBestiario.escalamentoSetores.length, 7, 'Seção 5.7.B deve definir o escalamento dos Setores 1 a 7');
+  const escS1 = chefeBestiario.escalamentoSetores[0];
+  assert.equal(
+    escS1.barcoHp,
+    inimigosS1Vol03.lancha.hpCasco,
+    'HP de barco no Setor 1 (Seção 5.7.B) diverge da Lancha Patrulheira (Vol. 03)'
+  );
+  assert.equal(
+    escS1.barcoHp,
+    vol08.gameState.alvoCombate.hpCascoMax,
+    'HP de barco no Setor 1 (Seção 5.7.B) diverge do alvoCombate inicial no GameState (Vol. 08)'
+  );
+  assert.equal(
+    escS1.barcoBarreiraBolhas,
+    inimigosS1Vol03.lancha.barreiraBolhas,
+    'Barreira de barco no Setor 1 (Seção 5.7.B) diverge da Lancha Patrulheira (Vol. 03)'
+  );
+  assert.equal(
+    escS1.barcoEsquivaPct,
+    inimigosS1Vol03.lancha.esquivaPct,
+    'Esquiva de barco no Setor 1 (Seção 5.7.B) diverge da Lancha Patrulheira (Vol. 03)'
+  );
+  assert.equal(
+    escS1.tripulacaoHumana,
+    inimigosS1Vol03.lancha.marinheiros,
+    'Tripulação humana no Setor 1 (Seção 5.7.B) diverge da Lancha Patrulheira (Vol. 03)'
+  );
+  assert.equal(
+    escS1.monstroHp,
+    inimigosS1Vol03.teuthis.hpCorpo,
+    'HP de monstro no Setor 1 (Seção 5.7.B) diverge da Teuthis Couraçada (Vol. 03)'
+  );
+  assert.equal(
+    escS1.monstroEsquivaPct,
+    inimigosS1Vol03.teuthis.esquivaPct,
+    'Esquiva de monstro no Setor 1 (Seção 5.7.B) diverge da Teuthis Couraçada (Vol. 03)'
+  );
+  assert.equal(
+    escS1.ganglioBarras,
+    inimigosS1Vol03.teuthis.ganglioBarras,
+    'Barras do Gânglio no Setor 1 (Seção 5.7.B) diverge da Teuthis Couraçada (Vol. 03)'
+  );
+
+  for (const linha of chefeBestiario.escalamentoSetores) {
+    const s = linha.setor;
+    assert.equal(linha.barcoHp, 8 + 2 * (s - 1), `Fórmula de HP de barco violada no Setor ${s}`);
+    assert.equal(linha.barcoBarreiraBolhas, Math.floor(s / 2), `Fórmula de Barreira de barco violada no Setor ${s}`);
+    assert.equal(linha.barcoEsquivaPct, 15 + 2 * (s - 1), `Fórmula de Esquiva de barco violada no Setor ${s}`);
+    assert.equal(linha.monstroHp, 10 + 3 * (s - 1), `Fórmula de HP de monstro violada no Setor ${s}`);
+    assert.equal(linha.monstroEsquivaPct, 20 + 2 * (s - 1), `Fórmula de Esquiva de monstro violada no Setor ${s}`);
+    assert.equal(linha.orcamentoArmasBarras, 2 + (s - 1), `Fórmula de Orçamento de Armas violada no Setor ${s}`);
+    assert.equal(linha.tripulacaoHumana, 2 + Math.floor((s - 1) / 2), `Fórmula de Tripulação Humana violada no Setor ${s}`);
+    assert.equal(linha.ganglioBarras, 3 + Math.floor((s - 1) / 2), `Fórmula de Barras do Gânglio violada no Setor ${s}`);
+  }
+
+  // 4. Prova Matemática de TTK na Fase 3 (Falha Global Encontrada 7 recalculada pelo motor)
+  const chassiRajada2 = catalogo.armas.find((a) => a.nome.includes('Rajada Hidropneumática II'));
+  const chassiCortador = catalogo.armas.find((a) => a.nome.includes('Cortador Térmico a Plasma'));
+  const recargaRajadaPolvo = calcularTempoRecargaArma({
+    tempoChassiSeg: chassiRajada2.recargaSeg,
+    reducaoOperador: 0.2,
+  });
+  const recargaCortadorPolvo = calcularTempoRecargaArma({
+    tempoChassiSeg: chassiCortador.recargaSeg,
+    reducaoOperador: 0.2,
+  });
+  assert.equal(recargaRajadaPolvo, 9.6);
+  assert.equal(recargaCortadorPolvo, 11.2);
+
+  const fase3 = chefeBestiario.fasesResumo[2];
+  const salvasParaQuebrarBlindagemTermica = 2;
+  const danoCascoCortadorPorSalva = 6;
+  const salvasPosBlindagem = fase3.hpCasco / danoCascoCortadorPorSalva;
+  const ttkFase3Calculado =
+    Math.round((salvasParaQuebrarBlindagemTermica + salvasPosBlindagem) * recargaCortadorPolvo * 10) / 10;
+  const ciclosSurgeFase3Calculados = Math.floor(ttkFase3Calculado / fase3.intervaloSurgeSeg);
+
+  assert.equal(ttkFase3Calculado, 67.2);
+  assert.equal(
+    chefeBestiario.ttkFase3SegDeclarado,
+    ttkFase3Calculado,
+    'TTK canônico da Fase 3 declarado na Falha Global 7 diverge do cálculo do motor (67.2s)'
+  );
+  assert.equal(ciclosSurgeFase3Calculados, 3);
+  assert.equal(
+    chefeBestiario.ciclosSurgeFase3Declarados,
+    ciclosSurgeFase3Calculados,
+    'Ciclos de Power Surge da Fase 3 declarados na Falha Global 7 divergem de floor(67.2 / 18) = 3'
   );
 });
 

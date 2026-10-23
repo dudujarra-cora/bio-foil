@@ -312,6 +312,7 @@ export function extrairCatalogoVolume05(conteudoVol05) {
     else if (linha.startsWith('## 5.4.')) secao = '5.4';
     else if (linha.startsWith('## 5.5.')) secao = '5.5';
     else if (linha.startsWith('## 5.6.')) secao = '5.6';
+    else if (linha.startsWith('## 5.7.')) secao = '5.7';
     else if (linha.startsWith('# CONTRA-AUDITORIA')) secao = 'AUDITORIA';
 
     if (secao === '5.1' && linha.startsWith('| **')) {
@@ -385,7 +386,7 @@ export function extrairCatalogoVolume05(conteudoVol05) {
  * e os valores da Falha Global Encontrada 6 (Prova de Solvência vs. Escassez).
  */
 export function extrairEconomiaVolume05(conteudoVol05) {
-  const secao56 = conteudoVol05.split('## 5.6.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const secao56 = conteudoVol05.split('## 5.6.')[1]?.split('## 5.7.')[0]?.split('# CONTRA-AUDITORIA')[0] ?? '';
   const auditoria5 = normalizarTexto(conteudoVol05.split('# CONTRA-AUDITORIA')[1] ?? '');
 
   const upgrades = [];
@@ -527,6 +528,249 @@ export function extrairSaqueSetor1Volume03(conteudoVol03) {
 }
 
 /**
+ * Extrai a Ficha Numérica das 3 Fases da Draga Continental (Seção 5.5), o Bestiário Escalado Setores 1..7 (Seção 5.7)
+ * e a Prova Matemática de TTK da Fase 3 (Falha Global Encontrada 7).
+ */
+export function extrairChefeEBestiarioVolume05(conteudoVol05) {
+  const secao55Bruta = conteudoVol05.split('## 5.5.')[1]?.split('## 5.6.')[0] ?? '';
+  const secao57Bruta = conteudoVol05.split('## 5.7.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const auditoria5Norm = normalizarTexto(conteudoVol05.split('# CONTRA-AUDITORIA')[1] ?? '');
+  const secao55Norm = normalizarTexto(secao55Bruta);
+
+  const fasesResumo = [];
+  const salasPorFase = { 1: [], 2: [], 3: [] };
+  let faseAtual = 0;
+
+  for (const linhaBruta of secao55Bruta.split('\n')) {
+    const linha = normalizarTexto(linhaBruta);
+    if (linhaBruta.startsWith('| **Fase ')) {
+      const cols = linha
+        .split('|')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (cols.length >= 7) {
+        const fase = Number(cols[0].match(/Fase (\d+)/)?.[1] ?? NaN);
+        const nome = cols[1];
+        const hpCasco = Number(cols[2].match(/(\d+)\s*HP/)?.[1] ?? NaN);
+        const blindagemTermicaPts = Number(cols[3].match(/(\d+)\s*pts/)?.[1] ?? NaN);
+        const matchBarreira = cols[4].match(/(\d+)\s*bolhas\s*\((\d+)\s*barras\)/);
+        const bolhasBarreira = Number(matchBarreira?.[1] ?? NaN);
+        const barrasBarreira = Number(matchBarreira?.[2] ?? NaN);
+        const esquivaPct = Number(cols[5].match(/(\d+)%/)?.[1] ?? NaN);
+        const matchSalas = cols[6].match(/(\d+)\s*salas\s*\((\d+)\s*\/\s*(\d+)\)/);
+        const salasTotais = Number(matchSalas?.[1] ?? NaN);
+        const salasSuperiores = Number(matchSalas?.[2] ?? NaN);
+        const salasSubmersas = Number(matchSalas?.[3] ?? NaN);
+        const intervaloSurgeSeg = Number(cols[7].match(/(\d+)s/)?.[1] ?? NaN);
+
+        fasesResumo.push({
+          fase,
+          nome,
+          hpCasco,
+          blindagemTermicaPts,
+          bolhasBarreira,
+          barrasBarreira,
+          esquivaPct,
+          salasTotais,
+          salasSuperiores,
+          salasSubmersas,
+          intervaloSurgeSeg,
+        });
+      }
+    }
+
+    if (linhaBruta.startsWith('### Fase ')) {
+      faseAtual = Number(linhaBruta.match(/### Fase (\d+)/)?.[1] ?? 0);
+    } else if (faseAtual >= 1 && faseAtual <= 3 && /^\s+\d+\.\s+\*\*/.test(linhaBruta)) {
+      const nomeSala = linha.match(/^\s*\d+\.\s*([^:(]+)/)?.[1]?.trim() ?? '';
+      const convSuperior = linha.includes('(Convés Superior)');
+      const abaixoLinhaDagua = linha.includes("(Abaixo da Linha d'Água)");
+      const barras = Number(linha.match(/\):\s*(\d+)\s*Barras/)?.[1] ?? NaN);
+      salasPorFase[faseAtual].push({
+        nomeSala,
+        convSuperior,
+        abaixoLinhaDagua,
+        barras,
+        texto: linha,
+      });
+    }
+  }
+
+  const humanosIniciaisFase1 = Number(secao55Norm.match(/Tripulação Inicial na Fase 1 \((\d+) Humanos\)/)?.[1] ?? NaN);
+  const matchMarinheiros = secao55Norm.match(/(\d+) Marinheiros Humanos \((\d+) HP, (\d+) DPS/);
+  const marinheirosIniciais = Number(matchMarinheiros?.[1] ?? NaN);
+  const marinheiroHp = Number(matchMarinheiros?.[2] ?? NaN);
+  const marinheiroDps = Number(matchMarinheiros?.[3] ?? NaN);
+  const matchMergulhadores = secao55Norm.match(/(\d+) Mergulhadores de Assalto \((\d+) HP, (\d+) DPS/);
+  const mergulhadoresIniciais = Number(matchMergulhadores?.[1] ?? NaN);
+  const mergulhadorHp = Number(matchMergulhadores?.[2] ?? NaN);
+  const mergulhadorDps = Number(matchMergulhadores?.[3] ?? NaN);
+  const iaBackupAutoReparoSeg = Number(secao55Norm.match(/auto-repara todas as salas[^\n]*?1 barra a cada (\d+) segundos/)?.[1] ?? NaN);
+  const hpTotalDeclarado = Number(secao55Norm.match(/Integridade Estrutural Total das 3 Fases:[^=]*=\s*(\d+)\s*HP/)?.[1] ?? NaN);
+  const integridadeTotalDeclarada = Number(
+    secao55Norm.match(/Blindagem Térmica Externa na Fase 3\s*=\s*(\d+)\s*pontos/)?.[1] ?? NaN
+  );
+
+  const matchSurge1 = secao55Norm.match(/Onda de Arrasto Hidráulico[^\n]*?\+(\d+)\s*kg de peso virtual[^\n]*?por (\d+) segundos/);
+  const surgeFase1PesoVirtualKg = Number(matchSurge1?.[1] ?? NaN);
+  const surgeFase1DuracaoSeg = Number(matchSurge1?.[2] ?? NaN);
+
+  const matchSurge2 = secao55Norm.match(/(\d+) drones atacam simultaneamente durante (\d+) segundos:\s*(\d+) Drones Cortadores Aéreos[^\n]*?e (\d+) Drones Torpedeiros Subaquáticos/);
+  const surgeFase2TotalDrones = Number(matchSurge2?.[1] ?? NaN);
+  const surgeFase2DuracaoSeg = Number(matchSurge2?.[2] ?? NaN);
+  const surgeFase2DronesAereos = Number(matchSurge2?.[3] ?? NaN);
+  const surgeFase2DronesSubaquaticos = Number(matchSurge2?.[4] ?? NaN);
+
+  const matchLasers3 = secao55Norm.match(/Rajada de (\d+) Lasers Industriais:\s*Dispara (\d+) projéteis\/feixes consecutivos de (\d+) dano cada/);
+  const surgeFase3LasersCount = Number(matchLasers3?.[2] ?? NaN);
+  const surgeFase3LaserDano = Number(matchLasers3?.[3] ?? NaN);
+
+  const matchFervura3 = secao55Norm.match(
+    /Durante (\d+) segundos \(precedidos por um alarme sonoro\/visual de (\d+) segundos\)[^\n]*?sofre (\d+) de Dano Estrutural por segundo \(até (\d+) HP de casco\)[^\n]*?sofrem -(\d+) HP\/s/
+  );
+  const surgeFase3DuracaoFervuraSeg = Number(matchFervura3?.[1] ?? NaN);
+  const surgeFase3AlarmeFervuraSeg = Number(matchFervura3?.[2] ?? NaN);
+  const surgeFase3DanoCascoPorSeg = Number(matchFervura3?.[3] ?? NaN);
+  const surgeFase3DanoCascoMax = Number(matchFervura3?.[4] ?? NaN);
+  const surgeFase3DanoTripulacaoPorSeg = Number(matchFervura3?.[5] ?? NaN);
+
+  const templatesInimigos = [];
+  const escalamentoSetores = [];
+  let subsecao57 = '';
+
+  for (const linhaBruta of secao57Bruta.split('\n')) {
+    if (linhaBruta.startsWith('### A.')) subsecao57 = 'A';
+    else if (linhaBruta.startsWith('### B.')) subsecao57 = 'B';
+
+    const linha = normalizarTexto(linhaBruta);
+    if (subsecao57 === 'A' && /^\| `(BARCO|MONSTRO)_/.test(linhaBruta)) {
+      const cols = linha
+        .split('|')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (cols.length >= 6) {
+        const matchSetores = cols[3].match(/Setores\s*(\d+)[–-](\d+)/);
+        const matchSalas = cols[4].match(/(\d+)\s*(?:salas|órgãos)/);
+        templatesInimigos.push({
+          idTemplate: cols[0],
+          classe: cols[1],
+          nome: cols[2].replace(/^\d+\.\s*/, ''),
+          setorMin: Number(matchSetores?.[1] ?? NaN),
+          setorMax: Number(matchSetores?.[2] ?? NaN),
+          numSalasOuOrgaos: Number(matchSalas?.[1] ?? NaN),
+          arsenalBruto: cols[5],
+        });
+      }
+    }
+
+    if (subsecao57 === 'B' && /^\| \*\*Setor \d+/.test(linhaBruta)) {
+      const cols = linha
+        .split('|')
+        .map((c) => c.trim())
+        .filter(Boolean);
+      if (cols.length >= 8) {
+        const setor = Number(cols[0].match(/Setor (\d+)/)?.[1] ?? NaN);
+        const barcoHp = Number(cols[1].match(/(\d+)\s*HP/)?.[1] ?? NaN);
+        const barcoBarreiraBolhas = Number(cols[2]);
+        const barcoEsquivaPct = Number(cols[3].match(/(\d+)%/)?.[1] ?? NaN);
+        const monstroHp = Number(cols[4].match(/(\d+)\s*HP/)?.[1] ?? NaN);
+        const monstroEsquivaPct = Number(cols[5].match(/(\d+)%/)?.[1] ?? NaN);
+        const orcamentoArmasBarras = Number(cols[6].match(/(\d+)\s*E/)?.[1] ?? NaN);
+        const matchTripGanglio = cols[7].match(/(\d+)\s*Humanos\s*\/\s*(\d+)\s*Gânglio/);
+        escalamentoSetores.push({
+          setor,
+          barcoHp,
+          barcoBarreiraBolhas,
+          barcoEsquivaPct,
+          monstroHp,
+          monstroEsquivaPct,
+          orcamentoArmasBarras,
+          tripulacaoHumana: Number(matchTripGanglio?.[1] ?? NaN),
+          ganglioBarras: Number(matchTripGanglio?.[2] ?? NaN),
+        });
+      }
+    }
+  }
+
+  const ttkFase3SegDeclarado = Number(
+    auditoria5Norm.match(/fechando a Fase 3 em [^\n=]*=\s*(\d+(?:\.\d+)?)\s*segundos/)?.[1] ?? NaN
+  );
+  const ciclosSurgeFase3Declarados = Number(
+    auditoria5Norm.match(/=\s*(\d+)\s*ciclos\s*do\s*\*?Power Surge\*?\s*de Fervura Oceânica/)?.[1] ?? NaN
+  );
+
+  return clonarProfundoCongelado({
+    fasesResumo,
+    salasPorFase,
+    humanosIniciaisFase1,
+    marinheirosIniciais,
+    marinheiroHp,
+    marinheiroDps,
+    mergulhadoresIniciais,
+    mergulhadorHp,
+    mergulhadorDps,
+    iaBackupAutoReparoSeg,
+    hpTotalDeclarado,
+    integridadeTotalDeclarada,
+    surgeFase1PesoVirtualKg,
+    surgeFase1DuracaoSeg,
+    surgeFase2TotalDrones,
+    surgeFase2DuracaoSeg,
+    surgeFase2DronesAereos,
+    surgeFase2DronesSubaquaticos,
+    surgeFase3LasersCount,
+    surgeFase3LaserDano,
+    surgeFase3DuracaoFervuraSeg,
+    surgeFase3AlarmeFervuraSeg,
+    surgeFase3DanoCascoPorSeg,
+    surgeFase3DanoCascoMax,
+    surgeFase3DanoTripulacaoPorSeg,
+    templatesInimigos,
+    escalamentoSetores,
+    ttkFase3SegDeclarado,
+    ciclosSurgeFase3Declarados,
+  });
+}
+
+/**
+ * Extrai os atributos táticos dos 2 inimigos do Setor 1 declarados no Volume 03 (Seções 3.2 e 3.3)
+ * para Junção N1 com o Bestiário Escalado do Volume 05 (Seção 5.7).
+ */
+export function extrairInimigosSetor1Volume03(conteudoVol03) {
+  const vol03 = normalizarTexto(conteudoVol03);
+  const secao32 = vol03.split('## 3.2.')[1]?.split('## 3.3.')[0] ?? '';
+  const secao33 = vol03.split('## 3.3.')[1]?.split('## 3.4.')[0] ?? '';
+
+  const lanchaHp = Number(secao32.match(/Casco:\s*(\d+)\s*HP/)?.[1] ?? NaN);
+  const lanchaEsquivaPct = Number(secao32.match(/Esquiva:\s*(\d+)%/)?.[1] ?? NaN);
+  const lanchaSemEscudo = /Sem escudo de energia/.test(secao32) ? 0 : NaN;
+  const matchSalasLancha = secao32.match(/Salas do Barco \((\d+) Salas/i);
+  const lanchaSalasTotais = Number(matchSalasLancha?.[1] ?? NaN);
+  const lanchaMarinheiros = [...secao32.matchAll(/Marinheiro Humano \d+/g)].length;
+
+  const teuthisHp = Number(secao33.match(/Vida Total \(Corpo\):\s*(\d+)\s*HP/)?.[1] ?? NaN);
+  const teuthisEsquivaPct = Number(secao33.match(/Esquiva:\s*(\d+)%/)?.[1] ?? NaN);
+  const teuthisOrgaos = Number(secao33.match(/(\d+)\s*Órgãos\s*=\s*4 Salas/)?.[1] ?? NaN);
+  const teuthisGanglioBarras = Number(secao33.match(/Gânglio Central \(Cérebro [—-]\s*(\d+)\s*Barras/)?.[1] ?? NaN);
+
+  return clonarProfundoCongelado({
+    lancha: {
+      hpCasco: lanchaHp,
+      esquivaPct: lanchaEsquivaPct,
+      barreiraBolhas: lanchaSemEscudo,
+      salasTotais: lanchaSalasTotais,
+      marinheiros: lanchaMarinheiros,
+    },
+    teuthis: {
+      hpCorpo: teuthisHp,
+      esquivaPct: teuthisEsquivaPct,
+      orgaosTotais: teuthisOrgaos,
+      ganglioBarras: teuthisGanglioBarras,
+    },
+  });
+}
+
+/**
  * Motor Matemático Canônico do Bio-Foil (usado na Junção N1 contra os documentos 01..06).
  */
 export function calcularPesoTotalNave({
@@ -591,7 +835,7 @@ export function calcularTempoRecargaArma({
 }) {
   const reducaoTouchdown = emTouchdown ? 0.25 : 0;
   const multiplicador = Math.max(0.5, 1.0 - reducaoOperador - reducaoTouchdown);
-  return (tempoChassiSeg + penalidadeOrgaosSeg) * multiplicador;
+  return Math.round((tempoChassiSeg + penalidadeOrgaosSeg) * multiplicador * 1000) / 1000;
 }
 
 /**

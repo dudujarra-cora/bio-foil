@@ -484,6 +484,54 @@
         "tests/01-portao-gdd.test.mjs"
       ],
       "falhaEsperada": "Saque de Captura Intacta no Setor 1 (Vol. 05) diverge da Lancha Patrulheira (Vol. 03)"
+    },
+    {
+      "id": "MUT-31",
+      "arquivo": "05_conteudo_chefe_e_auditoria_final.md",
+      "lei": "N1 / L4",
+      "descricao": "Alarme da Fervura Oceânica na Fase 3 muda de 4 para 2 segundos (quebra Junção N1 com a Célula 3H da Matriz 6.2 do Vol. 06)",
+      "trocas": [
+        {
+          "buscar": "(precedidos por um alarme sonoro/visual de $4\\text{ segundos}$)",
+          "substituir": "(precedidos por um alarme sonoro/visual de $2\\text{ segundos}$)"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Alarme da Fervura Oceânica da Fase 3 no Vol. 05 diverge da Célula 3H da Matriz 6.2 (Vol. 06)"
+    },
+    {
+      "id": "MUT-32",
+      "arquivo": "05_conteudo_chefe_e_auditoria_final.md",
+      "lei": "N1 / L4",
+      "descricao": "Esquiva de barco no Setor 1 (Seção 5.7.B) muda de 15% para 20% (diverge da Lancha Patrulheira do Vol. 03)",
+      "trocas": [
+        {
+          "buscar": "| **Setor 1 (Atóis)** | $8\\text{ HP}$ | $0$ | $15\\%$ | $10\\text{ HP}$ | $20\\%$ | $2\\text{ E}$ | $2\\text{ Humanos} / 3\\text{ Gânglio}$ |",
+          "substituir": "| **Setor 1 (Atóis)** | $8\\text{ HP}$ | $0$ | $20\\%$ | $10\\text{ HP}$ | $20\\%$ | $2\\text{ E}$ | $2\\text{ Humanos} / 3\\text{ Gânglio}$ |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Esquiva de barco no Setor 1 (Seção 5.7.B) diverge da Lancha Patrulheira (Vol. 03)"
+    },
+    {
+      "id": "MUT-33",
+      "arquivo": "05_conteudo_chefe_e_auditoria_final.md",
+      "lei": "L4 / L6",
+      "descricao": "Casco da Fase 3 da Draga Continental muda de 24 para 30 HP (quebra soma estrutural de 66 HP e TTK canônico de 67.2s)",
+      "trocas": [
+        {
+          "buscar": "| **Fase 3** | **O Núcleo de Perfuração Abissal** | $24\\text{ HP}$ | $10\\text{ pts}$ | $4\\text{ bolhas}$ ($8\\text{ barras}$) | $30\\%$ | $5\\text{ salas}$ ($3 / 2$) | $18\\text{s}$ |",
+          "substituir": "| **Fase 3** | **O Núcleo de Perfuração Abissal** | $30\\text{ HP}$ | $10\\text{ pts}$ | $4\\text{ bolhas}$ ($8\\text{ barras}$) | $30\\%$ | $5\\text{ salas}$ ($3 / 2$) | $18\\text{s}$ |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "HP de casco da Fase 3 diverge do canônico"
     }
   ]
 }

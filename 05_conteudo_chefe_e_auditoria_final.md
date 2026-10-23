@@ -64,23 +64,57 @@ Sem árvore de atributos passivos: o jogador desbloqueia novas arquiteturas de n
 
 ## 5.5. O Chefe Final em 3 Fases: *A Draga Continental ("Leviatã S.A.")*
 
-Assim como a *Rebel Flagship* do FTL, a **Draga Continental** é uma cidade-fábrica flutuante enfrentada em **3 Fases Consecutivas** no Setor 8:
+Assim como a *Rebel Flagship* do FTL, a **Draga Continental** é uma cidade-fábrica flutuante enfrentada em **3 Fases Consecutivas** no Setor 8 (`src/onda5-catalogo-chefe/chefe-draga.mjs`).
+
+* **Regras Gerais de Tripulação, Persistência e IA de Backup:**
+  * **Ambiente Interno:** $100\%$ **SECO** (Ar respirável para humanos), dividido em **Convés Superior (Acima da Linha d'Água)** e **Casco Inferior (Abaixo da Linha d'Água)**.
+  * **Tripulação Inicial na Fase 1 ($6\text{ Humanos}$):** Começa com **$4\text{ Marinheiros Humanos}$** ($100\text{ HP}$, $8\text{ DPS}$, conforme Seção 1.5) operando as salas do convés superior e **$2\text{ Mergulhadores de Assalto}$** ($100\text{ HP}$, $12\text{ DPS}$, escafandro imune a afogamento, conforme Seção 1.5) guardando o andar inferior submerso.
+  * **Persistência entre Fases e IA de Backup (`iaBackupAtiva`):** Qualquer humano eliminado na Fase 1 ou na Fase 2 **permanece morto nas fases seguintes** (zero reposição de tripulação humana entre fases). Se restarem **$0\text{ humanos vivos}$**, o **Computador Central Autônomo (IA de Backup)** assume imediatamente a Draga: mantém a esquiva base da fase ativa e **auto-repara todas as salas danificadas simultaneamente a $1\text{ barra a cada }15\text{ segundos}$**!
+  * **Integridade Estrutural Total das 3 Fases:** $20 + 22 + 24 = \mathbf{66\text{ HP}}$ de casco ($+\; \mathbf{10\text{ pontos}}$ de Blindagem Térmica Externa na Fase 3 $= \mathbf{76\text{ pontos}}$ totais).
+
+| Fase | Nome do Módulo | Casco (`HP`) | Blindagem Térmica | Barreira (`Bolhas / Barras`) | Esquiva Base | Salas (`Sup. / Sub.`) | Intervalo *Power Surge* |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Fase 1** | **A Muralha de Arrasto** | $20\text{ HP}$ | $0\text{ pts}$ | $3\text{ bolhas}$ ($6\text{ barras}$) | $20\%$ | $6\text{ salas}$ ($4 / 2$) | $22\text{s}$ |
+| **Fase 2** | **O Enxame de Processamento** | $22\text{ HP}$ | $0\text{ pts}$ | $3\text{ bolhas}$ ($6\text{ barras}$) | $25\%$ | $6\text{ salas}$ ($3 / 3$) | $20\text{s}$ |
+| **Fase 3** | **O Núcleo de Perfuração Abissal** | $24\text{ HP}$ | $10\text{ pts}$ | $4\text{ bolhas}$ ($8\text{ barras}$) | $30\%$ | $5\text{ salas}$ ($3 / 2$) | $18\text{s}$ |
 
 ### Fase 1: A Muralha de Arrasto (Foco: Armas Isoladas e Redes)
-* **Salas Principais:** Escudo Acústico Triplo (3 bolhas), Canhão de Arpão Triplo, Lançador de Mísseis Térmicos, Gerador de Rede Magnética.
-* **Ataque Especial (*Power Surge* a cada $22\text{s}$):** **Onda de Arrasto Hidráulico** — puxa o mar para baixo, adicionando **$+50\text{ kg}$ de peso virtual** na sua nave por $6\text{ segundos}$! Se você não tiver margem de sustentação no Foil ou não abrir uma comporta de água para aliviar peso, você é forçado ao *Touchdown* bem na hora em que os Mísseis Térmicos dela disparam!
+* **Ficha da Fase 1:** Casco **$20\text{ HP}$** | Esquiva Base **$20\%$** | **Escudo Acústico Triplo:** $3\text{ bolhas}$ ($6\text{ barras}$, regenera $1\text{ bolha}$ a cada $2.0\text{s}$) | Tripulação Inicial: **$4\text{ Marinheiros}$ ($8\text{ DPS}$) $+ 2\text{ Mergulhadores}$ ($12\text{ DPS}$)**.
+* **Layout das 6 Salas e Arsenal da Fase 1 (4 Superiores Secas / 2 Inferiores Abaixo da Linha d'Água):**
+  1. **Ponte de Comando Blindada (Convés Superior):** $2\text{ Barras}$ (Passivo, operada por *Marinheiro 1*). Mantém a esquiva de $20\%$ ativa.
+  2. **Torre do Canhão de Arpão Triplo (Convés Superior):** $3\text{ Barras}$, operada por *Marinheiro 2*. Recarga de **$11\text{s}$** ($0\text{ Munição}$): dispara **$3\text{ arpões pesados}$** de **$1\text{ dano}$** cada (bloqueados por Barreira; cada acerto no casco tem **$50\%$ de chance de abrir Rombo**).
+  3. **Torre do Lançador de Mísseis Térmicos (Convés Superior):** $3\text{ Barras}$, operada por *Marinheiro 3*. Recarga de **$14\text{s}$**: dispara **$2\text{ mísseis térmicos}$** que **ignoram Barreira**, causando **$1\text{ dano de casco} + 1\text{ dano de sistema}$** cada e aplicando **Fervura/Incêndio ($-5\text{ HP/s}$ por $8\text{s}$)** na câmara atingida.
+  4. **Torre do Gerador de Rede Magnética (Convés Superior):** $2\text{ Barras}$, operada por *Marinheiro 4*. Recarga de **$12\text{s}$**: dispara $1\text{ pulso eletromagnético}$ que derruba $1\text{ camada de Barreira}$ ou, sem escudo, aplica **Choque/Íon de $2\text{ Barras}$ por $6\text{s}$** (respeitando o *Isolamento Residual de $5\text{s}$*) e reduz a velocidade de nado na sala em $-50\%$.
+  5. **Gerador de Escudo Acústico Triplo (Abaixo da Linha d'Água):** $6\text{ Barras}$ ($3\text{ bolhas}$), guardado por *Mergulhador de Assalto 1*.
+  6. **Casa de Máquinas e Bombas de Porão (Abaixo da Linha d'Água):** $3\text{ Barras}$, guardada por *Mergulhador de Assalto 2*. Fornece os $20\%$ de esquiva e alimenta a Bomba de Porão Automática (drena salas superiores em $15\text{s}$).
+* **Ataque Especial (*Power Surge* a cada $22\text{s}$):** **Onda de Arrasto Hidráulico** — puxa o mar para baixo, adicionando **$+50\text{ kg}$ de peso virtual** na sua nave por **$6\text{ segundos}$**! Se você não tiver margem de sustentação no Foil ou não abrir uma comporta de água para aliviar peso, você é forçado ao *Touchdown* bem na hora em que os Mísseis Térmicos dela disparam!
 
 ### Fase 2: O Enxame de Processamento (Foco: Drones e Invasão)
-* A muralha externa cai, revelando o convés de processamento.
+* A muralha externa cai (após o **Atracar Automático entre Fases**, que recolhe seus invasores sobreviventes), revelando o convés de processamento.
+* **Ficha da Fase 2:** Casco **$22\text{ HP}$** | Esquiva Base **$25\%$** | **Escudo Acústico Triplo:** $3\text{ bolhas}$ ($6\text{ barras}$) | Tripulação: sobreviventes da Fase 1 (ou **IA de Backup** se restarem $0\text{ humanos}$).
+* **Layout das 6 Salas e Arsenal da Fase 2 (3 Superiores Secas / 3 Inferiores Abaixo da Linha d'Água):**
+  1. **Ponte de Comando Central (Convés Superior):** $2\text{ Barras}$ (mantém os $25\%$ de esquiva).
+  2. **Bateria de Canhão de Arpão Triplo (Convés Superior):** $3\text{ Barras}$, recarga de **$11\text{s}$** ($3\text{ projéteis}$ de $1\text{ dano}$ cada, $50\%$ furo).
+  3. **Cortador Industrial a Plasma Pesado (Convés Superior):** $3\text{ Barras}$, recarga de **$15\text{s}$**: feixe contínuo que corta **$3\text{ câmaras adjacentes}$** causando **$2\text{ dano por sala}$** se a Barreira estiver caída (se houver Barreira ativa, consome $1\text{ bolha}$ e é bloqueado).
+  4. **Hangar de Controle de Drones e Sonar Militar (Abaixo da Linha d'Água):** $4\text{ Barras}$. Coordena o enxame e lança $1\text{ Drone de Abordagem/Reparo}$ ($100\text{ HP}$, $10\text{ DPS}$, imune a afogamento). Se esta sala for quebrada ($0\text{ barras}$), o *Power Surge* da Fase 2 reduz de **$4\text{ drones}$ para $2\text{ drones}$** ($1\text{ aéreo} + 1\text{ subaquático}$)!
+  5. **Gerador de Escudo Acústico Triplo (Abaixo da Linha d'Água):** $6\text{ Barras}$ ($3\text{ bolhas}$).
+  6. **Reator Hidráulico e Bombas Submersas (Abaixo da Linha d'Água):** $4\text{ Barras}$ ($25\%$ de esquiva + Bomba de Porão Automática).
 * **Ataque Especial (*Power Surge* a cada $20\text{s}$):** **Enxame de Drones Cortadores + Pulso Sonar Militar**.
-  * 4 drones atacam simultaneamente (2 pelo ar, 2 por baixo d'água mirando no seu Mastro do Foil!).
-  * **Como sobreviver:** Usar a *Glândula de Tinta Furtiva (Cloaking)*, ou manter o Baiacu protegendo o Poço da Quilha enquanto sobrecarrega a Barreira.
+  * **4 drones** atacam simultaneamente durante **$6\text{ segundos}$**: **2 Drones Cortadores Aéreos** ($1\text{ disparo}$ de $1\text{ dano}$ cada contra salas aleatórias, bloqueáveis por Barreira) e **2 Drones Torpedeiros Subaquáticos** mirando diretamente no seu **Mastro do Foil (Sala 6 — Poço da Quilha)** ($1\text{ dano estrutural no Mastro}$ cada, $-50\text{ kg}$ de sustentação por acerto se não esquivados!).
+  * **Como sobreviver:** Usar a *Glândula de Tinta Furtiva (Cloaking)*, quebrar o Hangar de Controle de Drones antes do pulso, ou manter o Baiacu/Polvo protegendo o Poço da Quilha enquanto sobrecarrega a Barreira.
 
 ### Fase 3: O Núcleo de Perfuração Abissal (Foco: Barreira de Sobrecarga + Fervura do Mar)
-* A estrutura final liga a broca térmica no leito oceânico.
-* **Defesa Inicial:** Começa com uma **Blindagem Térmica Externa de $10\text{ pontos}$** (equivalente ao *Zoltan Shield* da Fase 3 do FTL — precisa ser quebrada com tiros antes de poder usar o Tubo Pressurizado ou furar salas!).
+* A estrutura final liga a broca térmica no leito oceânico (após o segundo **Atracar Automático entre Fases**).
+* **Ficha da Fase 3:** Casco **$24\text{ HP}$** | **Defesa Inicial:** Começa com uma **Blindagem Térmica Externa de $10\text{ pontos}$** (equivalente ao *Zoltan Shield* da Fase 3 do FTL — precisa ser quebrada com tiros antes de poder usar o Tubo Pressurizado, Mísseis/Torpedos ou furar salas!) | **Escudo Acústico Quádruplo:** $4\text{ bolhas}$ ($8\text{ barras}$) | Esquiva Base **$30\%$** | Tripulação: sobreviventes da Fase 2 (ou **IA de Backup**).
+* **Layout das 5 Salas e Arsenal da Fase 3 (3 Superiores Secas / 2 Inferiores Abaixo da Linha d'Água):**
+  1. **Núcleo de Comando Autônomo (Convés Superior):** $3\text{ Barras}$ ($30\%$ de esquiva).
+  2. **Bateria de Arpão Triplo de Alta Pressão (Convés Superior):** $3\text{ Barras}$, recarga de **$10\text{s}$** ($3\text{ projéteis}$ de $1\text{ dano}$ cada, $50\%$ furo).
+  3. **Lançador de Mísseis Térmicos Pesados (Convés Superior):** $3\text{ Barras}$, recarga de **$13\text{s}$** ($2\text{ mísseis}$ que ignoram Barreira, $1\text{ dano} + \text{Fervura}$).
+  4. **Gerador de Escudo Quádruplo e Blindagem Térmica (Abaixo da Linha d'Água):** $8\text{ Barras}$ ($4\text{ bolhas}$).
+  5. **Broca Geotérmica e Propulsão Abissal (Abaixo da Linha d'Água):** $4\text{ Barras}$ ($30\%$ de esquiva + Bomba de Porão + alimentação térmica da broca).
 * **Ataque Especial (*Power Surge* a cada $18\text{s}$):** **Fervura Oceânica + Rajada de 7 Lasers Industriais**.
-  * Durante $5\text{ segundos}$ (precedidos por um alarme sonoro/visual de $4\text{ segundos}$), a água do mar ao redor ferve! Se a sua nave estiver caída em *Touchdown* na água durante a Fervura, o casco sofre **$1\text{ de Dano Estrutural por segundo}$** (até $5\text{ HP}$ de casco) e os tripulantes nas salas inferiores sofrem **$-5\text{ HP/s}$** — **obrigando o jogador a estar voando No Foil durante o ataque especial!**
+  * **Rajada de 7 Lasers Industriais:** Dispara **$7\text{ projéteis/feixes}$ consecutivos de $1\text{ dano}$ cada** ($7\text{ pontos de dano potencial}$ por *Surge*!), testando o limite da Barreira ($3\text{ a }4\text{ bolhas}$) + Esquiva *No Foil* ou *Tinta Furtiva*.
+  * **Fervura Oceânica:** Durante $5\text{ segundos}$ (precedidos por um alarme sonoro/visual de $4\text{ segundos}$), a água do mar ao redor ferve! Se a sua nave estiver caída em *Touchdown* na água durante a Fervura, o casco sofre **$1\text{ de Dano Estrutural por segundo}$** (até $5\text{ HP}$ de casco) e os tripulantes nas salas inferiores sofrem **$-5\text{ HP/s}$** — **obrigando o jogador a estar voando No Foil durante o ataque especial!**
 
 ---
 
@@ -156,6 +190,45 @@ O saque de cada encontro escala linearmente com o número do Setor $S \in \{1..8
 
 ---
 
+## 5.7. Bestiário Escalado e Curva de Ameaça Inimiga: Setores 1 a 7 (*Enemy Roster*)
+
+Para alimentar os encontros de combate dos Setores 1 a 7 nas Ondas 3 e 5 (`src/onda3-inimigos/` e `src/onda5-catalogo-chefe/`), o jogo utiliza **8 Arquétipos Canônicos de Inimigos** ($4\text{ Barcos Corporativos}$ de ambiente interno $100\%$ seco com Bomba de Porão Automática + $4\text{ Monstros Colossais}$ aquáticos com $4\text{ órgãos}$ mapeados pelo Sonar) parametrizados pela curva setorial abaixo.
+
+### A. Os 8 Arquétipos Canônicos de Inimigos (4 Barcos Corporativos + 4 Monstros Colossais)
+
+| ID do Template | Classe | Nome do Inimigo | Setores | Salas / Órgãos | Arsenal, IA e Saque Especial (Captura / Extração Cirúrgica) |
+| :--- | :---: | :--- | :---: | :---: | :--- |
+| `BARCO_1_LANCHA` | `BARCO_HUMANO` | **1. Lancha Patrulheira** | Setores $1\text{–}3$ | $4\text{ salas}$ ($2 / 2$) | Metralhadora Naval ($10\text{s}$, $2\text{ tiros}$) $+$ Torpedo Raso ($13\text{s}$, mira no Mastro). Captura: $25\%$ chance de arma. |
+| `BARCO_2_CORVETA` | `BARCO_HUMANO` | **2. Corveta de Sonar** | Setores $2\text{–}5$ | $5\text{ salas}$ ($3 / 2$) | Emissor Acústico I ($9\text{s}$) $+$ Rede Magnética ($12\text{s}$, Íon) $+$ **Sonar Militar** (revela furtividade/câmaras). |
+| `BARCO_3_ARRASTAO` | `BARCO_HUMANO` | **3. Arrastão Blindado** | Setores $3\text{–}6$ | $6\text{ salas}$ ($3 / 3$) | Arpão de Cabo ($11\text{s}$, $100\%$ furo) $+$ Dispersor de Estilhaços ($10\text{s}$, $3\text{ fragmentos}$) $+$ Tubo ($1\text{ Mergulhador}$). |
+| `BARCO_4_SUBMARINO` | `BARCO_HUMANO` | **4. Submarino Térmico de Assalto** | Setores $5\text{–}7$ | $6\text{ salas}$ ($2 / 4$) | Cortador Térmico ($14\text{s}$) $+$ Torpedo Abissal ($13\text{s}$, $3\text{ dano}$ sub.) $+$ Cápsula com **$2\text{ Mergulhadores}$** ($2 \times 12 = 24\text{ DPS}$). |
+| `MONSTRO_1_TEUTHIS` | `MONSTRO_BIOLOGICO` | **5. Teuthis Couraçada Mutante** | Setores $1\text{–}3$ | $4\text{ órgãos}$ | Tentáculos ($8\text{s}$, $2\times 1\text{ dano}$) $+$ Bico Quitinoso ($14\text{s}$, mira no Mastro). Extração Cirúrgica: **Bolsa de Tinta Abissal**. |
+| `MONSTRO_2_ENGUIA` | `MONSTRO_BIOLOGICO` | **6. Enguia Elétrica Abissal** | Setores $2\text{–}5$ | $4\text{ órgãos}$ | Descarga Bio-Elétrica ($9\text{s}$, desativa $1\text{ a }2\text{ barras}$ por $6\text{s}$ e causa Curto-Circuito). Extração: **Eletro-Placa de Arraia**. |
+| `MONSTRO_3_CARANGUEJO` | `MONSTRO_BIOLOGICO` | **7. Caranguejo-Titã de Trincheira** | Setores $4\text{–}6$ | $4\text{ órgãos}$ | Quelícera Britadeira ($12\text{s}$, $2\text{ dano} + 100\%\text{ furo}$) $+$ Jato de Pressão ($+15\text{ kg}$ água). Extração: **Bexiga de Pressão** ou **Dente de Leviatã**. |
+| `MONSTRO_4_HIDRA` | `MONSTRO_BIOLOGICO` | **8. Hidra Termofílica de Cratera** | Setores $5\text{–}7$ | $4\text{ órgãos}$ | Jato Geotérmico ($11\text{s}$, Fervura $-5\text{ HP/s}$ por $8\text{s}$) $+$ Lança **$1\text{ a }2\text{ Parasitas}$** ($-10\text{ HP/s}$ no seco). Extração: **Glândula Termofílica** ou **Glândula de Baiacu**. |
+
+### B. Tabela de Escalamento Numérico de Inimigos por Setor (Setores 1 a 7)
+
+Todos os atributos dos inimigos escalam de forma estritamente determinística do Setor $S = 1$ ao Setor $S = 7$, ancorados nas fichas canônicas do Setor 1 definidas no Passo 3 (*Lancha Patrulheira*: $8\text{ HP}$, $0\text{ Barreira}$, $15\%$ Esquiva, $2\text{ Barras}$ de armas, $2\text{ Humanos}$; *Teuthis Couraçada*: $10\text{ HP}$, $20\%$ Esquiva, $3\text{ Barras}$ no Gânglio Central):
+* **Casco de Barco Humano:** $\text{HP}_{\text{barco}}(S) = 8 + 2 \times (S - 1)$
+* **Camadas de Barreira (Barco Humano):** $\text{Barreira}_{\text{barco}}(S) = \lfloor S / 2 \rfloor\text{ bolhas}$ (Monstros Biológicos têm $0\text{ bolhas}$, compensando com maior HP bruto e $+5\%$ de esquiva).
+* **Esquiva Base (Barco / Monstro):** $\text{Esquiva}_{\text{barco}}(S) = 15\% + 2\% \times (S - 1)$ e $\text{Esquiva}_{\text{monstro}}(S) = 20\% + 2\% \times (S - 1)$
+* **Corpo de Monstro Colossal:** $\text{HP}_{\text{monstro}}(S) = 10 + 3 \times (S - 1)$
+* **Orçamento de Barras de Armas/Órgãos Ofensivos:** $\text{Armas}(S) = 2 + (S - 1)\text{ barras}$
+* **Tripulação Humana / Vitalidade do Gânglio Central:** $\text{Trip}_{\text{barco}}(S) = 2 + \lfloor (S - 1) / 2 \rfloor\text{ humanos}$ e $\text{Gânglio}(S) = 3 + \lfloor (S - 1) / 2 \rfloor\text{ barras}$
+
+| Setor ($S$) | Barco: Casco (`HP`) | Barco: Barreira (`Bolhas`) | Barco: Esquiva (`%`) | Monstro: Corpo (`HP`) | Monstro: Esquiva (`%`) | Orçamento Armas (`Barras`) | Tripulação Humana / Gânglio (`Barras`) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Setor 1 (Atóis)** | $8\text{ HP}$ | $0$ | $15\%$ | $10\text{ HP}$ | $20\%$ | $2\text{ E}$ | $2\text{ Humanos} / 3\text{ Gânglio}$ |
+| **Setor 2 (Recifes)** | $10\text{ HP}$ | $1$ | $17\%$ | $13\text{ HP}$ | $22\%$ | $3\text{ E}$ | $2\text{ Humanos} / 3\text{ Gânglio}$ |
+| **Setor 3 (Kelp)** | $12\text{ HP}$ | $1$ | $19\%$ | $16\text{ HP}$ | $24\%$ | $4\text{ E}$ | $3\text{ Humanos} / 4\text{ Gânglio}$ |
+| **Setor 4 (Arrastões)** | $14\text{ HP}$ | $2$ | $21\%$ | $19\text{ HP}$ | $26\%$ | $5\text{ E}$ | $3\text{ Humanos} / 4\text{ Gânglio}$ |
+| **Setor 5 (Fossa)** | $16\text{ HP}$ | $2$ | $23\%$ | $22\text{ HP}$ | $28\%$ | $6\text{ E}$ | $4\text{ Humanos} / 5\text{ Gânglio}$ |
+| **Setor 6 (Cratera)** | $18\text{ HP}$ | $3$ | $25\%$ | $25\text{ HP}$ | $30\%$ | $7\text{ E}$ | $4\text{ Humanos} / 5\text{ Gânglio}$ |
+| **Setor 7 (Sargaços)** | $20\text{ HP}$ | $3$ | $27\%$ | $28\text{ HP}$ | $32\%$ | $8\text{ E}$ | $5\text{ Humanos} / 6\text{ Gânglio}$ |
+
+---
+
 # CONTRA-AUDITORIA #5 (Auditoria Global de Fechamento: Passos 1 a 5)
 
 Vamos cruzar todas as regras dos Passos 1 a 5 para caçar **combos infinitos (*game-breaking bugs*)** ou **becos sem saída onde uma nave não consegue zerar o jogo**:
@@ -204,3 +277,10 @@ Vamos cruzar todas as regras dos Passos 1 a 5 para caçar **combos infinitos (*g
   2. **Teto de Maestria (100% Captura Intacta / Extração Cirúrgica — 4 barcos + 4 monstros por setor):**
      $$\text{Maestria}_{1..7} = 45 + \sum_{S=1}^{7} \left(4 \times \text{Sucata}_{\text{captura}}(S) + 4 \times \text{Biomassa}_{\text{cirúrgica}}(S)\right) = 45 + 1372 + 1372 = \mathbf{2789\text{ unidades}}$$
      Descontando a compra de armas de topo, órgãos e reparos nos Recifes-Forja (~$600\text{ a }750\text{ unidades}$ ao longo de 7 setores), o investimento líquido em sistemas fica entre **$2039\text{ e }2189\text{ unidades}$** ($\approx \mathbf{87\%\text{ a }94\%}$ do teto de $2330\text{ unidades}$): até uma run perfeita é obrigada a escolher quais sistemas priorizar antes da Draga Continental!
+
+### Falha Global Encontrada 7: A Prova de Tempo-Para-Matar (TTK) e Sobrevivência contra as 3 Fases da Draga Continental
+* **O Problema:** Somando as 3 Fases da Draga Continental ($20 + 22 + 24 = \mathbf{66\text{ HP}}$ de casco total $+\; \mathbf{10\text{ pontos}}$ de Blindagem Térmica Externa na Fase 3 $= \mathbf{76\text{ pontos}}$ de integridade estrutural), se a defesa da Fase 3 ($4\text{ bolhas}$ de Barreira $+ 30\%$ de Esquiva) bloquear o dano de uma *build* padrão de Setor 8, a luta se arrastaria por dezenas de *Power Surges* até o jogador morrer por atrito; por outro lado, se o HP for baixo demais, a Fase 3 morre antes do primeiro ciclo de *Fervura Oceânica* ($18\text{s}$).
+* **Prova Matemática de TTK na Fase 3 (Arsenal Padrão de Setor 8 sem Munição: *2x Rajada Hidropneumática II* de $3\text{ tiros}$ cada $+ 1\times$ *Cortador Térmico a Plasma* de $6\text{ dano}$ em $3\text{ salas}$, operados por Polvo com $-20\%$ de recarga):**
+  1. **Quebra da Blindagem Térmica Externa ($10\text{ pontos}$):** Com Polvo na Artilharia ($-20\%$), cada *Rajada II* recarrega em $12 \times 0.8 = \mathbf{9.6\text{s}}$ e o *Cortador Térmico* em $14 \times 0.8 = \mathbf{11.2\text{s}}$. Contra os $30\%$ de esquiva da Fase 3, cada salva das duas *Rajadas II* ($6\text{ projéteis}$) acerta em média $6 \times 0.70 = \mathbf{4.2\text{ tiros}}$: em **2 salvas sincronizadas** ($t \approx 11.2\text{s}$ e $t \approx 22.4\text{s}$), os projéteis + feixe consomem integralmente os **$10\text{ pontos}$ de Blindagem Térmica**.
+  2. **Penetração do Escudo Quádruplo ($4\text{ bolhas}$) e Dano de Casco ($24\text{ HP}$):** A partir da 3ª salva (a cada $11.2\text{s}$), os $4.2\text{ acertos}$ médios das duas *Rajadas II* derrubam as **$4\text{ bolhas}$ de Barreira** da Fase 3, permitindo que o *Cortador Térmico a Plasma* corte $3\text{ salas}$ desprotegidas causando **$6\text{ de dano estrutural ao casco}$ por salva**!
+  3. **Janela Canônica de Conclusão da Fase 3:** Os $24\text{ HP}$ de casco exigem exatas $24 \div 6 = \mathbf{4\text{ salvas}}$ pós-blindagem ($4 \times 11.2\text{s} = 44.8\text{s}$), fechando a Fase 3 em $22.4 + 44.8 = \mathbf{67.2\text{ segundos}}$ — o que obriga o jogador a enfrentar e sobreviver a exatos **$\lfloor 67.2 / 18 \rfloor = \mathbf{3\text{ ciclos}}$ do *Power Surge* de Fervura Oceânica ($t = 18\text{s}, 36\text{s}, 54\text{s}$)** antes do golpe final!
