@@ -12,33 +12,48 @@ import {
   extrairCatalogoVolume05,
   extrairEconomiaVolume05,
   extrairChefeEBestiarioVolume05,
+  extrairKitInicialVolume05,
   extrairCustosMastroVolume01,
   extrairSaqueSetor1Volume03,
   extrairInimigosSetor1Volume03,
+  extrairBaralhoVolume04,
+  extrairCatalogoEventosVolume04,
+  extrairSimulacaoVolume03,
+  extrairContratoEstadoVolume08,
+  extrairComandosPersistenciaOnda6Volume08,
+  extrairEnumsCanonicosVolume08,
+  extrairArvoreModulosVolume08,
+  extrairConsolidacaoVolume09,
+  extrairTripulacaoVolume01,
+  extrairTopologiaOcupacaoBeamVolume01,
+  extrairParametrosMarinheiros,
+  normalizarTexto,
+} from '../src/gdd-parser.mjs';
+import {
   calcularPesoTotalNave,
   calcularSustentacaoAtual,
   calcularVelocidadeCruzeiro,
   calcularTempoRecargaArma,
-  extrairBaralhoVolume04,
-  extrairCatalogoEventosVolume04,
   resolverEventoNoESaque,
-  extrairSimulacaoVolume03,
-  extrairContratoEstadoVolume08,
-  extrairComandosPersistenciaOnda6Volume08,
   validarDespachoComando,
   avaliarDesbloqueioCarcacas,
-  extrairConsolidacaoVolume09,
+  extrairLimiaresPredicado,
+  lerRequisitoBlueOption,
+  kitCumpreRequisitoBlueOption,
+  calcularMoedaTrechoEvento,
+  sortearTemplatesSetor,
+  calcularDistribuicaoTtkFase3,
+  calcularGeometriaLayoutNativo,
+  analisarGrafoCicloPartida,
   transicionarFaseCicloPartida,
   calcularHash32StreamDeterministico,
-  extrairTripulacaoVolume01,
-  extrairTopologiaOcupacaoBeamVolume01,
+  HASH32_BASE_FNV,
+  HASH32_PRIMO_FNV,
   calcularRotaMinimaCamaras,
   resolverTickCombateCorpoACorpoSala,
   validarTracadoBeamOrtogonal,
   enumerarTracadosBeamValidos,
-  extrairParametrosMarinheiros,
-  normalizarTexto,
-} from '../src/gdd-parser.mjs';
+} from '../src/oraculos-referencia.mjs';
 
 /**
  * Simulador INDEPENDENTE dos 2 marinheiros da Lancha (Vol. 03), em ticks de 0.25 s. Não lê o texto da simulação:
@@ -211,7 +226,7 @@ test('Lei L2 + L3: isolamento de leitura sem estado compartilhado (L2) e canal e
   assert.equal(normalizarTexto(chaveValida.valor.valorBruto).trim(), '30 HP');
 });
 
-test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 células) do Vol. 06 com Vols. 01..05', () => {
+test('Junção N1 + L4 + N4: cruza Tabela SSOT (27 constantes) e Matriz 5x8 (40 células) do Vol. 06 com Vols. 01..05', () => {
   const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
   const vol01 = normalizarTexto(cadeia.volumes[0].conteudo);
   const vol02 = cadeia.volumes[1].conteudo;
@@ -232,12 +247,12 @@ test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 
     `[N4] Vol. 06 examinado: ${totalConstantes} constantes SSOT, ${totalCelulasMatriz} células 5x8, ${limitesExtremos.length} limites extremos, ${niveisPrecedencia.length} níveis de precedência`
   );
 
-  assert.equal(totalConstantes, 26, 'A Tabela SSOT 6.1 deve conter exatamente 26 constantes canônicas');
+  assert.equal(totalConstantes, 27, 'A Tabela SSOT 6.1 deve conter exatamente 27 constantes canônicas');
   assert.equal(totalCelulasMatriz, 40, 'A Matriz 6.2 (5 estados x 8 eventos) deve conter 40 células');
   assert.equal(limitesExtremos.length, 4, 'A Seção 6.3 deve conter exatamente 4 Provas de Limite Extremo');
   assert.equal(niveisPrecedencia.length, 4, 'A Seção 6.4 deve conter exatamente 4 Níveis de Precedência');
 
-  // L4 + L6: valor literal real de TODAS as 26 constantes, comparado pelo SIGNIFICADO (texto normalizado, sem LaTeX)
+  // L4 + L6: valor literal real de TODAS as 27 constantes, comparado pelo SIGNIFICADO (texto normalizado, sem LaTeX)
   const gabaritoLiteralSsot = {
     HP_CASCO_BASE: '30 HP',
     PESO_CHASSI_BASE: '100 kg',
@@ -265,6 +280,7 @@ test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 
     TEMPO_REPARO_FURO: '8.0 s',
     DANO_ANTIPESSOAL: '15 HP',
     REATOR_TETO_COMPRA: '18 barras',
+    VEL_FRENTE_EXTRATIVISTA: '6.0 MN/h',
   };
   let constantesVerificadasLiteralmente = 0;
   for (const [idConstante, valorLiteralEsperado] of Object.entries(gabaritoLiteralSsot)) {
@@ -276,7 +292,7 @@ test('Junção N1 + L4 + N4: cruza Tabela SSOT (26 constantes) e Matriz 5x8 (40 
     );
     constantesVerificadasLiteralmente += 1;
   }
-  assert.equal(constantesVerificadasLiteralmente, 26, 'Todas as 26 constantes da SSOT devem ter asserção literal');
+  assert.equal(constantesVerificadasLiteralmente, 27, 'Todas as 27 constantes da SSOT devem ter asserção literal');
 
   // Cruzamento N1 com Volume 01, 02, 03 e 04 (por significado)
   assert.ok(vol01.includes('4 Slots de Armas Ativas'), 'Vol. 01 deve declarar 4 Slots de Armas Ativas');
@@ -948,24 +964,40 @@ test('Junção N1 + L4 + N4: audita as 3 Fases da Draga Continental (5.5) e o Be
   assert.equal(recargaCortadorPolvo, 11.2);
 
   const fase3 = chefeBestiario.fasesResumo[2];
-  const salvasParaQuebrarBlindagemTermica = 2;
-  const danoCascoCortadorPorSalva = 6;
-  const salvasPosBlindagem = fase3.hpCasco / danoCascoCortadorPorSalva;
-  const ttkFase3Calculado =
-    Math.round((salvasParaQuebrarBlindagemTermica + salvasPosBlindagem) * recargaCortadorPolvo * 10) / 10;
-  const ciclosSurgeFase3Calculados = Math.floor(ttkFase3Calculado / fase3.intervaloSurgeSeg);
-
-  assert.equal(ttkFase3Calculado, 67.2);
-  assert.equal(
-    chefeBestiario.ttkFase3SegDeclarado,
-    ttkFase3Calculado,
-    'TTK canônico da Fase 3 declarado na Falha Global 7 diverge do cálculo do motor (67.2s)'
+  // Parâmetros da cadeia de Markov: todos lidos do GDD (Vols. 01 e 05), nenhum número fixado no teste
+  const vol05Norm = normalizarTexto(vol05);
+  const tirosPorRajada = Number(
+    vol05Norm.match(/Rajada Hidropneumática II \| 2 \| 18 kg \| 12s \| 0 \| Dispara (\d+) projéteis/)?.[1] ?? NaN
   );
-  assert.equal(ciclosSurgeFase3Calculados, 3);
+  const rajadasNoArsenal = Number(vol05Norm.match(/Arsenal Padrão de Setor 8 sem Munição: \*(\d+)x Rajada Hidropneumática II\*/)?.[1] ?? NaN);
+  const topologiaVol01 = extrairTopologiaOcupacaoBeamVolume01(vol01);
+  assert.ok(vol05Norm.includes('Feixes não sofrem esquiva'), 'Seção 5.1 deve declarar que feixes não sofrem esquiva (premissa do TTK)');
+  const distribuicaoTtk = calcularDistribuicaoTtkFase3({
+    projeteisPorSalva: rajadasNoArsenal * tirosPorRajada,
+    probAcerto: 1 - fase3.esquivaPct / 100,
+    danoFeixe: topologiaVol01.beamMaxSalas * topologiaVol01.beamDanoPorSala,
+    bolhas: fase3.bolhasBarreira,
+    blindagem: fase3.blindagemTermicaPts,
+    casco: fase3.hpCasco,
+    intervaloSalvaSeg: recargaCortadorPolvo,
+  });
+  assert.equal(distribuicaoTtk.massaTotal, 1, 'A cadeia de Markov do TTK deve somar probabilidade 1');
+  const ttk = chefeBestiario.ttkFase3;
+  assert.equal(ttk.probQuebraBolhas, distribuicaoTtk.probQuebraBolhas, 'P(H >= 4) declarada na Falha Global 7 diverge da binomial exata');
+  assert.equal(ttk.medianoSeg, distribuicaoTtk.ttkMedianoSeg, 'TTK mediano declarado na Falha Global 7 diverge da cadeia de Markov exata');
   assert.equal(
-    chefeBestiario.ciclosSurgeFase3Declarados,
-    ciclosSurgeFase3Calculados,
-    'Ciclos de Power Surge da Fase 3 declarados na Falha Global 7 divergem de floor(67.2 / 18) = 3'
+    ttk.esperadoSeg,
+    distribuicaoTtk.ttkEsperadoSeg,
+    `TTK esperado declarado na Falha Global 7 diverge da cadeia de Markov exata (${distribuicaoTtk.ttkEsperadoSeg}s)`
+  );
+  assert.equal(ttk.salvasEsperadas, distribuicaoTtk.salvasEsperadas, 'Salvas esperadas declaradas divergem da cadeia de Markov');
+  assert.equal(ttk.p90Seg, distribuicaoTtk.ttkP90Seg, 'TTK P90 declarado na Falha Global 7 diverge da cadeia de Markov exata');
+  assert.equal(ttk.ciclosMediana, Math.floor(distribuicaoTtk.ttkMedianoSeg / fase3.intervaloSurgeSeg));
+  assert.equal(ttk.ciclosEsperado, Math.floor(distribuicaoTtk.ttkEsperadoSeg / fase3.intervaloSurgeSeg));
+  assert.equal(ttk.ciclosP90, Math.floor(distribuicaoTtk.ttkP90Seg / fase3.intervaloSurgeSeg));
+  assert.ok(
+    ttk.ciclosMediana >= 1,
+    'A Fase 3 não pode morrer antes do primeiro ciclo de Fervura Oceânica (Falha Global 7)'
   );
 });
 
@@ -1155,100 +1187,165 @@ test('Junção N1 + L4 + N4: audita Topologia 2x4 + Duto 5<->6 (1.6.A), Lotaçã
   ]);
 });
 
-test('Junção N1 + L4 + N4: audita o Catálogo Determinístico de Eventos (4.5.A) e a Regra de SOS Expirado / Frente Corporativa (4.5.B) contra Vols. 01, 03, 05, 06 e 08', () => {
+test('Junção N1 + L4 + N4: audita o Catálogo de 17 Eventos (4.5.A), Raridade das Blue Options (4.5.C), Teto por Visita e SOS Expirado (4.5.B) contra Vols. 01, 03, 05, 06, 08 e 09', () => {
   const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
-  const vol01 = cadeia.volumes[0].conteudo;
   const vol03 = cadeia.volumes[2].conteudo;
   const vol04 = cadeia.volumes[3].conteudo;
   const vol05 = cadeia.volumes[4].conteudo;
   const vol06 = cadeia.volumes[5].conteudo;
   const vol08 = extrairContratoEstadoVolume08(cadeia.volumes[7].conteudo);
+  const vol09 = extrairConsolidacaoVolume09(cadeia.volumes[8].conteudo);
 
   const baralho = extrairBaralhoVolume04(vol04);
   const catalogoEventos = extrairCatalogoEventosVolume04(vol04);
   const catalogoVol05 = extrairCatalogoVolume05(vol05);
   const economiaVol05 = extrairEconomiaVolume05(vol05);
+  const kits = extrairKitInicialVolume05(vol05);
   const saqueS1Vol03 = extrairSaqueSetor1Volume03(vol03);
-  const tripVol01 = extrairTripulacaoVolume01(vol01);
   const { constantesSsot } = extrairSsotEMatrizDoVolume06(vol06);
 
+  const porCategoria = (c) => catalogoEventos.templates.filter((t) => t.categoria === c);
   console.log(
-    `[N4] Catálogo de Eventos Vol. 04 examinado: ${catalogoEventos.templates.length} templates (SOS=${
-      catalogoEventos.templates.filter((t) => t.categoria === 'SOS').length
-    }, EXPLORACAO=${catalogoEventos.templates.filter((t) => t.categoria === 'EXPLORACAO').length}, PERIGO=${
-      catalogoEventos.templates.filter((t) => t.categoria === 'PERIGO').length
-    }), estado expirado=${catalogoEventos.regrasSosEFrente.estadoSosExpirado}`
+    `[N4] Catálogo de Eventos Vol. 04 examinado: ${catalogoEventos.templates.length} templates (SOS=${porCategoria('SOS').length}, EXPLORACAO=${porCategoria('EXPLORACAO').length}, PERIGO=${porCategoria('PERIGO').length}), ${kits.length} kits iniciais, estado expirado=${catalogoEventos.regrasSosEFrente.estadoSosExpirado}`
   );
 
-  // 1. Auditoria da Tabela 4.5.A contra o Baralho Procedural (Seção 4.4)
-  assert.equal(
-    catalogoEventos.templates.length,
-    10,
-    'Seção 4.5.A deve definir exatamente os 10 templates de nós especiais (4 SOS + 3 Exploração + 3 Perigos)'
-  );
-  const sosTemplates = catalogoEventos.templates.filter((t) => t.categoria === 'SOS');
-  const expTemplates = catalogoEventos.templates.filter((t) => t.categoria === 'EXPLORACAO');
-  const perTemplates = catalogoEventos.templates.filter((t) => t.categoria === 'PERIGO');
-  assert.equal(sosTemplates.length, 4, 'Catálogo 4.5.A deve conter exatamente 4 templates SOS (cota 4.4 = 4 Nós)');
-  assert.equal(expTemplates.length, 3, 'Catálogo 4.5.A deve conter exatamente 3 templates EXPLORACAO (cota 4.4 = 3 Nós)');
-  assert.equal(perTemplates.length, 3, 'Catálogo 4.5.A deve conter exatamente 3 templates PERIGO (cota 4.4 = 3 Nós)');
+  // 1. Tamanho do catálogo contra as cotas do Baralho 4.4 (sorteio sem repetição exige pelo menos 2x a cota)
   assert.equal(baralho.somaTotalNosBase, 20, 'Baralho base da Seção 4.4 deve continuar somando exatamente 20 nós');
+  const [cotaForja, cotaSos, cotaPadrao, cotaPerigo, cotaExploracao] = baralho.cotas;
+  assert.equal(cotaForja, 2);
+  assert.equal(cotaPadrao, 6);
+  assert.equal(porCategoria('SOS').length, 2 * cotaSos, `Catálogo 4.5.A deve conter exatamente 8 templates SOS (2 x cota 4.4 = 8)`);
+  assert.equal(porCategoria('EXPLORACAO').length, 2 * cotaExploracao, 'Catálogo 4.5.A deve conter exatamente 6 templates EXPLORACAO (2 x cota 4.4 = 6)');
+  assert.equal(porCategoria('PERIGO').length, cotaPerigo, 'Catálogo 4.5.A deve conter exatamente 3 templates PERIGO (cota 4.4 = 3)');
+  assert.equal(catalogoEventos.templates.length, 17);
+  assert.equal(new Set(catalogoEventos.templates.map((t) => t.id)).size, 17, 'IDs dos templates da Seção 4.5.A devem ser únicos');
 
-  const idsUnicos = new Set(catalogoEventos.templates.map((t) => t.id));
-  assert.equal(idsUnicos.size, 10, 'Todos os 10 templates da Seção 4.5.A devem ter IDs únicos');
-
-  assert.equal(
-    catalogoEventos.regrasOpcoes.taxaSucessoCriticoBlueOption,
-    100,
-    'Blue Option (Opção B) deve ter 100% de sucesso crítico garantido'
-  );
+  assert.equal(catalogoEventos.regrasOpcoes.taxaSucessoCriticoBlueOption, 100, 'Blue Option (Opção B) deve ter 100% de sucesso crítico garantido');
   assert.equal(catalogoEventos.regrasOpcoes.danoCascoBlueOption, 0, 'Blue Option (Opção B) deve causar 0 dano de casco');
-  assert.equal(
-    catalogoEventos.regrasOpcoes.marcadorOpcaoCPerigo,
-    'BLOQUEADO_COMBATE_OBRIGATORIO',
-    'Opção C em nós PERIGO deve usar o marcador canônico BLOQUEADO_COMBATE_OBRIGATORIO'
-  );
+  assert.equal(catalogoEventos.regrasOpcoes.marcadorOpcaoCPerigo, 'BLOQUEADO_COMBATE_OBRIGATORIO');
 
-  // 2. Cruzamento N1 dos Requisitos de Blue Options contra Tripulação (Vol. 01), Armas (5.1) e Sistemas (5.6.A)
-  assert.equal(tripVol01.especies.length, 4);
-  const nomesArmas51 = catalogoVol05.armas.map((a) => normalizarTexto(a.nome));
-  const nomesSistemas56 = economiaVol05.upgrades.map((u) => normalizarTexto(u.nome));
+  // 2. Kit Inicial 5.4.A contra a tabela 5.4 (tripulação, peso e níveis de sistema fora do padrão Alfa)
+  assert.equal(kits.length, catalogoVol05.naves.length, 'Seção 5.4.A deve ter um kit para cada uma das 5 naves da Seção 5.4');
+  const pesoArma = (nome) => catalogoVol05.armas.find((a) => normalizarTexto(a.nome).includes(nome))?.pesoKg;
+  const nivelPadraoAlfa = Object.fromEntries(economiaVol05.upgrades.map((u) => [u.nome, u.nivelInicial]));
+  kits.forEach((kit, idx) => {
+    const nave = catalogoVol05.naves[idx];
+    const tripulacao5_4 = {};
+    for (const m of normalizarTexto(nave.tripulacao).matchAll(/(\d+)\s+(Polvo|Arraia|Baiacu|Caranguejo)/g)) {
+      tripulacao5_4[m[2].toUpperCase()] = Number(m[1]);
+    }
+    assert.deepEqual(kit.tripulacao, tripulacao5_4, `Tripulação do kit ${kit.idArquitetura} na Seção 5.4.A diverge da Seção 5.4`);
+    for (const arma of kit.armas) {
+      assert.ok(pesoArma(arma) > 0, `Arma "${arma}" do kit ${kit.idArquitetura} não existe no Catálogo 5.1`);
+    }
+    for (const orgao of kit.orgaos) {
+      assert.ok(catalogoVol05.orgaos.some((o) => o.nome.startsWith(orgao)), `Órgão "${orgao}" do kit ${kit.idArquitetura} não existe no Catálogo 5.2`);
+      assert.ok(normalizarTexto(nave.diferencialBruto).includes(orgao.split(' ')[0]), `Órgão "${orgao}" do kit ${kit.idArquitetura} não aparece na Seção 5.4`);
+    }
+    const pesoKit =
+      kit.chassiKg + 100 + kit.armas.reduce((s, a) => s + pesoArma(a), 0) + catalogoVol05.pesoPorOrgaoKg * kit.orgaos.length;
+    assert.equal(pesoKit, nave.pesoTotalKgDeclarado, `Peso do kit ${kit.idArquitetura} (Seção 5.4.A) diverge do P_total da Seção 5.4`);
+    const linhaNave = normalizarTexto(nave.diferencialBruto);
+    for (const [sistema, nivel] of Object.entries(kit.sistemas)) {
+      assert.ok(sistema in nivelPadraoAlfa, `Sistema "${sistema}" do kit ${kit.idArquitetura} não existe na Tabela 5.6.A`);
+      if (nivel === nivelPadraoAlfa[sistema]) continue;
+      const declarado =
+        nivel === 0
+          ? new RegExp(`SEM ${sistema.split(' ').at(-1)}`, 'i').test(linhaNave)
+          : linhaNave.includes(`${sistema} Nv.${nivel}`);
+      assert.ok(declarado, `Nível ${nivel} de "${sistema}" no kit ${kit.idArquitetura} não está declarado na linha da Seção 5.4`);
+    }
+  });
 
+  // 3. Requisitos das Blue Options: formato, existência no catálogo e nível alcançável (Tabela 5.6.A)
+  const nivelMaximo = Object.fromEntries(economiaVol05.upgrades.map((u) => [u.nome, u.nivelInicial + u.custosNiveis.length]));
   for (const t of catalogoEventos.templates) {
-    assert.ok(t.id && t.nome && t.opcaoA && t.requisitoBlueOption && t.recompensaBlueOption, `Campos vazios em ${t.id}`);
-    if (t.categoria !== 'PERIGO') {
-      assert.ok(
-        /p=0:.*p=1:/.test(t.opcaoA),
-        `Template ${t.id} deve explicitar a resolução determinística p=0 e p=1 na Opção A`
-      );
-    } else {
-      assert.ok(
-        t.opcaoA.includes('Combate obrigatório'),
-        `Template de perigo ${t.id} deve declarar Combate obrigatório na Opção A`
-      );
+    for (const alt of lerRequisitoBlueOption(t.requisitoBlueOption)) {
+      if (alt.tipo === 'ARMA') assert.ok(pesoArma(alt.nome) > 0, `Arma "${alt.nome}" exigida por ${t.id} não existe no Catálogo 5.1`);
+      if (alt.tipo === 'ÓRGÃO') assert.ok(catalogoVol05.orgaos.some((o) => o.nome.startsWith(alt.nome)), `Órgão "${alt.nome}" exigido por ${t.id} não existe no Catálogo 5.2`);
+      if (alt.tipo === 'SISTEMA') {
+        assert.ok(alt.sistema in nivelMaximo, `Sistema "${alt.sistema}" exigido por ${t.id} não existe na Tabela 5.6.A`);
+        assert.ok(alt.nivelMin <= nivelMaximo[alt.sistema], `${t.id} exige ${alt.sistema} Nv. ${alt.nivelMin}, acima do máximo ${nivelMaximo[alt.sistema]}`);
+      }
     }
   }
 
-  // Verifica que sistemas e armas citados nas Blue Options existem nas tabelas canônicas do Vol. 05
-  assert.ok(nomesArmas51.some((n) => n.includes('Cortador Térmico a Plasma')));
-  assert.ok(nomesArmas51.some((n) => n.includes('Canhão de Arpão de Cabo')));
-  assert.ok(nomesArmas51.some((n) => n.includes('Emissor Acústico')));
-  for (const sisCitado of [
-    'Sifão de Propulsão',
-    'Bomba Branquial',
-    'Glândula de Tinta Furtiva',
-    'Córtex de Navegação',
-    'Placas de Blindagem',
-    'Glândula de Barreira',
-    'Mastro do Foil',
-  ]) {
-    assert.ok(
-      nomesSistemas56.some((s) => s.includes(sisCitado)),
-      `Sistema "${sisCitado}" exigido numa Blue Option da Seção 4.5.A não existe na Tabela 5.6.A (Vol. 05)`
-    );
+  // 4. Regra de Raridade (4.5.C): Alfa cumpre 0, nenhuma carcaça cumpre mais de 1, e a matriz declarada bate com o cálculo
+  const elegibilidade = kits.map((kit) => ({
+    idArquitetura: kit.idArquitetura,
+    templates: catalogoEventos.templates.filter((t) => kitCumpreRequisitoBlueOption(t.requisitoBlueOption, kit)).map((t) => t.id),
+  }));
+  assert.deepEqual(
+    elegibilidade.find((e) => e.idArquitetura === 'CARCACA_ALFA').templates,
+    [],
+    'Carcaça Alfa deve cumprir 0 requisitos de Blue Option (Regra de Raridade da Seção 4.5.A)'
+  );
+  for (const e of elegibilidade) {
+    assert.ok(e.templates.length <= 1, `Carcaça ${e.idArquitetura} cumpre ${e.templates.length} Blue Options de fábrica (máximo 1)`);
   }
+  assert.deepEqual(
+    catalogoEventos.elegibilidadeDeclarada.map((e) => ({ idArquitetura: e.idArquitetura, templates: e.templates })),
+    elegibilidade,
+    'Matriz de Elegibilidade da Seção 4.5.C diverge do cálculo a partir do Kit Inicial 5.4.A'
+  );
+  for (const e of catalogoEventos.elegibilidadeDeclarada) assert.equal(e.total, e.templates.length);
 
-  // Verifica alinhamento do PER_3_AGUAS_TURVAS com a Tabela 8.2 (Canal L3 e canalPermissao NEGADO_SONAR) do Vol. 08
+  // 5. Teto Monetário por Visita: nenhuma opção rende mais moeda que uma Captura Intacta; opção de combate não soma moeda
+  let trechosAuditados = 0;
+  for (const t of catalogoEventos.templates) {
+    const [antesP1, depoisP1] = t.opcaoA.split('p=1:');
+    const trechos = [
+      { rotulo: 'A(p=0)', texto: antesP1 },
+      ...(depoisP1 === undefined ? [] : [{ rotulo: 'A(p=1)', texto: depoisP1 }]),
+      { rotulo: 'B', texto: t.recompensaBlueOption },
+    ];
+    for (const trecho of trechos) {
+      for (const linhaCurva of economiaVol05.curvaSetores) {
+        const { moeda, temCombate } = calcularMoedaTrechoEvento(trecho.texto, linhaCurva);
+        if (temCombate || t.categoria === 'PERIGO') {
+          assert.equal(moeda, 0, `Opção ${t.id} ${trecho.rotulo} leva a combate e não pode somar moeda extra (Teto Monetário por Visita)`);
+        } else {
+          assert.ok(
+            moeda <= linhaCurva.barcoCapturaSucata,
+            `Opção ${t.id} ${trecho.rotulo} rende ${moeda} no Setor ${linhaCurva.setor}, acima da Captura Intacta (${linhaCurva.barcoCapturaSucata})`
+          );
+        }
+        trechosAuditados += 1;
+      }
+    }
+  }
+  assert.ok(trechosAuditados > 0);
+
+  // Orçamento de visitas da Falha Global 6 (item 3) contra a Seção 4.3
+  const vol04Norm = normalizarTexto(vol04);
+  const vol05Norm = normalizarTexto(vol05);
+  const visitasPorSetor = Number(vol04Norm.match(/consegue visitar (\d+) nós no setor/)?.[1] ?? NaN);
+  const matchOrcamento = vol05Norm.match(/1 Saída \+ 1 Recife-Forja[^+]*\+ (\d+) visitas remuneradas/);
+  const remuneradasPorSetor = Number(vol05Norm.match(/\((\d+) encontros remunerados por setor/)?.[1] ?? NaN);
+  assert.equal(visitasPorSetor, 10);
+  assert.equal(Number(matchOrcamento?.[1]), remuneradasPorSetor, 'Visitas remuneradas da Falha Global 6 (item 3) divergem dos encontros da prova');
+  assert.equal(1 + 1 + remuneradasPorSetor, visitasPorSetor, 'Orçamento de visitas (1 Saída + 1 Forja + remuneradas) deve fechar com a Seção 4.3');
+
+  // 6. Sorteio por setor sem repetição (STREAM_6) e assinatura do hash da Opção A igual à Seção 9.3
+  for (const seed of ['biofoil-seed-01', 'biofoil-seed-02', 'biofoil-seed-03']) {
+    let anteriores = [];
+    for (let setor = 1; setor <= 8; setor += 1) {
+      const sorteados = sortearTemplatesSetor(catalogoEventos, seed, setor, anteriores, { SOS: cotaSos, EXPLORACAO: cotaExploracao });
+      assert.equal(sorteados.length, cotaSos + cotaExploracao + cotaPerigo);
+      const repetidos = sorteados.filter((id) => anteriores.includes(id) && !id.startsWith('PER_'));
+      assert.deepEqual(repetidos, [], `Sorteio do Setor ${setor} repetiu template do setor anterior`);
+      assert.deepEqual(sorteados, sortearTemplatesSetor(catalogoEventos, seed, setor, anteriores, { SOS: cotaSos, EXPLORACAO: cotaExploracao }));
+      anteriores = sorteados;
+    }
+  }
+  const stream2 = vol09.streamsPrng.find((s) => s.id === 'STREAM_2_EVENTO_OPCAO_A');
+  assert.equal(
+    catalogoEventos.assinaturaHashOpcaoA,
+    stream2.assinaturaChave,
+    'Assinatura do hash32 da Opção A na Seção 4.5.A (Vol. 04) diverge do STREAM_2_EVENTO_OPCAO_A da Seção 9.3 (Vol. 09)'
+  );
+
+  // 7. Perigo Águas Turvas contra a Tabela 8.2 (Vol. 08): canal L3 negado para todas as naves, restaurado só pela Blue Option
   const per3 = catalogoEventos.templates.find((t) => t.id === 'PER_3_AGUAS_TURVAS');
   const linhaSonarVol08 = vol08.linhasTabelaL3.find((l) => l.canalPermissao.includes('NEGADO_SONAR'));
   assert.ok(linhaSonarVol08, 'Tabela 8.2 do Vol. 08 deve declarar canalPermissao NEGADO_SONAR');
@@ -1256,22 +1353,16 @@ test('Junção N1 + L4 + N4: audita o Catálogo Determinístico de Eventos (4.5.
     per3.opcaoA.includes('L3') && per3.opcaoA.includes('NEGADO_SONAR') && per3.recompensaBlueOption.includes('VISIVEL'),
     'PER_3_AGUAS_TURVAS na Seção 4.5.A deve referenciar o Canal L3 e os estados NEGADO_SONAR / VISIVEL da Tabela 8.2 (Vol. 08)'
   );
+  assert.ok(linhaSonarVol08.situacao.includes('PER_3'), 'Tabela 8.2 deve condicionar a cegueira de Águas Turvas à Blue Option PER_3, não a Arraia/Acústico');
+  assert.ok(!/Arraia Elétrica ou arma/.test(vol04Norm), 'Seção 4.4 não pode mais isentar Arraia/Acústico de Águas Turvas');
 
-  // 3. Auditoria da Regra de SOS Expirado (Zona Morta Industrializada) e Frente Corporativa (Seção 4.5.B + Falha 4 vs. Vols. 03, 05, 06 e 08)
+  // 8. SOS Expirado e Frente Corporativa (4.5.B) contra Vols. 03, 05 e 06
   const regras = catalogoEventos.regrasSosEFrente;
   assert.equal(regras.margemPrazoHoras, 1.5, 'Margem de T_prazo em relação a T_rota_minima deve ser +1.5h');
-  assert.equal(
-    regras.estadoSosExpirado,
-    'ZONA_MORTA_INDUSTRIALIZADA',
-    'Estado de SOS expirado deve ser ZONA_MORTA_INDUSTRIALIZADA'
-  );
-  assert.equal(
-    regras.multiplicadorSucataSosExpirado,
-    0.5,
-    'Multiplicador de Sucata em SOS Expirado deve ser 0.5 (-50% arredondado para baixo)'
-  );
-  assert.equal(regras.combustivelSosExpirado, 0, 'Combustível extra em SOS Expirado deve ser 0');
-  assert.equal(regras.municaoSosExpirado, 0, 'Munição extra em SOS Expirado deve ser 0');
+  assert.equal(regras.estadoSosExpirado, 'ZONA_MORTA_INDUSTRIALIZADA');
+  assert.equal(regras.multiplicadorSucataSosExpirado, 0.5);
+  assert.equal(regras.combustivelSosExpirado, 0);
+  assert.equal(regras.municaoSosExpirado, 0);
   assert.equal(
     regras.exemplosSetor1SosExpirado.destruicaoBruta,
     Math.floor(0.5 * saqueS1Vol03.barcoBrutoSucata),
@@ -1282,32 +1373,21 @@ test('Junção N1 + L4 + N4: audita o Catálogo Determinístico de Eventos (4.5.
     Math.floor(0.5 * saqueS1Vol03.barcoCapturaSucata),
     'Exemplo de SOS Expirado (Captura Intacta Setor 1) na Seção 4.5.B diverge de floor(0.5 x 25) = 12 Sucata'
   );
-  const velFrenteSecao43 = Number(normalizarTexto(vol04).match(/velocidade constante de (\d+(?:\.\d+)?) MN por Hora/i)?.[1]);
-  assert.equal(
-    regras.velocidadeFrenteCorporativaMnPorHora,
-    velFrenteSecao43,
-    'Velocidade da Frente Extrativista na Seção 4.5.B diverge da Seção 4.3 (6.0 MN/h)'
-  );
-  assert.equal(regras.velocidadeFrenteCorporativaMnPorHora, 6.0);
-  assert.equal(regras.bonusBarreiraFrenteCorporativa, 1, 'Frente Corporativa deve adicionar +1 bolha de Barreira');
-  assert.equal(regras.tetoBarreiraFrenteCorporativa, 4, 'Teto de Barreira na Frente Corporativa deve ser 4 bolhas');
-  assert.deepEqual(
-    regras.saqueFrenteCorporativa,
-    { sucata: 0, biomassa: 0, municao: 0, combustivel: 1 },
-    'Nó engolido pela Frente Corporativa deve render 0 Sucata, 0 Biomassa, 0 Munição e 1 Combustível'
-  );
-  assert.equal(
-    catalogoEventos.temFalha4FarmingInfinitoSosExpirado,
-    true,
-    'Contra-Auditoria #4 do Vol. 04 deve conter a Falha Encontrada 4 (Farming Infinito e SOS Expirado)'
-  );
+  const velFrenteSsot = Number(normalizarTexto(constantesSsot.VEL_FRENTE_EXTRATIVISTA.valorBruto).match(/(\d+(?:\.\d+)?)/)?.[1]);
+  const velFrenteSecao43 = Number(vol04Norm.match(/velocidade constante de (\d+(?:\.\d+)?) MN por Hora/i)?.[1]);
+  assert.equal(regras.velocidadeFrenteCorporativaMnPorHora, velFrenteSsot, 'Velocidade da Frente Extrativista na Seção 4.5.B diverge da SSOT VEL_FRENTE_EXTRATIVISTA (Vol. 06)');
+  assert.equal(velFrenteSecao43, velFrenteSsot, 'Velocidade da Frente Extrativista na Seção 4.3 diverge da SSOT VEL_FRENTE_EXTRATIVISTA (Vol. 06)');
+  assert.equal(regras.bonusBarreiraFrenteCorporativa, 1);
+  assert.equal(regras.tetoBarreiraFrenteCorporativa, 4);
+  assert.deepEqual(regras.saqueFrenteCorporativa, { sucata: 0, biomassa: 0, municao: 0, combustivel: 1 });
+  assert.equal(catalogoEventos.temFalha4FarmingInfinitoSosExpirado, true);
 
-  // 4. Prova do Avaliador Puro Determinístico (resolverEventoNoESaque) nos 3 estados de nó e nos 8 setores
+  // 9. Oráculo resolverEventoNoESaque nos 3 estados de nó e nos 8 setores
   const sosAtivoBlue = resolverEventoNoESaque(catalogoEventos, economiaVol05, {
     idEvento: 'SOS_1_REDE_ARRASTO',
     setor: 1,
     tAtualHoras: 3.5,
-    tRotaMinimaHoras: 2.0, // T_prazo = 3.5h -> exatamente no limite (t_atual <= T_prazo)
+    tRotaMinimaHoras: 2.0,
     xNoMn: 25,
     temRequisitoBlueOption: true,
     escolha: 'B',
@@ -1316,27 +1396,21 @@ test('Junção N1 + L4 + N4: audita o Catálogo Determinístico de Eventos (4.5.
   assert.deepEqual(sosAtivoBlue.opcoesDisponiveis, ['A', 'B', 'C']);
   assert.equal(sosAtivoBlue.resultadoEscolha, 'SUCESSO_CRITICO_BLUE_OPTION');
   assert.equal(sosAtivoBlue.danoCasco, 0);
-
   for (const linhaSaque of economiaVol05.curvaSetores) {
-    const s = linhaSaque.setor;
     const expBruta = resolverEventoNoESaque(catalogoEventos, economiaVol05, {
       idEvento: 'SOS_2_CAPSULA_AFUNDANDO',
-      setor: s,
+      setor: linhaSaque.setor,
       tAtualHoras: 3.6,
-      tRotaMinimaHoras: 2.0, // 3.6 > 3.5 -> SOS Expirado
+      tRotaMinimaHoras: 2.0,
       xNoMn: 30,
       modalidadeVit: 'DESTRUICAO_BRUTA',
     });
     assert.equal(expBruta.estadoNo, 'ZONA_MORTA_INDUSTRIALIZADA');
     assert.deepEqual(expBruta.opcoesDisponiveis, []);
-    assert.equal(expBruta.combateObrigatorio, true);
     assert.equal(expBruta.saquePosCombate.sucata, Math.floor(0.5 * linhaSaque.barcoBrutoSucata));
-    assert.equal(expBruta.saquePosCombate.combustivel, 0);
-    assert.equal(expBruta.saquePosCombate.municao, 0);
-
     const expCaptura = resolverEventoNoESaque(catalogoEventos, economiaVol05, {
       idEvento: 'SOS_4_COMBOIO_ENCALHADO',
-      setor: s,
+      setor: linhaSaque.setor,
       tAtualHoras: 4.0,
       tRotaMinimaHoras: 2.0,
       xNoMn: 30,
@@ -1344,24 +1418,15 @@ test('Junção N1 + L4 + N4: audita o Catálogo Determinístico de Eventos (4.5.
     });
     assert.equal(expCaptura.saquePosCombate.sucata, Math.floor(0.5 * linhaSaque.barcoCapturaSucata));
   }
-
   const noEngolidoFrente = resolverEventoNoESaque(catalogoEventos, economiaVol05, {
     idEvento: 'EXP_1_NAUFRAGIO_ANTIGO',
     setor: 4,
     tAtualHoras: 5.0,
     tRotaMinimaHoras: 2.0,
-    xNoMn: 30.0, // 30.0 <= 6.0 * 5.0 -> engolido pela Frente Extrativista!
+    xNoMn: 30.0,
   });
   assert.equal(noEngolidoFrente.estadoNo, 'FROTA_PRINCIPAL_CORPORACAO');
-  assert.equal(noEngolidoFrente.combateObrigatorio, true);
-  assert.equal(noEngolidoFrente.bonusBarreiraInimigo, 1);
-  assert.deepEqual(noEngolidoFrente.saquePosCombate, {
-    sucata: 0,
-    biomassa: 0,
-    municao: 0,
-    combustivel: 1,
-  });
-
+  assert.deepEqual(noEngolidoFrente.saquePosCombate, { sucata: 0, biomassa: 0, municao: 0, combustivel: 1 });
   assert.throws(
     () =>
       resolverEventoNoESaque(catalogoEventos, economiaVol05, {
@@ -1372,322 +1437,313 @@ test('Junção N1 + L4 + N4: audita o Catálogo Determinístico de Eventos (4.5.
         xNoMn: 20,
         escolha: 'C',
       }),
-    /BLOQUEADO_COMBATE_OBRIGATORIO/,
-    'Tentar escolher Opção C num nó PERIGO deve lançar erro com BLOQUEADO_COMBATE_OBRIGATORIO'
+    /BLOQUEADO_COMBATE_OBRIGATORIO/
   );
 });
 
-test('Junção N1 + L4 + N4: audita o Action Schema (8.5.A), Persistência profile.json (8.5.B) e Target Visual/Sonoro da Onda 6 (8.5.C) contra Vols. 01, 02, 04, 05 e 06', () => {
+test('Junção N1 + L4 + N4: audita o Action Schema de 15 comandos (8.5.A), Predicados do profile.json (8.5.B), Layout Nativo e Cues (8.5.C) e Enums (8.1) contra Vols. 01, 02, 04, 05, 06 e 09', () => {
   const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
-  const vol02 = normalizarTexto(cadeia.volumes[1].conteudo);
+  const vol01Norm = normalizarTexto(cadeia.volumes[0].conteudo);
+  const vol02Norm = normalizarTexto(cadeia.volumes[1].conteudo);
+  const vol04Norm = normalizarTexto(cadeia.volumes[3].conteudo);
   const vol05 = cadeia.volumes[4].conteudo;
   const vol06 = cadeia.volumes[5].conteudo;
-  const vol08 = cadeia.volumes[7].conteudo;
+  const vol08Texto = cadeia.volumes[7].conteudo;
 
-  const especOnda6 = extrairComandosPersistenciaOnda6Volume08(vol08);
+  const especOnda6 = extrairComandosPersistenciaOnda6Volume08(vol08Texto);
+  const enums = extrairEnumsCanonicosVolume08(vol08Texto);
+  const contrato = extrairContratoEstadoVolume08(vol08Texto);
   const catalogoVol05 = extrairCatalogoVolume05(vol05);
   const chefeBestiario = extrairChefeEBestiarioVolume05(vol05);
+  const topologia = extrairTopologiaOcupacaoBeamVolume01(cadeia.volumes[0].conteudo);
   const { constantesSsot, celulasMatriz } = extrairSsotEMatrizDoVolume06(vol06);
+  const tv = especOnda6.targetVisual;
 
   console.log(
-    `[N4] Onda 6 / Action Schema Vol. 08 examinado: ${especOnda6.comandos.length} comandos atômicos, ${especOnda6.carcacasPerfil.length} carcaças no profile.json, ${especOnda6.cuesSonoros.length} cues sonoros, resolução nativa=${especOnda6.targetVisual.larguraNativaPx}x${especOnda6.targetVisual.alturaNativaPx}`
+    `[N4] Onda 6 / Action Schema Vol. 08 examinado: ${especOnda6.comandos.length} comandos atômicos, ${especOnda6.carcacasPerfil.length} carcaças no profile.json, ${especOnda6.cuesSonoros.length} cues sonoros, ${Object.keys(tv.layoutNativo).length} parâmetros de layout, resolução nativa=${tv.larguraNativaPx}x${tv.alturaNativaPx}`
   );
 
-  // 1. Auditoria da Tabela 8.5.A (14 Comandos Atômicos) e cruzamento com Matriz 6.2 (Trava Hidrostática) e Seção 4.5.A
-  const tiposEsperados = [
-    'ALOCAR_ENERGIA',
-    'MOVER_TRIPULANTE',
-    'MIRAR_ARMA',
-    'ALTERNAR_VALVULA',
-    'DRENAR_TUDO',
-    'ATIVAR_BAIACU',
-    'ATIVAR_PULSO_ENZIMAS',
-    'ATIVAR_TINTA_FURTIVA',
-    'LANCAR_ABORDAGEM',
-    'MERGULHO_TATICO',
-    'SALTO_FUGA',
-    'ESCOLHER_OPCAO_EVENTO',
-    'COMPRAR_OU_VENDER_LOJA',
-    'VIAJAR_NO_MAPA',
-  ];
-  assert.equal(
-    especOnda6.comandos.length,
-    14,
-    'Seção 8.5.A deve especificar exatamente os 14 comandos atômicos do Action Schema'
-  );
+  // 1. Lista fechada dos 15 comandos e fases dentro do enum canônico
   assert.deepEqual(
     especOnda6.comandos.map((c) => c.tipo),
-    tiposEsperados,
-    'Lista de comandos atômicos na Seção 8.5.A diverge da lista canônica'
+    [
+      'ALOCAR_ENERGIA',
+      'MOVER_TRIPULANTE',
+      'MIRAR_ARMA',
+      'ALTERNAR_VALVULA',
+      'DRENAR_TUDO',
+      'ATIVAR_BAIACU',
+      'ATIVAR_PULSO_ENZIMAS',
+      'ATIVAR_TINTA_FURTIVA',
+      'LANCAR_ABORDAGEM',
+      'MERGULHO_TATICO',
+      'SALTO_FUGA',
+      'ESCOLHER_OPCAO_EVENTO',
+      'COMPRAR_OU_VENDER_LOJA',
+      'ENXERTAR_ORGAO',
+      'VIAJAR_NO_MAPA',
+    ],
+    'Lista de comandos atômicos na Seção 8.5.A diverge da lista canônica de 15'
   );
-
+  const marcadoresValidos = ['REJEITADO_FASE_INVALIDA', 'BLOQUEADO_TRAVA_HIDROSTATICA', 'BLOQUEADO_COMBATE_OBRIGATORIO', 'PRECONDICAO_NAO_ATENDIDA'];
   for (const c of especOnda6.comandos) {
-    assert.ok(c.fasesPermitidas.length > 0, `Comando ${c.tipo} sem fases permitidas`);
+    for (const f of c.fasesPermitidas) assert.ok(enums['meta.faseJogo'].includes(f), `Fase "${f}" do comando ${c.tipo} fora do enum meta.faseJogo (Vol. 08)`);
     assert.ok(c.payloadObrigatorio.startsWith('{'), `Comando ${c.tipo} sem schema de payload`);
-    assert.ok(c.regraValidacao.length > 10, `Comando ${c.tipo} sem regra de validação explícita`);
-    assert.ok(c.marcadorRejeicao.length > 0, `Comando ${c.tipo} sem marcador de rejeição`);
+    assert.ok(marcadoresValidos.includes(c.marcadorRejeicao), `Marcador de ${c.tipo} fora da Regra de Rejeição Pura`);
   }
 
-  // Cruzamento com a Matriz 6.2 (Célula 2C: Bloqueado pela Física em Touchdown)
-  const celula2C = normalizarTexto(
-    celulasMatriz.find((c) => c.evento.startsWith('C. Abrir Válvula') && c.estado === '2_TOUCHDOWN')?.regra ?? ''
+  // 2. Junção numérica de cada linha da 8.5.A com a fonte primária citada
+  const regra = (tipo) => especOnda6.comandos.find((c) => c.tipo === tipo).regraValidacao;
+  const mPulso = vol01Norm.match(/(\d+) Barras \(Enzimas Regenerativas Nv\. 1\):.*?Pulso de Enzimas \(cura \+(\d+) HP\/s nas demais salas inundadas por (\d+)s.*?com (\d+)s de recarga\)/);
+  assert.ok(mPulso, 'Vol. 01 (Seção 1.4) deve declarar o Pulso de Enzimas');
+  assert.ok(
+    regra('ATIVAR_PULSO_ENZIMAS').includes(`>= ${mPulso[1]} barras`) &&
+      regra('ATIVAR_PULSO_ENZIMAS').includes(`+${mPulso[2]} HP/s nas demais salas inundadas por ${mPulso[3]}s, recarga ${mPulso[4]}s`),
+    'ATIVAR_PULSO_ENZIMAS na Seção 8.5.A diverge do Pulso de Enzimas da Seção 1.4 (Vol. 01)'
   );
-  assert.ok(celula2C.includes('BLOQUEADO PELA FÍSICA'), 'Célula 2C da Matriz 6.2 deve declarar BLOQUEADO PELA FÍSICA');
+  const mTinta = vol01Norm.match(/concede \+(\d+)% de Esquiva.*?por (\d+) segundos \(Nível 1\) ou (\d+) segundos \(Nível 2\), seguido de (\d+) segundos de recarga/);
+  assert.ok(
+    mTinta && regra('ATIVAR_TINTA_FURTIVA').includes(`+${mTinta[1]}% esquiva por ${mTinta[2]}s/${mTinta[3]}s, recarga ${mTinta[4]}s`),
+    'ATIVAR_TINTA_FURTIVA na Seção 8.5.A diverge da Glândula de Tinta Furtiva da Seção 1.4 (Vol. 01)'
+  );
+  const celula = (prefixo, estado) => normalizarTexto(celulasMatriz.find((c) => c.evento.startsWith(prefixo) && c.estado === estado)?.regra ?? '');
+  const c1G = celula('G. Carregamento', '1_NO_FOIL');
+  const mFuga = c1G.match(/(\d+\.\d+)s base \((\d+\.\d+)s com operador/);
+  const mFugaAgua = celula('G. Carregamento', '2_TOUCHDOWN').match(/(\d+\.\d+)x/);
+  assert.ok(
+    mFuga && mFugaAgua && regra('SALTO_FUGA').includes(`progressoFugaSeg >= ${mFuga[1]}`) &&
+      regra('SALTO_FUGA').includes(`(${mFuga[1]}s / ${mFuga[2]}s / ${mFugaAgua[1]}x`),
+    'SALTO_FUGA na Seção 8.5.A diverge da Linha G da Matriz 6.2 (20.0s / 15.0s / 0.5x)'
+  );
+  const tempoSpoolSsot = normalizarTexto(constantesSsot.TEMPO_SPOOL_UP.valorBruto).match(/(\d+(?:\.\d+)?)/)?.[1];
+  assert.ok(regra('MERGULHO_TATICO').includes(`${tempoSpoolSsot}s`), 'MERGULHO_TATICO diverge de TEMPO_SPOOL_UP (Tabela 6.1)');
+  assert.ok(regra('MOVER_TRIPULANTE').includes(`< ${topologia.lotacaoMaxAliados} aliados`), 'MOVER_TRIPULANTE diverge da lotação da Seção 1.6.B');
+  assert.ok(regra('ATIVAR_BAIACU').includes(`${topologia.reflexaoBaiacuPct}% DPS`), 'ATIVAR_BAIACU diverge da reflexão da Seção 1.6.B');
+  const animaisPorCapsula = Number(vol01Norm.match(/lança até (\d+) animais/)?.[1] ?? NaN);
+  assert.ok(regra('LANCAR_ABORDAGEM').includes(`1..${animaisPorCapsula} aliados`), 'LANCAR_ABORDAGEM diverge do Tubo Pressurizado da Seção 1.4');
+  assert.ok(vol04Norm.includes('DOBRO de Horas (2.0x)') && vol04Norm.includes('5 segundos totais'), 'Vol. 04 (Falha 3) deve declarar Deriva 2.0x e 5 s');
+  assert.ok(regra('VIAJAR_NO_MAPA').includes('2.0x as horas, 5.0s frio'), 'VIAJAR_NO_MAPA diverge do Modo Deriva da Falha Encontrada 3 (Vol. 04)');
 
-  const cmdValvulaTouchdown = validarDespachoComando(
-    especOnda6,
-    { faseJogo: 'COMBATE', estadoFisico: '2_TOUCHDOWN' },
-    { tipo: 'ALTERNAR_VALVULA', payload: { camaraId: 5, aberta: true } }
-  );
-  assert.equal(cmdValvulaTouchdown.aceito, false);
-  assert.equal(cmdValvulaTouchdown.estadoInalterado, true);
+  // 3. Validador puro: trava hidrostática pela Linha C da Matriz, loja só no Recife-Forja, enxerto fora de combate
+  for (const estado of ['1_NO_FOIL', '4_FURTIVO_AR']) assert.ok(!celula('C. Abrir Válvula', estado).includes('BLOQUEADO'), `Célula C de ${estado} deve liberar a válvula`);
+  for (const estado of ['2_TOUCHDOWN', '3_SPOOL_UP', '5_FURTIVO_AGUA']) assert.ok(celula('C. Abrir Válvula', estado).includes('BLOQUEADO PELA FÍSICA'), `Célula C de ${estado} deve bloquear a válvula`);
+  const despachar = (contexto, tipo, payload = {}) => validarDespachoComando(especOnda6, contexto, { tipo, payload });
+  const valvulaMar = despachar({ faseJogo: 'COMBATE', estadoFisico: '2_TOUCHDOWN' }, 'ALTERNAR_VALVULA', { camaraId: 5, aberta: true });
+  assert.equal(valvulaMar.aceito, false);
+  assert.equal(valvulaMar.estadoInalterado, true);
+  assert.equal(valvulaMar.marcadorRejeicao, 'BLOQUEADO_TRAVA_HIDROSTATICA', 'ALTERNAR_VALVULA em Touchdown deve ser rejeitado com BLOQUEADO_TRAVA_HIDROSTATICA');
+  assert.equal(valvulaMar.cueEmitido, 'CUE_TRAVA_HIDROSTATICA');
+  assert.equal(despachar({ faseJogo: 'COMBATE', estadoFisico: '3_SPOOL_UP' }, 'DRENAR_TUDO').marcadorRejeicao, 'BLOQUEADO_TRAVA_HIDROSTATICA');
   assert.equal(
-    cmdValvulaTouchdown.marcadorRejeicao,
-    'BLOQUEADO_TRAVA_HIDROSTATICA',
-    'ALTERNAR_VALVULA em Touchdown deve ser rejeitado com BLOQUEADO_TRAVA_HIDROSTATICA'
+    despachar({ faseJogo: 'COMBATE', estadoFisico: '1_NO_FOIL', furtividadeAtivaSeg: 3 }, 'ALTERNAR_VALVULA').aceito,
+    true,
+    'Válvula deve abrir em No Foil com Tinta Furtiva ativa (Célula 4C da Matriz 6.2)'
   );
-  assert.equal(cmdValvulaTouchdown.cueEmitido, 'CUE_TRAVA_HIDROSTATICA');
-
-  const cmdDrenarSpoolUp = validarDespachoComando(
-    especOnda6,
-    { faseJogo: 'COMBATE', estadoFisico: '3_SPOOL_UP' },
-    { tipo: 'DRENAR_TUDO', payload: { abrirTodas: true } }
-  );
-  assert.equal(cmdDrenarSpoolUp.aceito, false);
-  assert.equal(cmdDrenarSpoolUp.marcadorRejeicao, 'BLOQUEADO_TRAVA_HIDROSTATICA');
-
-  const cmdLojaEmCombate = validarDespachoComando(
-    especOnda6,
-    { faseJogo: 'COMBATE', estadoFisico: '1_NO_FOIL' },
-    { tipo: 'COMPRAR_OU_VENDER_LOJA', payload: { operacao: 'ENXERTAR_ORGAO', itemOuSistemaId: 'GLANDULA_BAIACU' } }
-  );
-  assert.equal(cmdLojaEmCombate.aceito, false);
   assert.equal(
-    cmdLojaEmCombate.marcadorRejeicao,
+    despachar({ faseJogo: 'MAPA' }, 'COMPRAR_OU_VENDER_LOJA', { operacao: 'COMPRAR' }).marcadorRejeicao,
     'REJEITADO_FASE_INVALIDA',
-    'Enxertar órgão ou operar loja durante COMBATE deve retornar REJEITADO_FASE_INVALIDA (Seção 5.2)'
+    'COMPRAR_OU_VENDER_LOJA fora do Recife-Forja (fase MAPA) deve ser rejeitado'
   );
+  assert.equal(despachar({ faseJogo: 'LOJA' }, 'COMPRAR_OU_VENDER_LOJA').aceito, true);
+  assert.equal(despachar({ faseJogo: 'MAPA' }, 'ENXERTAR_ORGAO', { acao: 'ENCAIXAR' }).aceito, true, 'Enxerto de órgão deve ser livre no Mapa (Seção 5.2)');
+  assert.equal(despachar({ faseJogo: 'COMBATE', estadoFisico: '1_NO_FOIL' }, 'ENXERTAR_ORGAO').marcadorRejeicao, 'REJEITADO_FASE_INVALIDA');
+  const mergulho = despachar({ faseJogo: 'COMBATE', estadoFisico: '1_NO_FOIL' }, 'MERGULHO_TATICO', { recolherFoil: true });
+  assert.equal(mergulho.aceito, true);
+  assert.equal(mergulho.cueEmitido, 'CUE_ESTOL_TOUCHDOWN');
 
-  const cmdMergulhoFoil = validarDespachoComando(
-    especOnda6,
-    { faseJogo: 'COMBATE', estadoFisico: '1_NO_FOIL' },
-    { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: true } }
-  );
-  assert.equal(cmdMergulhoFoil.aceito, true);
-  assert.equal(cmdMergulhoFoil.cueEmitido, 'CUE_ESTOL_TOUCHDOWN');
+  // 4. Enums canônicos (8.1) contra o GameState, a Matriz 6.2 e a Junção 2 (8.4)
+  assert.ok(enums['meta.faseJogo'].includes(contrato.gameState.meta.faseJogo));
+  assert.ok(enums['naveJogador.estadoFisico'].includes(contrato.gameState.naveJogador.estadoFisico));
+  const estadosMatriz = [...new Set(celulasMatriz.map((c) => c.estado))];
+  for (const e of enums['naveJogador.estadoFisico']) assert.ok(estadosMatriz.includes(e), `estadoFisico ${e} ausente da Matriz 6.2`);
+  const juncao2 = vol08Texto.split('2. **Junção Onda 2')[1]?.split('3. **Junção')[0] ?? '';
+  const modalidadesJuncao2 = [...juncao2.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]).filter((v) => v !== 'null');
+  assert.deepEqual(modalidadesJuncao2, enums.modalidadeVitoria, 'Modalidades da Junção 2 (8.4) divergem dos Enums Canônicos da Seção 8.1');
 
-  // 2. Auditoria da Persistência profile.json (8.5.B) contra as 5 Naves Desbloqueáveis da Seção 5.4 (Vol. 05)
-  assert.equal(
-    especOnda6.carcacasPerfil.length,
-    catalogoVol05.naves.length,
-    'Seção 8.5.B deve registrar exatamente as 5 carcaças desbloqueáveis da Seção 5.4 (Vol. 05)'
-  );
-  especOnda6.carcacasPerfil.forEach((cPerfil, idx) => {
-    const naveVol05 = catalogoVol05.naves[idx];
-    assert.equal(
-      cPerfil.nomeCanonico,
-      normalizarTexto(naveVol05.nome),
-      `Nome da carcaça ${idx + 1} na Seção 8.5.B diverge da Seção 5.4 (Vol. 05)`
-    );
+  // 5. Persistência (8.5.B): predicados interpretados literalmente e cruzados com a Seção 5.4
+  assert.equal(especOnda6.carcacasPerfil.length, catalogoVol05.naves.length);
+  especOnda6.carcacasPerfil.forEach((c, idx) => {
+    const nave = catalogoVol05.naves[idx];
+    assert.equal(c.nomeCanonico, normalizarTexto(nave.nome), `Nome da carcaça ${idx + 1} na Seção 8.5.B diverge da Seção 5.4`);
+    const numeroCondicao = Number(normalizarTexto(nave.condicaoDesbloqueio).match(/(\d+)/)?.[1] ?? NaN);
+    if (Number.isNaN(numeroCondicao)) return;
+    const limiares = extrairLimiaresPredicado(c.predicadoCodigo).filter((l) => l.operador === '>=').map((l) => l.valor);
+    assert.ok(limiares.includes(numeroCondicao), `Predicado de ${c.idArquitetura} na Seção 8.5.B diverge da Condição de Desbloqueio da Seção 5.4 (Vol. 05)`);
   });
-
-  const desbloqueioInicial = avaliarDesbloqueioCarcacas(especOnda6, {});
+  const condicaoManta = normalizarTexto(catalogoVol05.naves[1].condicaoDesbloqueio);
+  assert.ok(condicaoManta.includes('sem causar dano'));
+  assert.ok(especOnda6.carcacasPerfil[1].predicadoCodigo.includes('danoCascoCausadoAoInimigoNestaLuta === 0'));
   assert.deepEqual(
-    desbloqueioInicial,
-    {
-      CARCACA_ALFA: true,
-      MANTA_VOLT: false,
-      COURACA_LIMIAR: false,
-      SOMBRA_ABISSAL: false,
-      COLMEIA_VIVA: false,
-    },
+    avaliarDesbloqueioCarcacas(especOnda6, {}),
+    { CARCACA_ALFA: true, MANTA_VOLT: false, COURACA_LIMIAR: false, SOMBRA_ABISSAL: false, COLMEIA_VIVA: false },
     'No profile.json inicial, apenas CARCACA_ALFA deve começar desbloqueada (true)'
   );
-
-  const desbloqueioCompleto = avaliarDesbloqueioCarcacas(especOnda6, {
-    setorNumero: 4,
-    vitoriaCombate: true,
-    danoCascoCausadoAoInimigoNestaLuta: 0,
-    barcosCapturadosIntactosNestaRun: 5,
-    orgaosIntactosExtraidosNestaRun: 4,
-    setorNumeroAlcanceMaxNestaRun: 8,
-  });
-  assert.deepEqual(desbloqueioCompleto, {
-    CARCACA_ALFA: true,
-    MANTA_VOLT: true,
-    COURACA_LIMIAR: true,
-    SOMBRA_ABISSAL: true,
-    COLMEIA_VIVA: true,
-  });
-
-  // 3. Auditoria do Target Visual 960x540 -> 1920x1080 e dos 8 Cues Sonoros Táticos (8.5.C) contra Vols. 02, 05 e 06
-  const tv = especOnda6.targetVisual;
-  assert.equal(tv.larguraNativaPx, 960, 'Largura lógica nativa da Onda 6 deve ser 960 px');
-  assert.equal(tv.alturaNativaPx, 540, 'Altura lógica nativa da Onda 6 deve ser 540 px');
-  assert.equal(tv.fatorUpscaleFullHd, 2, 'Fator de upscale inteiro para Full HD deve ser 2x');
-  assert.equal(tv.larguraNativaPx * tv.fatorUpscaleFullHd, tv.larguraFullHdPx, '960 x 2 deve fechar em 1920 px');
-  assert.equal(tv.alturaNativaPx * tv.fatorUpscaleFullHd, tv.alturaFullHdPx, '540 x 2 deve fechar em 1080 px');
-  assert.equal(tv.larguraCamaraPx, 100, 'Largura interna da câmara na Seção 8.5.C deve bater com os 100 px da Seção 2.2.3');
-  assert.equal(tv.alturaCamaraPx, 70, 'Altura interna da câmara na Seção 8.5.C deve bater com os 70 px da Seção 2.2.3');
-  assert.ok(
-    vol02.includes(`${tv.larguraCamaraPx}x ${tv.alturaCamaraPx} pixels`),
-    'Dimensão da câmara na Seção 8.5.C diverge da Seção 2.2.3 (Vol. 02)'
+  assert.equal(avaliarDesbloqueioCarcacas(especOnda6, { barcosCapturadosIntactosNestaRun: 4 }).COURACA_LIMIAR, false);
+  assert.equal(avaliarDesbloqueioCarcacas(especOnda6, { barcosCapturadosIntactosNestaRun: 5 }).COURACA_LIMIAR, true);
+  assert.equal(avaliarDesbloqueioCarcacas(especOnda6, { setorNumero: 4, vitoriaCombate: true, danoCascoCausadoAoInimigoNestaLuta: 1 }).MANTA_VOLT, false);
+  assert.deepEqual(
+    avaliarDesbloqueioCarcacas(especOnda6, {
+      setorNumero: 4,
+      vitoriaCombate: true,
+      danoCascoCausadoAoInimigoNestaLuta: 0,
+      barcosCapturadosIntactosNestaRun: 5,
+      orgaosIntactosExtraidosNestaRun: 4,
+      setorNumeroAlcanceMaxNestaRun: 8,
+    }),
+    { CARCACA_ALFA: true, MANTA_VOLT: true, COURACA_LIMIAR: true, SOMBRA_ABISSAL: true, COLMEIA_VIVA: true }
   );
-  assert.equal(
-    tv.deslocamentoTouchdownNativoPx * tv.fatorUpscaleFullHd,
-    tv.deslocamentoTouchdown1080pPx,
-    'Deslocamento vertical em Touchdown (+60 px nativo x 2) deve fechar em +120 px em 1080p'
+
+  // 6. Layout nativo (8.5.C): geometria recalculada sem violações e cruzada com o Vol. 02 (pixels em 1080p)
+  assert.equal(tv.larguraNativaPx, 960);
+  assert.equal(tv.alturaNativaPx, 540);
+  assert.equal(tv.larguraNativaPx * tv.fatorUpscaleFullHd, tv.larguraFullHdPx);
+  assert.equal(tv.alturaNativaPx * tv.fatorUpscaleFullHd, tv.alturaFullHdPx);
+  const L = tv.layoutNativo;
+  const geo = calcularGeometriaLayoutNativo(L);
+  assert.deepEqual(geo.violacoes, [], `Orçamento de Layout Nativo da Seção 8.5.C viola: ${geo.violacoes.join('; ')}`);
+  assert.ok(L.PAINEL_RODAPE_TOPO_Y <= tv.alturaNativaPx && L.PAINEL_INIMIGO_X <= tv.larguraNativaPx);
+  const f = tv.fatorUpscaleFullHd;
+  assert.ok(
+    vol02Norm.includes(`Cada câmara tem ${L.CAMARA_LARGURA * f}x ${L.CAMARA_ALTURA * f} pixels de área útil interna (${L.CAMARA_LARGURA}x ${L.CAMARA_ALTURA} px nativos)`),
+    'Câmara do Vol. 02 (1080p) diverge do Layout Nativo da Seção 8.5.C x 2'
   );
   assert.ok(
-    vol02.includes(`cai fisicamente ${tv.deslocamentoTouchdown1080pPx} pixels para baixo`),
-    'Deslocamento em Touchdown na Seção 8.5.C diverge dos 120 pixels da Seção 2.2.2 (Vol. 02)'
+    vol02Norm.includes(`cai fisicamente ${L.QUEDA_TOUCHDOWN * f} pixels para baixo na tela (${L.QUEDA_TOUCHDOWN} px nativos)`),
+    'Queda do Touchdown no Vol. 02 (1080p) diverge de QUEDA_TOUCHDOWN x 2 da Seção 8.5.C'
   );
-  assert.equal(tv.filtroSubaquaticoHz, 400, 'Filtro passa-baixa subaquático em Touchdown deve ser de 400 Hz');
+  assert.ok(vol02Norm.includes('todo valor em pixels deste volume é medido na tela final 1920x 1080'), 'Vol. 02 deve declarar a convenção de pixels em 1080p');
+  assert.equal(tv.filtroSubaquaticoHz, 400);
 
-  assert.equal(especOnda6.cuesSonoros.length, 8, 'Seção 8.5.C deve declarar os 8 cues sonoros táticos obrigatórios');
-  const cueFervura = especOnda6.cuesSonoros.find((c) => c.id === 'CUE_ALARME_FERVURA_4S');
-  assert.ok(cueFervura, 'CUE_ALARME_FERVURA_4S deve existir na Tabela 8.5.C');
+  // 7. Os 8 cues contra as fontes primárias
+  assert.equal(especOnda6.cuesSonoros.length, 8);
+  const cue = (id) => especOnda6.cuesSonoros.find((c) => c.id === id);
   assert.ok(
-    cueFervura.parametroAcustico.includes(`${chefeBestiario.surgeFase3AlarmeFervuraSeg}.0s`) &&
-      cueFervura.parametroAcustico.includes(`${chefeBestiario.surgeFase3DuracaoFervuraSeg}.0s`),
+    cue('CUE_ALARME_FERVURA_4S').parametroAcustico.includes(`${chefeBestiario.surgeFase3AlarmeFervuraSeg}.0s`) &&
+      cue('CUE_ALARME_FERVURA_4S').parametroAcustico.includes(`${chefeBestiario.surgeFase3DuracaoFervuraSeg}.0s`),
     'CUE_ALARME_FERVURA_4S na Seção 8.5.C diverge do alarme de 4.0s e duração de 5.0s da Fase 3 (Vol. 05 / Matriz 6.2)'
   );
-
-  const cueSpool = especOnda6.cuesSonoros.find((c) => c.id === 'CUE_SPOOL_UP_DECOLAGEM');
-  const tempoSpoolSsot = normalizarTexto(constantesSsot.TEMPO_SPOOL_UP.valorBruto).match(/(\d+(?:\.\d+)?)/)?.[1];
-  assert.ok(
-    cueSpool && cueSpool.parametroAcustico.includes(`${tempoSpoolSsot}s`),
-    'CUE_SPOOL_UP_DECOLAGEM na Seção 8.5.C diverge de TEMPO_SPOOL_UP (3.0s) da Tabela 6.1 (Vol. 06)'
-  );
-
-  const cueCavitacao = especOnda6.cuesSonoros.find((c) => c.id === 'CUE_CAVITACAO_SIFAO');
+  assert.ok(cue('CUE_SPOOL_UP_DECOLAGEM').parametroAcustico.includes(`${tempoSpoolSsot}s`), 'CUE_SPOOL_UP_DECOLAGEM diverge de TEMPO_SPOOL_UP');
   const reservaMinSsot = normalizarTexto(constantesSsot.RESERVA_MIN_SIFAO.valorBruto).match(/(\d+(?:\.\d+)?)/)?.[1];
+  assert.ok(cue('CUE_CAVITACAO_SIFAO').gatilho.includes(`${reservaMinSsot} kg`), 'CUE_CAVITACAO_SIFAO diverge de RESERVA_MIN_SIFAO');
+  const mAsfixia = vol01Norm.match(/O_2 < (\d+)% causa asfixia \((-\d+) HP\/s\)/);
   assert.ok(
-    cueCavitacao && cueCavitacao.gatilho.includes(`${reservaMinSsot} kg`),
-    'CUE_CAVITACAO_SIFAO na Seção 8.5.C diverge de RESERVA_MIN_SIFAO (62.5 kg) da Tabela 6.1 (Vol. 06)'
+    mAsfixia && cue('CUE_HIPOXIA_CRITICA').gatilho.includes(`oxigenioPct < ${mAsfixia[1]}.0`) &&
+      cue('CUE_HIPOXIA_CRITICA').parametroAcustico.includes(`${mAsfixia[2]} HP/s abaixo de ${mAsfixia[1]}%`),
+    'CUE_HIPOXIA_CRITICA na Seção 8.5.C diverge da asfixia da Seção 1.4 (Vol. 01)'
   );
-
-  assert.equal(
-    especOnda6.temItem3ContraAuditoria8,
-    true,
-    'Contra-Auditoria #8 do Vol. 08 deve conter o Item 3 (validação pura de cliques de UI e separação run_save.json vs profile.json)'
+  const secao13 = vol01Norm.split('## 1.3.')[1]?.split('## 1.4.')[0] ?? '';
+  const segundosCurto = secao13.match(/apaga sozinho em (\d+) segundos/)?.[1];
+  assert.ok(
+    cue('CUE_CURTO_CIRCUITO_AGUA').parametroAcustico.includes(`${segundosCurto}.0s`) && cue('CUE_CURTO_CIRCUITO_AGUA').cruzamentoGdd.includes('Seção 1.3'),
+    'CUE_CURTO_CIRCUITO_AGUA deve citar a Seção 1.3 e os 3 s de extinção a seco'
   );
+  for (const fase of chefeBestiario.fasesResumo) {
+    assert.ok(cue('CUE_POWER_SURGE_CHEFE').parametroAcustico.includes(`${fase.intervaloSurgeSeg}s (Fase ${fase.fase})`), `CUE_POWER_SURGE_CHEFE diverge do intervalo da Fase ${fase.fase}`);
+  }
+  assert.ok(
+    cue('CUE_ESTOL_TOUCHDOWN').parametroAcustico.includes(`${L.QUEDA_TOUCHDOWN} px nativos (${L.QUEDA_TOUCHDOWN * f} px em 1080p)`) &&
+      cue('CUE_ESTOL_TOUCHDOWN').parametroAcustico.includes(`${tv.filtroSubaquaticoHz} Hz`),
+    'CUE_ESTOL_TOUCHDOWN diverge do Layout Nativo (queda) e do filtro de 400 Hz'
+  );
+  assert.equal(especOnda6.temItem3ContraAuditoria8, true);
 });
 
-test('Junção N1 + L4 + N4: audita a Consolidação Executiva do Vol. 09 (Matriz dos 5 Pilares 9.1, Máquina de Ciclo 9.2 e Streams PRNG 9.3) contra Vols. 01..08 e mutacoes.json', () => {
+test('Junção N1 + L4 + N5: audita a Consolidação do Vol. 09 (5 Pilares x Árvore 8.3, Máquina de Ciclo sem beco sem saída, 6 Streams e hash32 com vetor) contra Vols. 04, 08 e mutacoes.json', () => {
   const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
   const vol08Texto = cadeia.volumes[7].conteudo;
-  const vol09Texto = cadeia.volumes[8].conteudo;
-
-  const consolidacao = extrairConsolidacaoVolume09(vol09Texto);
-  const mutacoesDeclaradas = JSON.parse(
-    fs.readFileSync(path.join(DIRETORIO_RAIZ, 'padrao', 'protocolo', 'mutacoes.json'), 'utf8')
-  ).mutacoes;
-  const idsMutacoesJson = new Set(mutacoesDeclaradas.map((m) => m.id));
+  const consolidacao = extrairConsolidacaoVolume09(cadeia.volumes[8].conteudo);
+  const enums = extrairEnumsCanonicosVolume08(vol08Texto);
+  const arvore = extrairArvoreModulosVolume08(vol08Texto);
+  const ondaDe = new Map(arvore.map((e) => [e.caminho, e.onda]));
+  const idsMutacoesJson = new Set(
+    JSON.parse(fs.readFileSync(path.join(DIRETORIO_RAIZ, 'padrao', 'protocolo', 'mutacoes.json'), 'utf8')).mutacoes.map((m) => m.id)
+  );
 
   console.log(
-    `[N4] Vol. 09 examinado: ${consolidacao.pilares.length} pilares sênior, ${consolidacao.transicoesCiclo.length} transições de ciclo, ${consolidacao.streamsPrng.length} streams isolados de PRNG`
+    `[N4] Vol. 09 examinado: ${consolidacao.pilares.length} pilares sênior, ${consolidacao.transicoesCiclo.length} transições de ciclo, ${consolidacao.streamsPrng.length} streams isolados de PRNG, ${arvore.length} arquivos na árvore 8.3`
   );
 
-  // 1. Auditoria da Seção 9.1 (5 Pilares Sênior) contra a Árvore de Módulos (Vol. 08 Seção 8.3) e mutacoes.json
-  assert.equal(consolidacao.pilares.length, 5, 'Seção 9.1 do Vol. 09 deve consolidar exatamente os 5 Pilares Sênior');
-  assert.deepEqual(
-    consolidacao.pilares.map((p) => p.id),
-    [
-      'PILAR_1_ECONOMIA',
-      'PILAR_2_CHEFE_BESTIARIO',
-      'PILAR_3_TOPOLOGIA_BEAM',
-      'PILAR_4_EVENTOS_SOS',
-      'PILAR_5_ACTION_SCHEMA_ONDA6',
-    ],
-    'IDs dos 5 Pilares na Seção 9.1 divergem dos canônicos'
-  );
+  // 1. Árvore 8.3: caminhos únicos e Onda declarada coerente com a pasta (Lei N5)
+  assert.equal(new Set(arvore.map((e) => e.caminho)).size, arvore.length, 'Árvore 8.3 tem caminho duplicado (dois donos)');
+  for (const e of arvore) {
+    const pasta = e.caminho.match(/onda(\d)-/);
+    if (pasta) assert.equal(e.onda, Number(pasta[1]), `Arquivo ${e.caminho} está na pasta da Onda ${pasta[1]} mas declara Onda ${e.onda}`);
+  }
 
+  // 2. Os 5 pilares: módulo e portão existem na árvore, na mesma Onda, com 3 mutações reais cada
+  assert.deepEqual(consolidacao.pilares.map((p) => p.id), [
+    'PILAR_1_ECONOMIA',
+    'PILAR_2_CHEFE_BESTIARIO',
+    'PILAR_3_TOPOLOGIA_BEAM',
+    'PILAR_4_EVENTOS_SOS',
+    'PILAR_5_ACTION_SCHEMA_ONDA6',
+  ]);
   for (const p of consolidacao.pilares) {
-    const basenameModulo = path.basename(p.moduloSrc);
-    const basenameTeste = path.basename(p.portaoTeste);
-    assert.ok(
-      vol08Texto.includes(basenameModulo),
-      `Módulo ${p.moduloSrc} do pilar ${p.id} no Vol. 09 não consta na Árvore de Módulos do Vol. 08 (Seção 8.3)`
-    );
-    assert.ok(
-      vol08Texto.includes(basenameTeste),
-      `Portão de teste ${p.portaoTeste} do pilar ${p.id} no Vol. 09 não consta na Árvore de Módulos do Vol. 08 (Seção 8.3)`
+    assert.ok(ondaDe.has(p.moduloSrc), `Módulo ${p.moduloSrc} do pilar ${p.id} no Vol. 09 não consta na Árvore de Módulos do Vol. 08 (Seção 8.3)`);
+    assert.ok(ondaDe.has(p.portaoTeste), `Portão de teste ${p.portaoTeste} do pilar ${p.id} no Vol. 09 não consta na Árvore de Módulos do Vol. 08 (Seção 8.3)`);
+    assert.equal(
+      ondaDe.get(p.moduloSrc),
+      ondaDe.get(p.portaoTeste),
+      `Pilar ${p.id} mistura Onda ${ondaDe.get(p.moduloSrc)} (módulo) com Onda ${ondaDe.get(p.portaoTeste)} (portão)`
     );
     assert.equal(p.mutacoesReais.length, 3, `Pilar ${p.id} na Seção 9.1 deve listar exatamente 3 mutações reais`);
-    for (const mutId of p.mutacoesReais) {
-      assert.ok(
-        idsMutacoesJson.has(mutId),
-        `Mutação ${mutId} referenciada no pilar ${p.id} (Seção 9.1) não existe em mutacoes.json`
-      );
-    }
+    for (const mutId of p.mutacoesReais) assert.ok(idsMutacoesJson.has(mutId), `Mutação ${mutId} do pilar ${p.id} não existe em mutacoes.json`);
   }
 
-  // 2. Auditoria da Máquina de Estados do Ciclo de Vida da Partida (Seção 9.2)
-  assert.equal(
-    consolidacao.transicoesCiclo.length,
-    7,
-    'Seção 9.2 do Vol. 09 deve especificar exatamente as 7 transições do Ciclo de Vida da Partida'
-  );
+  // 3. Máquina de ciclo: fases = enum do Vol. 08, zero beco sem saída, modalidades = enum
+  const fases = enums['meta.faseJogo'];
+  const grafo = analisarGrafoCicloPartida(consolidacao.transicoesCiclo, fases);
+  assert.deepEqual(grafo.fasesForaDoEnum, [], `Transições da Seção 9.2 usam fase fora do enum meta.faseJogo: ${grafo.fasesForaDoEnum.join(', ')}`);
+  assert.deepEqual(grafo.semSaida, [], `Máquina de ciclo da Seção 9.2 tem fase(s) sem saída (beco sem saída): ${grafo.semSaida.join(', ')}`);
+  assert.deepEqual(grafo.inalcancaveis, [], `Fase(s) inalcançável(is) a partir de INICIO na Seção 9.2: ${grafo.inalcancaveis.join(', ')}`);
+  assert.deepEqual(grafo.semCaminhoParaFim, [], `Fase(s) sem caminho até FIM_DE_RUN na Seção 9.2: ${grafo.semCaminhoParaFim.join(', ')}`);
+  assert.equal(grafo.finalTemSaida, false, 'FIM_DE_RUN tem de ser terminal');
+  assert.equal(new Set(consolidacao.transicoesCiclo.map((t) => t.id)).size, consolidacao.transicoesCiclo.length);
+  const tr6 = consolidacao.transicoesCiclo.find((t) => t.id === 'TR_6_ENCERRAR_COMBATE_VIVO');
+  const modalidadesTr6 = enums.modalidadeVitoria.filter((m) => tr6.gatilho.includes(m));
+  const nomesMaiusculosTr6 = [...tr6.gatilho.matchAll(/\b([A-Z]+_[A-Z_]+)\b/g)].map((m) => m[1]).filter((n) => n !== 'SALTO_FUGA');
+  assert.deepEqual(nomesMaiusculosTr6, enums.modalidadeVitoria, 'Modalidades de vitória da Seção 9.2 (Vol. 09) divergem dos Enums Canônicos da Seção 8.1 (Vol. 08)');
+  assert.deepEqual(modalidadesTr6, enums.modalidadeVitoria);
+
   const trCombate = transicionarFaseCicloPartida(consolidacao, 'MAPA', 'TR_1_INICIAR_NO_COMBATE');
-  assert.equal(trCombate.aceita, true);
   assert.equal(trCombate.faseResultante, 'COMBATE');
   assert.equal(trCombate.apagaRunSavePermadeath, false);
+  const trDerrota = transicionarFaseCicloPartida(consolidacao, 'COMBATE', 'TR_7A_DERROTA_EM_COMBATE');
+  assert.equal(trDerrota.faseResultante, 'FIM_DE_RUN');
+  assert.equal(trDerrota.apagaRunSavePermadeath, true, 'TR_7A_DERROTA_EM_COMBATE deve apagar run_save.json (Permadeath) preservando profile.json');
+  assert.equal(trDerrota.preservaProfileJson, true);
+  const trVitoria = transicionarFaseCicloPartida(consolidacao, 'COMBATE', 'TR_7B_VITORIA_FINAL');
+  assert.equal(trVitoria.apagaRunSavePermadeath, true);
+  assert.equal(trVitoria.atualizaProfileJson, true, 'TR_7B_VITORIA_FINAL deve atualizar o profile.json (estatísticas e desbloqueios)');
+  assert.equal(transicionarFaseCicloPartida(consolidacao, 'EVENTO', 'TR_7C_DERROTA_EM_EVENTO').apagaRunSavePermadeath, true);
+  assert.equal(transicionarFaseCicloPartida(consolidacao, 'LOJA', 'TR_5B_SAIR_LOJA').faseResultante, 'MAPA');
+  assert.equal(transicionarFaseCicloPartida(consolidacao, 'LOJA', 'TR_7A_DERROTA_EM_COMBATE').aceita, false);
 
-  const trFimRun = transicionarFaseCicloPartida(consolidacao, 'COMBATE', 'TR_7_FIM_DE_PARTIDA');
-  assert.equal(trFimRun.aceita, true);
-  assert.equal(trFimRun.faseResultante, 'FIM_DE_RUN');
-  assert.equal(
-    trFimRun.apagaRunSavePermadeath,
-    true,
-    'TR_7_FIM_DE_PARTIDA deve apagar run_save.json (Permadeath) preservando profile.json'
-  );
-  assert.equal(trFimRun.preservaProfileJson, true);
-
-  const trIlegal = transicionarFaseCicloPartida(consolidacao, 'LOJA', 'TR_7_FIM_DE_PARTIDA');
-  assert.equal(trIlegal.aceita, false, 'Transição fora da fase de origem deve ser rejeitada');
-  assert.equal(trIlegal.faseResultante, 'LOJA');
-
-  // 3. Auditoria dos 5 Streams Isolados de PRNG (Seção 9.3: Ausência de Butterfly Effect)
-  assert.equal(
-    consolidacao.streamsPrng.length,
-    5,
-    'Seção 9.3 do Vol. 09 deve especificar exatamente os 5 Streams isolados de PRNG (hash32)'
-  );
+  // 4. Streams PRNG: assinatura pura, consumidor na árvore, e algoritmo com vetor de teste
+  assert.equal(consolidacao.streamsPrng.length, 6, 'Seção 9.3 deve especificar exatamente os 6 Streams isolados de PRNG');
   for (const s of consolidacao.streamsPrng) {
-    assert.ok(
-      s.assinaturaChave.startsWith('hash32(seedPartida,'),
-      `Stream ${s.id} na Seção 9.3 deve usar assinatura pura hash32(seedPartida, ...)`
-    );
-    assert.ok(
-      vol08Texto.includes(path.basename(s.moduloConsumidor)),
-      `Consumidor ${s.moduloConsumidor} do stream ${s.id} não consta na Seção 8.3 do Vol. 08`
-    );
+    assert.ok(s.assinaturaChave.startsWith('hash32(seedPartida,'), `Stream ${s.id} na Seção 9.3 deve usar assinatura pura hash32(seedPartida, ...)`);
+    assert.ok(ondaDe.has(s.moduloConsumidor), `Consumidor ${s.moduloConsumidor} do stream ${s.id} não consta na Árvore 8.3`);
   }
-
-  // Prova de Isolamento de Domínio (Anti-Butterfly Effect): rolar 1000 ticks de combate nunca altera o hash de um nó SOS
-  const hashEventoAntes = calcularHash32StreamDeterministico('biofoil-seed-01', 'EVENTO_NO', 2, 'NO_SOS_3');
-  const hashesCombate = [];
-  for (let tick = 1; tick <= 20; tick += 1) {
-    hashesCombate.push(calcularHash32StreamDeterministico('biofoil-seed-01', 'COMBATE_TICK', 1, 'NO_1', tick, 0));
-  }
-  const hashEventoDepois = calcularHash32StreamDeterministico('biofoil-seed-01', 'EVENTO_NO', 2, 'NO_SOS_3');
+  assert.equal(consolidacao.algoritmoHash.nome, 'FNV-1a de 32 bits');
+  assert.equal(consolidacao.algoritmoHash.base, HASH32_BASE_FNV, 'Base do FNV-1a da Seção 9.3 diverge do oráculo');
+  assert.equal(consolidacao.algoritmoHash.primo, HASH32_PRIMO_FNV, 'Primo do FNV-1a da Seção 9.3 diverge do oráculo');
+  const v = consolidacao.vetorTesteHash;
   assert.equal(
-    hashEventoAntes,
-    hashEventoDepois,
-    'Stream de EVENTO_NO deve ser 100% invariante em relação às rolagens de COMBATE_TICK'
+    calcularHash32StreamDeterministico(v.seed, v.dominio, ...v.coordenadas),
+    v.valor,
+    'Vetor de teste do hash32 da Seção 9.3 diverge do FNV-1a recalculado'
   );
-  assert.notEqual(
-    calcularHash32StreamDeterministico('biofoil-seed-01', 'EVENTO_NO', 2, 'NO_SOS_3'),
-    calcularHash32StreamDeterministico('biofoil-seed-01', 'LOJA_FORJA', 2, 'NO_SOS_3'),
-    'Domínios distintos (EVENTO_NO vs LOJA_FORJA) com mesma coordenada devem produzir hashes distintos'
-  );
+  assert.ok(ondaDe.has('src/onda1-fisica/hash32-streams.mjs'), 'O hash32 precisa de dono único na Árvore 8.3');
 
-  assert.equal(
-    consolidacao.temContraAuditoria9Completa,
-    true,
-    'Contra-Auditoria #9 do Vol. 09 deve auditar o anti-Butterfly Effect e a cobertura de mutações dos 5 pilares'
-  );
+  // Anti-Butterfly: rolagens de combate nunca alteram o hash de um nó de evento; domínios distintos não colidem
+  const antes = calcularHash32StreamDeterministico('biofoil-seed-01', 'EVENTO_NO', 2, 'NO_SOS_3');
+  for (let tick = 1; tick <= 20; tick += 1) calcularHash32StreamDeterministico('biofoil-seed-01', 'COMBATE_TICK', 1, 'NO_1', tick, 0);
+  assert.equal(calcularHash32StreamDeterministico('biofoil-seed-01', 'EVENTO_NO', 2, 'NO_SOS_3'), antes);
+  assert.notEqual(antes, calcularHash32StreamDeterministico('biofoil-seed-01', 'LOJA_FORJA', 2, 'NO_SOS_3'));
+
+  assert.equal(consolidacao.temContraAuditoria9Completa, true);
+  assert.ok(!/100\\?%\$? fechado/.test(cadeia.volumes[8].conteudo), 'Contra-Auditoria #9 não pode alegar "100% fechado"');
 });
 
 test('Lei N2: verificação da Lista-Catraca (nenhum item resolvido pode permanecer na catraca)', () => {

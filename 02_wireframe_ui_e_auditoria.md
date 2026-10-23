@@ -43,6 +43,8 @@ Em um jogo tático de micropausa estilo *FTL*, **a interface é o próprio tabul
 
 ## 2.2. Os 5 Componentes Visuais Críticos
 
+> **Convenção de Unidades (Lei L4):** todo valor em pixels deste volume é medido na **tela final $1920\times 1080$**. A grade lógica nativa é **$960\times 540$** com upscale inteiro $2\times$ (Seção 8.5.C do Vol. 08): divida por 2 para obter o valor nativo.
+
 ### 1. O Termômetro de Sustentação (Coluna Esquerda)
 É a inovação de interface mais importante do jogo. Funciona como um altímetro/balança vertical:
 * **Marcador Azul (Topo da Sustentação — Ex: $260\text{ kg}$):** Sobe quando você coloca energia no Sifão; cai se o Mastro ou o Sifão levarem dano.
@@ -53,10 +55,10 @@ Em um jogo tático de micropausa estilo *FTL*, **a interface é o próprio tabul
 ### 2. A Linha d'Água Dinâmica (Feedback Físico de Estado)
 O jogador nunca precisa ler um texto para saber se está no ar ou na água:
 * **Estado *No Foil*:** A superfície do mar corre em alta velocidade lá embaixo, na altura do *Mastro do Foil*. O corpo da nave está suspenso no céu com spray de água voando para trás.
-* **Estado *Touchdown*:** A nave inteira cai fisicamente $120\text{ pixels}$ para baixo na tela com um impacto de espuma branca. A linha d'água agora corta o meio das câmaras centrais, e o som do jogo ganha um filtro abafado subaquático grave.
+* **Estado *Touchdown*:** A nave inteira cai fisicamente $200\text{ pixels}$ para baixo na tela ($100\text{ px}$ nativos) com um impacto de espuma branca, parando exatamente quando a linha d'água cruza a parede entre o 2º e o 3º andar. A linha d'água agora corta o meio das câmaras centrais, e o som do jogo ganha um filtro abafado subaquático grave.
 
 ### 3. Leitura Interna das Salas (Água, Seca, Oxigênio e Curto)
-Cada câmara tem $100\times 70\text{ pixels}$ de área útil interna:
+Cada câmara tem $100\times 70\text{ pixels}$ de área útil interna ($50\times 35\text{ px}$ nativos):
 * **Nível de Água:** Um líquido translúcido dentro da sala que sobe ou desce literalmente como um aquário. Se furar no ar, o jogador vê o nível do líquido baixando até o chão.
 * **Falta de Oxigênio ($O_2 < 20\%$):** A água da sala muda de azul-claro para **roxo-escuro turvo com bolhas lentas**, e listras de alerta aparecem nas bordas da sala (padrão visual para daltônicos).
 * **Alagamento Pesado (Quando furado no mar):** A sala ganha um contorno pulsante azul-elétrico de alta pressão com jatos d'água entrando pelo furo e um ícone de âncora (`+20kg!`).

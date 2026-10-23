@@ -157,6 +157,8 @@ Para que os módulos da Onda 2 (`src/onda2-combate/tick-tripulacao.mjs` e `src/o
 
 As **8 câmaras** da bio-nave (`id: 1..8`) distribuem-se em **$2\text{ Colunas} \times 4\text{ Andares}$** (`Coluna` $\in \{0, 1\}$, `Andar` $\in \{0, 1, 2, 3\}$ de cima para baixo), conectadas pelas **$10\text{ válvulas ortogonais}$** da grade ($4\text{ horizontais}$: $1\leftrightarrow 7,\; 2\leftrightarrow 3,\; 4\leftrightarrow 5,\; 6\leftrightarrow 8$; e $6\text{ verticais}$: $1\leftrightarrow 2\leftrightarrow 4\leftrightarrow 6$ na Coluna 0 e $7\leftrightarrow 3\leftrightarrow 5\leftrightarrow 8$ na Coluna 1) mais **$1\text{ Duto Hidráulico Ventral}$ ($5 \leftrightarrow 6$)** que liga a base do *Sifão de Propulsão* (Sala 5) diretamente ao *Poço da Quilha* (Sala 6, conforme desenhado no Wireframe 2.1 e percorrido em $1\text{ salto}$ na Simulação 3.4 em $t = 22.5\text{s}$), totalizando **$11\text{ conexões bidirecionais}$** (soma dos graus $= \mathbf{22}$):
 
+> **Representação Visual do Duto:** o Duto Hidráulico Ventral é um tubo orgânico **interno**, desenhado atrás da parede compartilhada pelas Salas 5 e 6. Ele não cria câmara nova nem altera o recorte $2\times 4$ dos frames de arte; na UI, aparece só como um realce pulsante quando um tripulante o atravessa.
+
 | ID da Câmara | Nome Canônico (`GameState`) | Coordenada `(Coluna, Andar)` | Câmaras Adjacentes ($1\text{ salto} = 1.5\text{s}$ base) | Grau (Portas) |
 | :---: | :--- | :---: | :---: | :---: |
 | **1** | `ARTILHARIA_DORSAL` | `(0, 0)` | $2, 7$ | $2$ |

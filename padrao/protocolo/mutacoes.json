@@ -51,7 +51,7 @@
     },
     {
       "id": "MUT-04",
-      "arquivo": "src/gdd-parser.mjs",
+      "arquivo": "src/oraculos-referencia.mjs",
       "lei": "N1 / L1",
       "descricao": "Motor de peso esquece os +5 kg por órgão enxertado",
       "trocas": [
@@ -153,11 +153,11 @@
       "id": "MUT-10",
       "arquivo": "src/gdd-parser.mjs",
       "lei": "L5 / N5",
-      "descricao": "src/gdd-parser.mjs fica fora da lista canônica de src/",
+      "descricao": "src/ fica com só um dos 2 arquivos canônicos (gdd-parser.mjs vira intruso)",
       "trocas": [
         {
-          "buscar": "export const CADEIA_CANONICA_SRC = Object.freeze([\n  'gdd-parser.mjs',\n]);",
-          "substituir": "export const CADEIA_CANONICA_SRC = Object.freeze([]);"
+          "buscar": "export const CADEIA_CANONICA_SRC = Object.freeze([\n  'gdd-parser.mjs',\n  'oraculos-referencia.mjs',\n]);",
+          "substituir": "export const CADEIA_CANONICA_SRC = Object.freeze([\n  'oraculos-referencia.mjs',\n]);"
         }
       ],
       "testes": [
@@ -567,7 +567,7 @@
     },
     {
       "id": "MUT-36",
-      "arquivo": "src/gdd-parser.mjs",
+      "arquivo": "src/oraculos-referencia.mjs",
       "lei": "L1 / L6",
       "descricao": "Validador de traçado do Cortador Térmico (Beam) deixa de proibir vai-e-volta (S1 === S3 passa a ser aceito)",
       "trocas": [
@@ -585,7 +585,7 @@
       "id": "MUT-37",
       "arquivo": "04_mapa_procedural_e_auditoria.md",
       "lei": "N1 / L4",
-      "descricao": "Muda a categoria de SOS_4_COMBOIO_ENCALHADO na Tabela 4.5.A (quebra cota de 4 nós SOS da Seção 4.4)",
+      "descricao": "Muda a categoria de SOS_4_COMBOIO_ENCALHADO na Tabela 4.5.A (quebra 8 SOS = 2 x cota 4.4)",
       "trocas": [
         {
           "buscar": "| `SOS_4_COMBOIO_ENCALHADO` | `SOS` |",
@@ -595,7 +595,7 @@
       "testes": [
         "tests/01-portao-gdd.test.mjs"
       ],
-      "falhaEsperada": "Catálogo 4.5.A deve conter exatamente 4 templates SOS (cota 4.4 = 4 Nós)"
+      "falhaEsperada": "Catálogo 4.5.A deve conter exatamente 8 templates SOS (2 x cota 4.4 = 8)"
     },
     {
       "id": "MUT-38",
@@ -636,8 +636,8 @@
       "descricao": "ALTERNAR_VALVULA na Seção 8.5.A troca marcador BLOQUEADO_TRAVA_HIDROSTATICA por PRECONDICAO_NAO_ATENDIDA (quebra Junção N1 com a Matriz 6.2)",
       "trocas": [
         {
-          "buscar": "| `ALTERNAR_VALVULA` | `COMBATE` | `{ camaraId, aberta }` | Permitido **exclusivamente** em `estadoFisico === '1_NO_FOIL'` (Matriz 6.2 Células 2C e 3C) | `BLOQUEADO_TRAVA_HIDROSTATICA` |",
-          "substituir": "| `ALTERNAR_VALVULA` | `COMBATE` | `{ camaraId, aberta }` | Permitido **exclusivamente** em `estadoFisico === '1_NO_FOIL'` (Matriz 6.2 Células 2C e 3C) | `PRECONDICAO_NAO_ATENDIDA` |"
+          "buscar": "| `ALTERNAR_VALVULA` | `COMBATE` | `{ camaraId, aberta }` | Permitido **exclusivamente** em `estadoFisico === '1_NO_FOIL'`, com ou sem Tinta Furtiva (Matriz 6.2: Células 1C e 4C liberam; 2C, 3C e 5C bloqueiam) | `BLOQUEADO_TRAVA_HIDROSTATICA` |",
+          "substituir": "| `ALTERNAR_VALVULA` | `COMBATE` | `{ camaraId, aberta }` | Permitido **exclusivamente** em `estadoFisico === '1_NO_FOIL'`, com ou sem Tinta Furtiva (Matriz 6.2: Células 1C e 4C liberam; 2C, 3C e 5C bloqueiam) | `PRECONDICAO_NAO_ATENDIDA` |"
         }
       ],
       "testes": [
@@ -697,33 +697,273 @@
       "id": "MUT-44",
       "arquivo": "09_economia_bestiario_e_comandos.md",
       "lei": "N1 / L4",
-      "descricao": "TR_7_FIM_DE_PARTIDA na Seção 9.2 deixa de apagar run_save.json (quebra regra de Permadeath da Seção 8.5.B)",
+      "descricao": "TR_7A_DERROTA_EM_COMBATE na Seção 9.2 deixa de apagar run_save.json (quebra o Permadeath da Seção 8.5.B)",
       "trocas": [
         {
-          "buscar": "| `TR_7_FIM_DE_PARTIDA` | `COMBATE` | Derrota (`hpCascoAtual <= 0` ou $0\\text{ aliados}$) ou Vitória na Fase 3 (Setor 8) | `FIM_DE_RUN` | **Apaga `run_save.json` (*Permadeath*)** e preserva `profile.json` intacto |",
-          "substituir": "| `TR_7_FIM_DE_PARTIDA` | `COMBATE` | Derrota (`hpCascoAtual <= 0` ou $0\\text{ aliados}$) ou Vitória na Fase 3 (Setor 8) | `FIM_DE_RUN` | **Mantém `run_save.json` ativo** e preserva `profile.json` intacto |"
+          "buscar": "| `TR_7A_DERROTA_EM_COMBATE` | `COMBATE` | `hpCascoAtual <= 0` ou $0\\text{ aliados}$ vivos | `FIM_DE_RUN` | **Apaga `run_save.json` (*Permadeath*)** e preserva `profile.json` |",
+          "substituir": "| `TR_7A_DERROTA_EM_COMBATE` | `COMBATE` | `hpCascoAtual <= 0` ou $0\\text{ aliados}$ vivos | `FIM_DE_RUN` | **Mantém `run_save.json` ativo** e preserva `profile.json` |"
         }
       ],
       "testes": [
         "tests/01-portao-gdd.test.mjs"
       ],
-      "falhaEsperada": "TR_7_FIM_DE_PARTIDA deve apagar run_save.json (Permadeath) preservando profile.json"
+      "falhaEsperada": "TR_7A_DERROTA_EM_COMBATE deve apagar run_save.json (Permadeath) preservando profile.json"
     },
     {
       "id": "MUT-45",
       "arquivo": "09_economia_bestiario_e_comandos.md",
       "lei": "L2 / L6",
-      "descricao": "STREAM_2_EVENTO_OPCAO_A na Seção 9.3 troca hash32(seedPartida, ...) por Math.random() impuro",
+      "descricao": "STREAM_4_COMBATE_DISPARO na Seção 9.3 troca hash32(seedPartida, ...) por Math.random() impuro",
       "trocas": [
         {
-          "buscar": "| `STREAM_2_EVENTO_OPCAO_A` | Paridade $p \\in \\{0, 1\\}$ da Opção A e sorteio de item em *Blue Option* | `hash32(seedPartida, 'EVENTO_NO', setorNumero, noId)` |",
-          "substituir": "| `STREAM_2_EVENTO_OPCAO_A` | Paridade $p \\in \\{0, 1\\}$ da Opção A e sorteio de item em *Blue Option* | `Math.random()` |"
+          "buscar": "`hash32(seedPartida, 'COMBATE_TICK', setorNumero, noId, tickAtual, indiceDisparo)`",
+          "substituir": "`Math.random()`"
         }
       ],
       "testes": [
         "tests/01-portao-gdd.test.mjs"
       ],
-      "falhaEsperada": "Stream STREAM_2_EVENTO_OPCAO_A na Seção 9.3 deve usar assinatura pura hash32(seedPartida, ...)"
+      "falhaEsperada": "Stream STREAM_4_COMBATE_DISPARO na Seção 9.3 deve usar assinatura pura hash32(seedPartida, ...)"
+    },
+    {
+      "id": "MUT-46",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L4",
+      "descricao": "ATIVAR_PULSO_ENZIMAS na Seção 8.5.A volta a dizer +8 HP/s (Vol. 01 diz +5 HP/s)",
+      "trocas": [
+        {
+          "buscar": "($+5\\text{ HP/s}$ nas demais salas inundadas",
+          "substituir": "($+8\\text{ HP/s}$ nas demais salas inundadas"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "ATIVAR_PULSO_ENZIMAS na Seção 8.5.A diverge do Pulso de Enzimas da Seção 1.4 (Vol. 01)"
+    },
+    {
+      "id": "MUT-47",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L4",
+      "descricao": "CUE_HIPOXIA_CRITICA volta a dizer -10 HP/s (Vol. 01 diz -8 HP/s abaixo de 20%)",
+      "trocas": [
+        {
+          "buscar": "Asfixia de $-8\\text{ HP/s}$ abaixo de",
+          "substituir": "Asfixia de $-10\\text{ HP/s}$ abaixo de"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "CUE_HIPOXIA_CRITICA na Seção 8.5.C diverge da asfixia da Seção 1.4 (Vol. 01)"
+    },
+    {
+      "id": "MUT-48",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L4",
+      "descricao": "Predicado da Couraça-Limiar na Seção 8.5.B cai de 5 para 3 barcos (Seção 5.4 exige 5)",
+      "trocas": [
+        {
+          "buscar": "`barcosCapturadosIntactosNestaRun >= 5`",
+          "substituir": "`barcosCapturadosIntactosNestaRun >= 3`"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Predicado de COURACA_LIMIAR na Seção 8.5.B diverge da Condição de Desbloqueio da Seção 5.4 (Vol. 05)"
+    },
+    {
+      "id": "MUT-49",
+      "arquivo": "09_economia_bestiario_e_comandos.md",
+      "lei": "N1 / L4",
+      "descricao": "TR_6 da Seção 9.2 volta a usar CAPTURA_ASFIXIA (enum canônico é CAPTURA_INTACTA)",
+      "trocas": [
+        {
+          "buscar": "Vitória (`DESTRUICAO_BRUTA`, `CAPTURA_INTACTA`, `EXTRACAO_CIRURGICA`)",
+          "substituir": "Vitória (`DESTRUICAO_BRUTA`, `CAPTURA_ASFIXIA`, `EXTRACAO_CIRURGICA`)"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Modalidades de vitória da Seção 9.2 (Vol. 09) divergem dos Enums Canônicos da Seção 8.1 (Vol. 08)"
+    },
+    {
+      "id": "MUT-50",
+      "arquivo": "09_economia_bestiario_e_comandos.md",
+      "lei": "N1 / L1",
+      "descricao": "Some a saída da LOJA na Seção 9.2 (TR_5B passa a sair do MAPA): beco sem saída",
+      "trocas": [
+        {
+          "buscar": "| `TR_5B_SAIR_LOJA` | `LOJA` |",
+          "substituir": "| `TR_5B_SAIR_LOJA` | `MAPA` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Máquina de ciclo da Seção 9.2 tem fase(s) sem saída (beco sem saída): LOJA"
+    },
+    {
+      "id": "MUT-51",
+      "arquivo": "04_mapa_procedural_e_auditoria.md",
+      "lei": "N1 / L4",
+      "descricao": "Requisito do SOS_2 volta a ser só ter um Polvo (a Carcaça Alfa passa a cumprir uma Blue Option de fábrica)",
+      "trocas": [
+        {
+          "buscar": "`SISTEMA: Sifão de Propulsão Nv. 3+ OU TRIPULANTE: 2+ Polvo`",
+          "substituir": "`SISTEMA: Sifão de Propulsão Nv. 3+ OU TRIPULANTE: Polvo`"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Carcaça Alfa deve cumprir 0 requisitos de Blue Option (Regra de Raridade da Seção 4.5.A)"
+    },
+    {
+      "id": "MUT-52",
+      "arquivo": "04_mapa_procedural_e_auditoria.md",
+      "lei": "N1 / L4",
+      "descricao": "SOS_1 com p=1 volta a somar Biomassa ao saque do combate (fura o Teto Monetário por Visita)",
+      "trocas": [
+        {
+          "buscar": "$p=1$: Combate Barco (saque normal, sem bônus) | `TRIPULANTE: 2+ Caranguejo Anfíbio",
+          "substituir": "$p=1$: Combate Barco (saque normal, sem bônus) $+ \\text{Biomassa}_{\\text{bruta}}(S)$ | `TRIPULANTE: 2+ Caranguejo Anfíbio"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Opção SOS_1_REDE_ARRASTO A(p=1) leva a combate e não pode somar moeda extra (Teto Monetário por Visita)"
+    },
+    {
+      "id": "MUT-53",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L4",
+      "descricao": "QUEDA_TOUCHDOWN cai de 100 para 60 px nativos: a linha d'água deixa de cruzar o 2º/3º andar",
+      "trocas": [
+        {
+          "buscar": "| `QUEDA_TOUCHDOWN` | $100$ |",
+          "substituir": "| `QUEDA_TOUCHDOWN` | $60$ |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Orçamento de Layout Nativo da Seção 8.5.C viola: Em 2_TOUCHDOWN a linha d'água deve cruzar a parede entre o 2º e o 3º andar"
+    },
+    {
+      "id": "MUT-54",
+      "arquivo": "09_economia_bestiario_e_comandos.md",
+      "lei": "N1 / N5",
+      "descricao": "Pilar 2 volta a apontar para o portão da Onda 3 com módulo da Onda 5",
+      "trocas": [
+        {
+          "buscar": "| `src/onda5-catalogo-chefe/chefe-draga.mjs` | `tests/07-onda5-catalogo-chefe.test.mjs` |",
+          "substituir": "| `src/onda5-catalogo-chefe/chefe-draga.mjs` | `tests/05-onda3-inimigos.test.mjs` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Pilar PILAR_2_CHEFE_BESTIARIO mistura Onda 5 (módulo) com Onda 3 (portão)"
+    },
+    {
+      "id": "MUT-55",
+      "arquivo": "08_contrato_estado_e_arquitetura_modulos.md",
+      "lei": "N1 / L3",
+      "descricao": "COMPRAR_OU_VENDER_LOJA volta a ser aceito no MAPA (compra fora do Recife-Forja)",
+      "trocas": [
+        {
+          "buscar": "| `COMPRAR_OU_VENDER_LOJA` | `LOJA` |",
+          "substituir": "| `COMPRAR_OU_VENDER_LOJA` | `LOJA, MAPA` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "COMPRAR_OU_VENDER_LOJA fora do Recife-Forja (fase MAPA) deve ser rejeitado"
+    },
+    {
+      "id": "MUT-56",
+      "arquivo": "04_mapa_procedural_e_auditoria.md",
+      "lei": "N1 / L2",
+      "descricao": "Assinatura do hash da Opção A no Vol. 04 perde o domínio EVENTO_NO (diverge do STREAM_2)",
+      "trocas": [
+        {
+          "buscar": "`hash32(seedPartida, 'EVENTO_NO', setorNumero, noId) % 2`",
+          "substituir": "`hash32(seedPartida, setorNumero, noId) % 2`"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Assinatura do hash32 da Opção A na Seção 4.5.A (Vol. 04) diverge do STREAM_2_EVENTO_OPCAO_A da Seção 9.3 (Vol. 09)"
+    },
+    {
+      "id": "MUT-57",
+      "arquivo": "05_conteudo_chefe_e_auditoria_final.md",
+      "lei": "L4 / L6",
+      "descricao": "TTK esperado da Fase 3 volta a 67.2 s (a média exata da cadeia de Markov é 74.2 s)",
+      "trocas": [
+        {
+          "buscar": "TTK esperado $= \\mathbf{74.2\\text{ segundos}}$",
+          "substituir": "TTK esperado $= \\mathbf{67.2\\text{ segundos}}$"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "TTK esperado declarado na Falha Global 7 diverge da cadeia de Markov exata (74.2s)"
+    },
+    {
+      "id": "MUT-58",
+      "arquivo": "src/oraculos-referencia.mjs",
+      "lei": "L1 / L6",
+      "descricao": "Sorteio de templates deixa de excluir os usados no setor anterior",
+      "trocas": [
+        {
+          "buscar": ".filter((t) => t.categoria === categoria && !anteriores.has(t.id))",
+          "substituir": ".filter((t) => t.categoria === categoria)"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "repetiu template do setor anterior"
+    },
+    {
+      "id": "MUT-59",
+      "arquivo": "05_conteudo_chefe_e_auditoria_final.md",
+      "lei": "N1 / L4",
+      "descricao": "Kit da Manta-Volt (5.4.A) perde uma Arraia (Seção 5.4 declara 2 Arraias)",
+      "trocas": [
+        {
+          "buscar": "| `MANTA_VOLT` | $70\\text{ kg}$ | `ARRAIA:2, POLVO:1` |",
+          "substituir": "| `MANTA_VOLT` | $70\\text{ kg}$ | `ARRAIA:1, POLVO:1` |"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Tripulação do kit MANTA_VOLT na Seção 5.4.A diverge da Seção 5.4"
+    },
+    {
+      "id": "MUT-60",
+      "arquivo": "04_mapa_procedural_e_auditoria.md",
+      "lei": "N1 / L4",
+      "descricao": "Velocidade da Frente na Seção 4.5.B sobe para 7.0 MN/h (SSOT diz 6.0)",
+      "trocas": [
+        {
+          "buscar": "\\le 6.0\\text{ MN/h} \\times t_{\\text{atual}} \\Rightarrow",
+          "substituir": "\\le 7.0\\text{ MN/h} \\times t_{\\text{atual}} \\Rightarrow"
+        }
+      ],
+      "testes": [
+        "tests/01-portao-gdd.test.mjs"
+      ],
+      "falhaEsperada": "Velocidade da Frente Extrativista na Seção 4.5.B diverge da SSOT VEL_FRENTE_EXTRATIVISTA (Vol. 06)"
     }
   ]
 }

@@ -40,6 +40,7 @@ Para garantir que **nenhuma contradição lógica ou matemática** exista ou vol
 | `TEMPO_REPARO_FURO` | $8.0\text{ s}$ | Tempo base por $1\text{ rombo}$ ($4.0\text{ s}$ Polvo; $16.0\text{ s}$ Baiacu) | Passo 1, 3 |
 | `DANO_ANTIPESSOAL` | $15\text{ HP}$ | Por ponto de dano de sistema que atinge sala sem Barreira | Passo 1, 3 |
 | `REATOR_TETO_COMPRA` | $18\text{ barras}$ | Máximo comprável para $28\text{ barras}$ de sistemas totais possíveis | Passo 1, 3, 5 |
+| `VEL_FRENTE_EXTRATIVISTA` | $6.0\text{ MN/h}$ | Engole o setor de $120\text{ MN}$ em $20\text{ h}$ de jogo; nó com $X_{\text{nó}} \le 6.0 \times t$ vira Frota Corporativa | Passo 4, 6, 9 |
 
 ---
 

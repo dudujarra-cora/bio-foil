@@ -21,6 +21,7 @@ export const CADEIA_CANONICA_TESTES = Object.freeze([
 
 export const CADEIA_CANONICA_SRC = Object.freeze([
   'gdd-parser.mjs',
+  'oraculos-referencia.mjs',
 ]);
 
 export const CADEIA_CANONICA_SCRIPTS = Object.freeze([
@@ -205,138 +206,7 @@ export function extrairTopologiaOcupacaoBeamVolume01(conteudoVol01) {
   });
 }
 
-/**
- * Calcula a rota mínima entre duas câmaras da bio-nave aplicando a regra determinística de desempate da Seção 1.6.A:
- * prioriza o passo vertical na mesma coluna antes do passo horizontal/ventral quando dois caminhos têm o mesmo número de saltos.
- */
-export function calcularRotaMinimaCamaras(camaras, idOrigem, idDestino) {
-  if (idOrigem === idDestino) {
-    return clonarProfundoCongelado({ saltos: 0, rota: [idOrigem] });
-  }
-  const porId = Object.fromEntries(camaras.map((c) => [c.id, c]));
-  if (!porId[idOrigem] || !porId[idDestino]) {
-    throw new Error(`Câmara inválida em calcularRotaMinimaCamaras: ${idOrigem} -> ${idDestino}`);
-  }
-
-  const fila = [[idOrigem]];
-  const menorDistPorNo = { [idOrigem]: 0 };
-  const rotasMinimas = [];
-
-  while (fila.length > 0) {
-    const caminho = fila.shift();
-    const atual = caminho[caminho.length - 1];
-    const distAtual = caminho.length - 1;
-
-    if (rotasMinimas.length > 0 && distAtual >= rotasMinimas[0].length - 1) {
-      continue;
-    }
-
-    const camaraAtual = porId[atual];
-    // Ordena vizinhos priorizando passo vertical na mesma coluna antes de passo horizontal/ventral
-    const vizinhosOrdenados = [...camaraAtual.vizinhos].sort((a, b) => {
-      const ca = porId[a];
-      const cb = porId[b];
-      const aMesmaColuna = ca.coluna === camaraAtual.coluna ? 0 : 1;
-      const bMesmaColuna = cb.coluna === camaraAtual.coluna ? 0 : 1;
-      return aMesmaColuna - bMesmaColuna || a - b;
-    });
-
-    for (const viz of vizinhosOrdenados) {
-      if (caminho.includes(viz)) continue;
-      const novoCaminho = [...caminho, viz];
-      const novaDist = novoCaminho.length - 1;
-      if (viz === idDestino) {
-        rotasMinimas.push(novoCaminho);
-      } else if (menorDistPorNo[viz] === undefined || novaDist <= menorDistPorNo[viz]) {
-        menorDistPorNo[viz] = novaDist;
-        fila.push(novoCaminho);
-      }
-    }
-  }
-
-  if (rotasMinimas.length === 0) {
-    throw new Error(`Sem caminho entre câmaras ${idOrigem} e ${idDestino}`);
-  }
-
-  return clonarProfundoCongelado({
-    saltos: rotasMinimas[0].length - 1,
-    rota: rotasMinimas[0],
-    todasRotasMinimas: rotasMinimas,
-  });
-}
-
-/**
- * Resolve 1 tick de combate corpo-a-corpo numa sala conforme a Seção 1.6.B:
- * - Limite de lotação: máx. 2 aliados + 2 inimigos estacionados;
- * - Foco determinístico integral (100% do DPS somado) no Slot 1 adversário (índice 0);
- * - Reflexão de 50% do próprio DPS de cada atacante quando o defensor no Slot 1 é um Baiacu inflado.
- */
-export function resolverTickCombateCorpoACorpoSala({ aliados, inimigos, dtSeg = 1.0 }) {
-  if (aliados.length > 2 || inimigos.length > 2) {
-    throw new Error(
-      `[Seção 1.6.B Stacking Limit] Sala excedeu limite de 2 aliados (${aliados.length}) ou 2 inimigos (${inimigos.length})`
-    );
-  }
-  const novosAliados = aliados.map((a) => ({ ...a, acopladoBulbo: aliados.length > 0 && inimigos.length > 0 ? false : a.acopladoBulbo }));
-  const novosInimigos = inimigos.map((i) => ({ ...i }));
-
-  if (novosAliados.length > 0 && novosInimigos.length > 0) {
-    const dpsTotalAliados = novosAliados.reduce((acc, a) => acc + a.dps, 0);
-    const dpsTotalInimigos = novosInimigos.reduce((acc, i) => acc + i.dps, 0);
-
-    // 100% do DPS aliado foca no Slot 1 inimigo (índice 0)
-    novosInimigos[0].hpAtual = Math.max(0, novosInimigos[0].hpAtual - dpsTotalAliados * dtSeg);
-
-    // 100% do DPS inimigo foca no Slot 1 aliado (índice 0)
-    novosAliados[0].hpAtual = Math.max(0, novosAliados[0].hpAtual - dpsTotalInimigos * dtSeg);
-
-    // Se o Slot 1 aliado for Baiacu inflado, reflete 50% do próprio DPS de cada atacante inimigo
-    if (novosAliados[0].inflado === true) {
-      for (const inimigo of novosInimigos) {
-        inimigo.hpAtual = Math.max(0, inimigo.hpAtual - 0.5 * inimigo.dps * dtSeg);
-      }
-    }
-  }
-
-  return clonarProfundoCongelado({
-    aliados: novosAliados,
-    inimigos: novosInimigos,
-  });
-}
-
-/**
- * Valida e enumera traçados de 3 salas distintas (S1 -> S2 -> S3, com S3 != S1) do Cortador Térmico a Plasma (Seção 1.6.C).
- */
-export function validarTracadoBeamOrtogonal(grafoOrtogonal, trincaSalas) {
-  if (!Array.isArray(trincaSalas) || trincaSalas.length !== 3) {
-    return false;
-  }
-  const [s1, s2, s3] = trincaSalas;
-  if (s1 === s2 || s2 === s3 || s1 === s3) {
-    return false;
-  }
-  const vizS1 = grafoOrtogonal[s1] ?? [];
-  const vizS2 = grafoOrtogonal[s2] ?? [];
-  return vizS1.includes(s2) && vizS2.includes(s3);
-}
-
-export function enumerarTracadosBeamValidos(grafoOrtogonal) {
-  const nos = Object.keys(grafoOrtogonal);
-  const tracados = [];
-  for (const s1 of nos) {
-    for (const s2 of grafoOrtogonal[s1] ?? []) {
-      for (const s3 of grafoOrtogonal[s2] ?? []) {
-        const s1Norm = typeof s2 === 'number' ? Number(s1) : s1;
-        if (validarTracadoBeamOrtogonal(grafoOrtogonal, [s1Norm, s2, s3])) {
-          tracados.push([s1Norm, s2, s3]);
-        }
-      }
-    }
-  }
-  return clonarProfundoCongelado(tracados);
-}
-
-function clonarProfundoCongelado(obj) {
+export function clonarProfundoCongelado(obj) {
   const copia = structuredClone(obj);
   const congelar = (alvo) => {
     if (alvo && typeof alvo === 'object') {
@@ -567,6 +437,7 @@ export function extrairCatalogoVolume05(conteudoVol05) {
           pesoTotalKgDeclarado: pesosEncontrados[0] ?? null,
           sustentacaoInicialKgDeclarada: pesosEncontrados[1] ?? null,
           diferencialBruto: diferencial,
+          condicaoDesbloqueio: cols[4] ?? '',
         });
       }
     }
@@ -627,6 +498,7 @@ export function extrairEconomiaVolume05(conteudoVol05) {
           nome,
           moeda,
           nivelInicialBruto: cols[2],
+          nivelInicial: Number(cols[2].match(/Nv\.\s*(\d+)/)?.[1] ?? NaN),
           barrasEnergiaMax,
           custosNiveis,
           somaDeclarada,
@@ -900,12 +772,29 @@ export function extrairChefeEBestiarioVolume05(conteudoVol05) {
     }
   }
 
-  const ttkFase3SegDeclarado = Number(
-    auditoria5Norm.match(/fechando a Fase 3 em [^\n=]*=\s*(\d+(?:\.\d+)?)\s*segundos/)?.[1] ?? NaN
+  const ttkMedianoSegDeclarado = Number(
+    auditoria5Norm.match(/TTK mediano\s*=\s*(\d+(?:\.\d+)?)\s*segundos\s*\((\d+)\s*salvas\)/)?.[1] ?? NaN
   );
-  const ciclosSurgeFase3Declarados = Number(
-    auditoria5Norm.match(/=\s*(\d+)\s*ciclos\s*do\s*\*?Power Surge\*?\s*de Fervura Oceânica/)?.[1] ?? NaN
+  const ttkEsperadoSegDeclarado = Number(
+    auditoria5Norm.match(/TTK esperado\s*=\s*(\d+(?:\.\d+)?)\s*segundos/)?.[1] ?? NaN
   );
+  const salvasEsperadasDeclaradas = Number(
+    auditoria5Norm.match(/TTK esperado\s*=\s*\d+(?:\.\d+)?\s*segundos\s*\((\d+(?:\.\d+)?)\s*salvas\)/)?.[1] ?? NaN
+  );
+  const ttkP90SegDeclarado = Number(auditoria5Norm.match(/TTK P90\s*=\s*(\d+(?:\.\d+)?)\s*segundos/)?.[1] ?? NaN);
+  const probQuebraBolhasDeclarada = Number(auditoria5Norm.match(/P\(H >= 4\)\s*=\s*(0\.\d+)/)?.[1] ?? NaN);
+  const ciclosSurge = [...auditoria5Norm.matchAll(/=\s*(\d+)\s*ciclos\s+(na mediana|no valor esperado|no P90)/g)];
+  const ciclosPor = (rotulo) => Number(ciclosSurge.find((m) => m[2] === rotulo)?.[1] ?? NaN);
+  const ttkFase3 = {
+    medianoSeg: ttkMedianoSegDeclarado,
+    esperadoSeg: ttkEsperadoSegDeclarado,
+    salvasEsperadas: salvasEsperadasDeclaradas,
+    p90Seg: ttkP90SegDeclarado,
+    probQuebraBolhas: probQuebraBolhasDeclarada,
+    ciclosMediana: ciclosPor('na mediana'),
+    ciclosEsperado: ciclosPor('no valor esperado'),
+    ciclosP90: ciclosPor('no P90'),
+  };
 
   return clonarProfundoCongelado({
     fasesResumo,
@@ -935,9 +824,40 @@ export function extrairChefeEBestiarioVolume05(conteudoVol05) {
     surgeFase3DanoTripulacaoPorSeg,
     templatesInimigos,
     escalamentoSetores,
-    ttkFase3SegDeclarado,
-    ciclosSurgeFase3Declarados,
+    ttkFase3,
   });
+}
+
+/**
+ * Extrai o Kit Inicial Canônico das 5 Carcaças (Seção 5.4.A do Volume 05): chassi, tripulação, armas, órgãos e sistemas.
+ */
+export function extrairKitInicialVolume05(conteudoVol05) {
+  const secao = conteudoVol05.split('### 5.4.A.')[1]?.split('## 5.5.')[0] ?? '';
+  const kits = [];
+  for (const linha of secao.split('\n')) {
+    if (!/^\| `[A-Z_]+` \|/.test(linha)) continue;
+    const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+    if (cols.length < 6) continue;
+    const limpar = (c) => c.replace(/`/g, '').trim();
+    const lista = (c) => (limpar(c) === '—' ? [] : limpar(c).split(';').map((x) => x.trim()).filter(Boolean));
+    const mapa = (c) =>
+      Object.fromEntries(
+        limpar(c)
+          .split(',')
+          .map((par) => par.split(':').map((x) => x.trim()))
+          .filter((par) => par.length === 2)
+          .map(([k, v]) => [k, Number(v)])
+      );
+    kits.push({
+      idArquitetura: limpar(cols[0]),
+      chassiKg: Number(normalizarTexto(cols[1]).match(/(\d+(?:\.\d+)?)\s*kg/)?.[1] ?? NaN),
+      tripulacao: mapa(cols[2]),
+      armas: lista(cols[3]),
+      orgaos: lista(cols[4]),
+      sistemas: mapa(cols[5]),
+    });
+  }
+  return clonarProfundoCongelado(kits);
 }
 
 /**
@@ -976,74 +896,6 @@ export function extrairInimigosSetor1Volume03(conteudoVol03) {
       ganglioBarras: teuthisGanglioBarras,
     },
   });
-}
-
-/**
- * Motor Matemático Canônico do Bio-Foil (usado na Junção N1 contra os documentos 01..06).
- */
-export function calcularPesoTotalNave({
-  pesoChassiKg,
-  aguaPorCamaraKg,
-  pesosArmasAtivasKg = [],
-  pesosCargaPoraoKg = [],
-  quantidadeOrgaosEnxertados = 0,
-  nivelBlindagem = 0,
-}) {
-  if (!Array.isArray(aguaPorCamaraKg) || aguaPorCamaraKg.length !== 8) {
-    throw new Error(`A nave exige exatamente 8 câmaras (recebido: ${aguaPorCamaraKg?.length})`);
-  }
-  const somaAgua = aguaPorCamaraKg.reduce((acc, v) => acc + v, 0);
-  const somaArmas = pesosArmasAtivasKg.reduce((acc, v) => acc + v, 0);
-  const somaPorao = pesosCargaPoraoKg.reduce((acc, v) => acc + v, 0);
-  const somaOrgaos = quantidadeOrgaosEnxertados * 5;
-  const somaBlindagem = nivelBlindagem * 15;
-  return pesoChassiKg + somaAgua + somaArmas + somaPorao + somaOrgaos + somaBlindagem;
-}
-
-export function calcularSustentacaoAtual({
-  barrasIntactasMastro,
-  barrasEnergiaSifao,
-  aguaTotalTanquesKg,
-}) {
-  if (barrasIntactasMastro <= 0 || barrasEnergiaSifao <= 0) {
-    return 0;
-  }
-  const tabelaMastroPorBarras = {
-    1: 50,
-    2: 100,
-    3: 150,
-    4: 200,
-    5: 240,
-    6: 280,
-    7: 330,
-  };
-  const baseMastro = tabelaMastroPorBarras[barrasIntactasMastro];
-  if (baseMastro === undefined) {
-    throw new Error(`Barras de mastro fora do intervalo [0..7]: ${barrasIntactasMastro}`);
-  }
-  const empuxoSifao = barrasEnergiaSifao * 30;
-  const deficitCavitacaoKg = Math.max(0, 62.5 - aguaTotalTanquesKg);
-  const penalidadeCavitacao = deficitCavitacaoKg * 2;
-  return Math.max(0, baseMastro + empuxoSifao - penalidadeCavitacao);
-}
-
-export function calcularVelocidadeCruzeiro({ sustentacaoAtualKg, pesoTotalKg }) {
-  if (sustentacaoAtualKg <= 0 || pesoTotalKg <= 0) {
-    return 0;
-  }
-  const velocidadeBruta = 9.5 * (sustentacaoAtualKg / pesoTotalKg);
-  return Math.min(15.0, Math.round(velocidadeBruta * 10) / 10);
-}
-
-export function calcularTempoRecargaArma({
-  tempoChassiSeg,
-  penalidadeOrgaosSeg = 0,
-  reducaoOperador = 0,
-  emTouchdown = false,
-}) {
-  const reducaoTouchdown = emTouchdown ? 0.25 : 0;
-  const multiplicador = Math.max(0.5, 1.0 - reducaoOperador - reducaoTouchdown);
-  return Math.round((tempoChassiSeg + penalidadeOrgaosSeg) * multiplicador * 1000) / 1000;
 }
 
 /**
@@ -1156,8 +1008,25 @@ export function extrairCatalogoEventosVolume04(conteudoVol04) {
       secaoContra4
     );
 
+  const subC = secao45.split('### C.')[1] ?? '';
+  const elegibilidadeDeclarada = [];
+  for (const linha of subC.split('\n')) {
+    if (!/^\| `[A-Z_]+` \|/.test(linha)) continue;
+    const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+    if (cols.length < 3) continue;
+    const ids = [...cols[1].matchAll(/`([A-Z0-9_]+)`/g)].map((m) => m[1]);
+    elegibilidadeDeclarada.push({
+      idArquitetura: cols[0].replace(/`/g, ''),
+      templates: ids,
+      total: Number(normalizarTexto(cols[2]).match(/(\d+)/)?.[1] ?? NaN),
+    });
+  }
+  const assinaturaHashOpcaoA = subA.match(/`(hash32\([^`]*\))\s*%\s*2`/)?.[1] ?? null;
+
   return clonarProfundoCongelado({
     templates,
+    elegibilidadeDeclarada,
+    assinaturaHashOpcaoA,
     regrasOpcoes: {
       taxaSucessoCriticoBlueOption,
       danoCascoBlueOption,
@@ -1176,124 +1045,6 @@ export function extrairCatalogoEventosVolume04(conteudoVol04) {
       saqueFrenteCorporativa,
     },
     temFalha4FarmingInfinitoSosExpirado,
-  });
-}
-
-/**
- * Avaliador puro determinístico de estado de nó especial (SOS, Exploração, Perigo),
- * opções disponíveis (A/B/C) e saque pós-combate (SOS Expirado vs Frente Corporativa).
- */
-export function resolverEventoNoESaque(
-  catalogoEventos,
-  economiaSetorial,
-  {
-    idEvento,
-    setor = 1,
-    tAtualHoras = 0,
-    tRotaMinimaHoras = 2.0,
-    xNoMn = 50,
-    modalidadeVit = 'DESTRUICAO_BRUTA',
-    temRequisitoBlueOption = false,
-    escolha = 'A',
-    paridadeSeed = 0,
-  }
-) {
-  const template = catalogoEventos.templates.find((t) => t.id === idEvento);
-  if (!template) {
-    throw new Error(`[EVENTO FALHOU] Template de evento inexistente: "${idEvento}"`);
-  }
-
-  const {
-    margemPrazoHoras,
-    estadoSosExpirado,
-    multiplicadorSucataSosExpirado,
-    combustivelSosExpirado,
-    municaoSosExpirado,
-    velocidadeFrenteCorporativaMnPorHora,
-    bonusBarreiraFrenteCorporativa,
-    saqueFrenteCorporativa,
-  } = catalogoEventos.regrasSosEFrente;
-
-  // 1. Verifica se o nó já foi engolido pela Frente Extrativista da Corporação
-  if (xNoMn <= velocidadeFrenteCorporativaMnPorHora * tAtualHoras) {
-    return clonarProfundoCongelado({
-      estadoNo: 'FROTA_PRINCIPAL_CORPORACAO',
-      opcoesDisponiveis: [],
-      combateObrigatorio: true,
-      bonusBarreiraInimigo: bonusBarreiraFrenteCorporativa,
-      saquePosCombate: { ...saqueFrenteCorporativa },
-    });
-  }
-
-  // 2. Verifica se é um nó SOS cujo relógio ultrapassou T_prazo = T_rota_minima + margemPrazoHoras
-  const tPrazo = tRotaMinimaHoras + margemPrazoHoras;
-  if (template.categoria === 'SOS' && tAtualHoras > tPrazo) {
-    const linhaSaque = economiaSetorial.curvaSetores.find((s) => s.setor === setor);
-    if (!linhaSaque) {
-      throw new Error(`[EVENTO FALHOU] Setor ${setor} ausente na curva setorial 5.6.C`);
-    }
-    const sucataBase =
-      modalidadeVit === 'CAPTURA_INTACTA'
-        ? linhaSaque.barcoCapturaSucata
-        : linhaSaque.barcoBrutoSucata;
-    const sucataExpirado = Math.floor(multiplicadorSucataSosExpirado * sucataBase);
-    return clonarProfundoCongelado({
-      estadoNo: estadoSosExpirado,
-      opcoesDisponiveis: [],
-      combateObrigatorio: true,
-      bonusBarreiraInimigo: 0,
-      saquePosCombate: {
-        sucata: sucataExpirado,
-        biomassa: 0,
-        combustivel: combustivelSosExpirado,
-        municao: municaoSosExpirado,
-      },
-    });
-  }
-
-  // 3. Nó de evento ativo dentro do prazo
-  const opcoesDisponiveis = ['A'];
-  if (temRequisitoBlueOption) opcoesDisponiveis.push('B');
-  if (template.categoria !== 'PERIGO') opcoesDisponiveis.push('C');
-
-  if (escolha === 'B') {
-    if (!temRequisitoBlueOption) {
-      throw new Error(
-        `[EVENTO FALHOU] Opção B (Blue Option) indisponível para "${idEvento}" sem cumprir requisito`
-      );
-    }
-    return clonarProfundoCongelado({
-      estadoNo: 'EVENTO_ATIVO',
-      opcoesDisponiveis,
-      combateObrigatorio: template.categoria === 'PERIGO',
-      resultadoEscolha: 'SUCESSO_CRITICO_BLUE_OPTION',
-      taxaSucessoCriticoPct: catalogoEventos.regrasOpcoes.taxaSucessoCriticoBlueOption,
-      danoCasco: catalogoEventos.regrasOpcoes.danoCascoBlueOption,
-      recompensaBlueOption: template.recompensaBlueOption,
-    });
-  }
-
-  if (escolha === 'C') {
-    if (template.categoria === 'PERIGO') {
-      throw new Error(
-        `[EVENTO FALHOU] Opção C bloqueada em nó PERIGO: ${catalogoEventos.regrasOpcoes.marcadorOpcaoCPerigo}`
-      );
-    }
-    return clonarProfundoCongelado({
-      estadoNo: 'EVENTO_ATIVO',
-      opcoesDisponiveis,
-      combateObrigatorio: false,
-      resultadoEscolha: 'RECUO_SEGURO',
-      danoCasco: 0,
-    });
-  }
-
-  return clonarProfundoCongelado({
-    estadoNo: 'EVENTO_ATIVO',
-    opcoesDisponiveis,
-    combateObrigatorio: template.categoria === 'PERIGO',
-    resultadoEscolha: paridadeSeed === 0 ? 'SUCESSO_PADRAO_A' : 'COMPLICACAO_PADRAO_A',
-    paridadeSeed,
   });
 }
 
@@ -1443,6 +1194,7 @@ export function extrairComandosPersistenciaOnda6Volume08(conteudoVol08) {
           estadoInicialDesbloqueado:
             estadoIniStr === 'true' ? true : estadoIniStr === 'false' ? false : null,
           predicadoTexto: normalizarTexto(cols[3]),
+          predicadoCodigo: cols[3].match(/`([^`]+)`/)?.[1]?.trim() ?? null,
         });
       }
     }
@@ -1450,11 +1202,13 @@ export function extrairComandosPersistenciaOnda6Volume08(conteudoVol08) {
 
   const matchResNativa = subCNorm.match(/Resolu[cç][aã]o L[oó]gica Nativa\s*\(16:9\):\s*(\d+)\s*x\s*(\d+)\s*pixels/i);
   const matchUpscale2x = subCNorm.match(/fator inteiro\s*(\d+)x\s*para\s*(\d+)\s*x\s*(\d+)\s*pixels/i);
-  const matchCamaraPx = subCNorm.match(/8 c[aâ]maras tem [aá]rea [uú]til interna de\s*(\d+)\s*x\s*(\d+)\s*pixels/i);
-  const matchQuedaPx = subCNorm.match(
-    /desloca a nave verticalmente em\s*\+(\d+)\s*px nativos\s*\(\+(\d+)\s*pixels\s+na tela\s*1920\s*x\s*1080/i
-  );
-  const matchPassaBaixaHz = subCNorm.match(/passa-baixa subaqu[aá]tico em\s*(\d+)\s*Hz/i);
+  const matchPassaBaixaHz = subCNorm.match(/passa-baixa subaqu[aá]tico[^\n\d]*(\d+)\s*Hz/i);
+
+  const layoutNativo = {};
+  for (const linha of subC.split('\n')) {
+    const m = linha.match(/^\| `([A-Z_]+)` \| \$?(\d+(?:\.\d+)?)\$? \|/);
+    if (m && !m[1].startsWith('CUE_')) layoutNativo[m[1]] = Number(m[2]);
+  }
 
   const targetVisual = {
     larguraNativaPx: matchResNativa ? Number(matchResNativa[1]) : NaN,
@@ -1462,11 +1216,8 @@ export function extrairComandosPersistenciaOnda6Volume08(conteudoVol08) {
     fatorUpscaleFullHd: matchUpscale2x ? Number(matchUpscale2x[1]) : NaN,
     larguraFullHdPx: matchUpscale2x ? Number(matchUpscale2x[2]) : NaN,
     alturaFullHdPx: matchUpscale2x ? Number(matchUpscale2x[3]) : NaN,
-    larguraCamaraPx: matchCamaraPx ? Number(matchCamaraPx[1]) : NaN,
-    alturaCamaraPx: matchCamaraPx ? Number(matchCamaraPx[2]) : NaN,
-    deslocamentoTouchdownNativoPx: matchQuedaPx ? Number(matchQuedaPx[1]) : NaN,
-    deslocamentoTouchdown1080pPx: matchQuedaPx ? Number(matchQuedaPx[2]) : NaN,
     filtroSubaquaticoHz: matchPassaBaixaHz ? Number(matchPassaBaixaHz[1]) : NaN,
+    layoutNativo,
   };
 
   const cuesSonoros = [];
@@ -1501,105 +1252,6 @@ export function extrairComandosPersistenciaOnda6Volume08(conteudoVol08) {
     cuesSonoros,
     temItem3ContraAuditoria8,
   });
-}
-
-/**
- * Validador puro de despacho de comando da UI para o motor (Seção 8.5.A + 8.5.C).
- */
-export function validarDespachoComando(especVol08, contextoEstado, comando) {
-  const def = especVol08.comandos.find((c) => c.tipo === comando?.tipo);
-  if (!def) {
-    throw new Error(`[ACTION SCHEMA FALHOU] Comando desconhecido fora da Seção 8.5.A: "${comando?.tipo}"`);
-  }
-
-  if (!def.fasesPermitidas.includes(contextoEstado.faseJogo)) {
-    return clonarProfundoCongelado({
-      aceito: false,
-      estadoInalterado: true,
-      marcadorRejeicao: 'REJEITADO_FASE_INVALIDA',
-      cueEmitido: null,
-    });
-  }
-
-  if (
-    (comando.tipo === 'ALTERNAR_VALVULA' || comando.tipo === 'DRENAR_TUDO') &&
-    contextoEstado.estadoFisico !== '1_NO_FOIL'
-  ) {
-    return clonarProfundoCongelado({
-      aceito: false,
-      estadoInalterado: true,
-      marcadorRejeicao: def.marcadorRejeicao,
-      cueEmitido: 'CUE_TRAVA_HIDROSTATICA',
-    });
-  }
-
-  if (comando.tipo === 'LANCAR_ABORDAGEM' && (contextoEstado.blindagemTermicaExternaPts ?? 0) > 0) {
-    return clonarProfundoCongelado({
-      aceito: false,
-      estadoInalterado: true,
-      marcadorRejeicao: def.marcadorRejeicao,
-      cueEmitido: null,
-    });
-  }
-
-  if (
-    comando.tipo === 'ESCOLHER_OPCAO_EVENTO' &&
-    comando.payload?.opcao === 'C' &&
-    contextoEstado.categoriaEvento === 'PERIGO'
-  ) {
-    return clonarProfundoCongelado({
-      aceito: false,
-      estadoInalterado: true,
-      marcadorRejeicao: def.marcadorRejeicao,
-      cueEmitido: null,
-    });
-  }
-
-  return clonarProfundoCongelado({
-    aceito: true,
-    estadoInalterado: false,
-    marcadorRejeicao: null,
-    cueEmitido:
-      comando.tipo === 'MERGULHO_TATICO' && comando.payload?.recolherFoil === true
-        ? 'CUE_ESTOL_TOUCHDOWN'
-        : null,
-  });
-}
-
-/**
- * Avaliador puro de desbloqueio de carcaças no profile.json (Seção 8.5.B vs Seção 5.4).
- */
-export function avaliarDesbloqueioCarcacas(
-  especVol08,
-  {
-    setorNumero = 1,
-    vitoriaCombate = false,
-    danoCascoCausadoAoInimigoNestaLuta = 0,
-    barcosCapturadosIntactosNestaRun = 0,
-    orgaosIntactosExtraidosNestaRun = 0,
-    setorNumeroAlcanceMaxNestaRun = 1,
-  } = {}
-) {
-  const mapa = {};
-  for (const c of especVol08.carcacasPerfil) {
-    if (c.idArquitetura === 'CARCACA_ALFA') {
-      mapa[c.idArquitetura] = c.estadoInicialDesbloqueado === true;
-    } else if (c.idArquitetura === 'MANTA_VOLT') {
-      mapa[c.idArquitetura] =
-        c.estadoInicialDesbloqueado === true ||
-        (setorNumero >= 4 && vitoriaCombate === true && danoCascoCausadoAoInimigoNestaLuta === 0);
-    } else if (c.idArquitetura === 'COURACA_LIMIAR') {
-      mapa[c.idArquitetura] =
-        c.estadoInicialDesbloqueado === true || barcosCapturadosIntactosNestaRun >= 5;
-    } else if (c.idArquitetura === 'SOMBRA_ABISSAL') {
-      mapa[c.idArquitetura] =
-        c.estadoInicialDesbloqueado === true || orgaosIntactosExtraidosNestaRun >= 4;
-    } else if (c.idArquitetura === 'COLMEIA_VIVA') {
-      mapa[c.idArquitetura] =
-        c.estadoInicialDesbloqueado === true || setorNumeroAlcanceMaxNestaRun >= 8;
-    }
-  }
-  return clonarProfundoCongelado(mapa);
 }
 
 /**
@@ -1683,53 +1335,70 @@ export function extrairConsolidacaoVolume09(conteudoVol09) {
     /1\.\s+\*\*Existe efeito borboleta/.test(secaoContra9) &&
     /2\.\s+\*\*Todos os 5 Pilares Sênior possuem cobertura cruzada/.test(secaoContra9);
 
+  const algoritmoHash = {
+    nome: secao93.match(/\*\*(FNV-1a de 32 bits)\*\*/)?.[1] ?? null,
+    base: Number(secao93.match(/base `(0x[0-9A-Fa-f]+)`/)?.[1] ?? NaN),
+    primo: Number(secao93.match(/primo `(0x[0-9A-Fa-f]+)`/)?.[1] ?? NaN),
+    formatoChave: secao93.match(/chave ASCII `([^`]+)`/)?.[1] ?? null,
+  };
+  const matchVetor = secao93.match(/`hash32\('([^']+)', '([^']+)', ([^)]+)\) = (\d+)`/);
+  const vetorTesteHash = matchVetor
+    ? {
+        seed: matchVetor[1],
+        dominio: matchVetor[2],
+        coordenadas: matchVetor[3].split(',').map((c) => {
+          const s = c.trim().replace(/^'|'$/g, '');
+          return /^\d+$/.test(s) ? Number(s) : s;
+        }),
+        valor: Number(matchVetor[4]),
+      }
+    : null;
+
   return clonarProfundoCongelado({
     pilares,
     transicoesCiclo,
     streamsPrng,
+    algoritmoHash,
+    vetorTesteHash,
     temContraAuditoria9Completa,
   });
 }
 
 /**
- * Avalia puramente uma transição da Máquina de Estados do Ciclo de Vida da Partida (Seção 9.2).
+ * Extrai a tabela de Enums Canônicos do GameState (Seção 8.1 do Volume 08).
  */
-export function transicionarFaseCicloPartida(consolidacaoVol09, faseAtual, idTransicao) {
-  const tr = consolidacaoVol09.transicoesCiclo.find((t) => t.id === idTransicao);
-  if (!tr) {
-    throw new Error(`[CICLO PARTIDA FALHOU] Transição desconhecida fora da Seção 9.2: "${idTransicao}"`);
+export function extrairEnumsCanonicosVolume08(conteudoVol08) {
+  const secao = conteudoVol08.split('### Enums Canônicos do `GameState`')[1]?.split('## 8.2.')[0] ?? '';
+  const enums = {};
+  for (const linha of secao.split('\n')) {
+    const m = linha.match(/^\| `([A-Za-z.]+)` \| `([^`]+)` \|/);
+    if (m) enums[m[1]] = m[2].split(',').map((v) => v.trim()).filter(Boolean);
   }
-  if (tr.faseOrigem !== faseAtual) {
-    return clonarProfundoCongelado({
-      aceita: false,
-      faseResultante: faseAtual,
-      apagaRunSavePermadeath: false,
-      preservaProfileJson: true,
-      erro: `TRANSIÇÃO_FASE_ILEGAL:${faseAtual}->${tr.faseDestino}`,
-    });
-  }
-  const apagaRunSavePermadeath = /Apaga run_save\.json \(\*?Permadeath\*?\)/i.test(tr.efeitoPersistencia);
-  return clonarProfundoCongelado({
-    aceita: true,
-    faseResultante: tr.faseDestino,
-    apagaRunSavePermadeath,
-    preservaProfileJson: true,
-    erro: null,
-  });
+  return clonarProfundoCongelado(enums);
 }
 
 /**
- * Função pura FNV-1a 32-bit para o Particionamento Determinístico de Seeds (Seção 9.3).
- * Isola completamente o sorteio por (seedPartida, dominio, ...coordenadas) sem Math.random().
+ * Extrai a Árvore de Módulos (Seção 8.3 do Volume 08) como caminhos relativos com a Onda dona de cada arquivo.
  */
-export function calcularHash32StreamDeterministico(seedPartida, dominio, ...coordenadas) {
-  const chave = `${String(seedPartida)}::${String(dominio)}::${coordenadas.map(String).join(':')}`;
-  let h = 0x811c9dc5;
-  for (let i = 0; i < chave.length; i += 1) {
-    h ^= chave.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
+export function extrairArvoreModulosVolume08(conteudoVol08) {
+  const secao = conteudoVol08.split('## 8.3.')[1]?.split('## 8.4.')[0] ?? '';
+  const bloco = secao.match(/```text\n([\s\S]*?)\n```/)?.[1] ?? '';
+  const pilha = [];
+  const entradas = [];
+  for (const linha of bloco.split('\n')) {
+    const m = linha.match(/^([│ ]*)(?:├──|└──) (\S+)(?:\s+#\s*\[Onda (\d+)\])?/);
+    if (!m) continue;
+    const profundidade = m[1].length / 4;
+    pilha.length = profundidade;
+    const nome = m[2];
+    const caminho = [...pilha, nome].join('');
+    if (nome.endsWith('/')) {
+      pilha.push(nome);
+    } else {
+      entradas.push({ caminho, onda: m[3] === undefined ? null : Number(m[3]) });
+    }
   }
-  return h >>> 0;
+  return clonarProfundoCongelado(entradas);
 }
 
 /**
