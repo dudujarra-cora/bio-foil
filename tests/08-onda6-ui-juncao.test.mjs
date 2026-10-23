@@ -19,10 +19,14 @@ import { inspecionarSalaAlvo } from '../src/onda2-combate/tick-tripulacao.mjs';
 import {
   ORCAMENTO_LAYOUT_NATIVO_85C,
   PALETA_PIXEL_ART_BIOFOIL,
+  TOKENS_PALETA_BIBLIA_ARTISTICA_13,
+  GRADES_SPRITES_HIBITS_ARTESANAIS,
   projetarViewModelWireframe,
   obterAtlasSpritesNativo,
   rasterizarSpriteRgba,
+  exportarAtlasHiBitsPngBuffer,
   renderizarViewModelNoCanvas2d,
+  renderizarCenaCanvasParaPngBuffer,
   escaparHtmlSeguro,
   gerarCodigoJsClienteBiofoil,
   gerarHtmlClienteJogavelBiofoil,
@@ -586,6 +590,40 @@ test('[PORTÃO 08.3 | N4] Os 15 Comandos Atômicos (8.5.A), Persistência Permad
   });
   assert.equal(resVendaLoja.aceito, true);
   assert.equal(resVendaLoja.estado.economia.sucata, 217);
+  assert.equal(
+    despacharComandoUi(resVendaLoja.estado, {
+      tipo: 'COMPRAR_OU_VENDER_LOJA',
+      payload: { itemOuSistemaId: 'EMISSOR_ACUSTICO_I', operacao: 'VENDER' },
+    }).aceito,
+    false,
+    'Vender uma segunda vez a arma já vendida deve ser rejeitado'
+  );
+  const resCompraArmaLoja = despacharComandoUi(resVendaLoja.estado, {
+    tipo: 'COMPRAR_OU_VENDER_LOJA',
+    payload: { itemOuSistemaId: 'EMISSOR_ACUSTICO_I', operacao: 'COMPRAR' },
+  });
+  assert.equal(resCompraArmaLoja.aceito, true);
+  assert.equal(resCompraArmaLoja.estado.naveJogador.poraoCarga.filter((s) => s.item !== null).length, 1);
+  const resVendaPoraoLoja = despacharComandoUi(resCompraArmaLoja.estado, {
+    tipo: 'COMPRAR_OU_VENDER_LOJA',
+    payload: { itemOuSistemaId: 'EMISSOR_ACUSTICO_I', operacao: 'VENDER' },
+  });
+  assert.equal(resVendaPoraoLoja.aceito, true);
+  assert.equal(resVendaPoraoLoja.estado.naveJogador.poraoCarga.filter((s) => s.item !== null).length, 0);
+
+  // Comprar quando os 4 slots do porão já estão ocupados deve rejeitar
+  const copiaPoraoCheio = structuredClone(resVendaPoraoLoja.estado);
+  copiaPoraoCheio.naveJogador.poraoCarga = [0, 1, 2, 3].map((slotIndex) => ({
+    slotIndex,
+    item: { id: 'EMISSOR_ACUSTICO_I', pesoKg: 10 },
+  }));
+  assert.equal(
+    despacharComandoUi(congelarProfundo(copiaPoraoCheio), {
+      tipo: 'COMPRAR_OU_VENDER_LOJA',
+      payload: { itemOuSistemaId: 'EMISSOR_ACUSTICO_I', operacao: 'COMPRAR' },
+    }).aceito,
+    false
+  );
 
   const resRemoverOrgao = despacharComandoUi(resEnxertoEletro.estado, {
     tipo: 'ENXERTAR_ORGAO',
@@ -695,11 +733,18 @@ test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas
   const atlas = obterAtlasSpritesNativo();
   assert.equal(Object.isFrozen(atlas), true);
   assert.equal(Object.keys(PALETA_PIXEL_ART_BIOFOIL).length, 12, '[N4] Examinadas: 12 cores RGBA canônicas na paleta hi-bit');
+  assert.equal(
+    Object.keys(TOKENS_PALETA_BIBLIA_ARTISTICA_13).length,
+    12,
+    '[N4] Examinados: 12 tokens semânticos hex da Bíblia Artística (Seção 1.3)'
+  );
+  assert.equal(Object.keys(GRADES_SPRITES_HIBITS_ARTESANAIS).length, 32, '[N4] Examinadas: 32 matrizes de sprites hi-bit artesanais');
   assert.equal(atlas.carcacas.length, 5, '[N4] Examinadas: 5 carcaças no Atlas Nativo');
   assert.equal(atlas.aliados.length, 5, '[N4] Examinados: 5 sprites de aliados (4 espécies + Baiacu normal/inflado)');
   assert.equal(atlas.invasores.length, 3, '[N4] Examinados: 3 invasores no Atlas Nativo');
   assert.equal(atlas.armas.length, 7, '[N4] Examinadas: 7 armas no Atlas Nativo');
   assert.equal(atlas.orgaos.length, 6, '[N4] Examinados: 6 órgãos enxertáveis no Atlas Nativo');
+  assert.equal(atlas.cenarios.length, 6, '[N4] Examinados: 6 sprites cenográficos/estruturais hi-bit no Atlas Nativo');
 
   // Asserções literais L4 (Vol. 01 Seção 1.5 e Vol. 05 Seção 5.2)
   assert.equal(atlas.aliados.find((a) => a.id === 'ARRAIA').dps, 8, 'Arraia deve ter exatamente 8 DPS (Seção 1.5)');
@@ -725,13 +770,15 @@ test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas
   const atlasMutAsa = obterAtlasSpritesNativo({ reduzirAsaCouracaLimiar: true });
   assert.equal(atlasMutAsa.carcacas.find((c) => c.id === 'COURACA_LIMIAR').larguraAsaSubmersaPx, 44);
 
-  // Rasterização RGBA: silhueta própria com exterior transparente ('.'), contorno 1px ('#') e 26/26 hashes FNV-1a únicos
+  // Rasterização RGBA: silhueta própria com exterior transparente ('.'), contorno 1px ('#') e 32/32 hashes FNV-1a únicos (26 + 6 cenários)
   const hashesSprites = new Set();
   let totalSpritesExaminados = 0;
-  for (const cat of ['carcacas', 'aliados', 'invasores', 'armas', 'orgaos']) {
+  for (const cat of ['carcacas', 'aliados', 'invasores', 'armas', 'orgaos', 'cenarios']) {
     for (const item of atlas[cat]) {
       const rast = rasterizarSpriteRgba(cat, item.id);
-      assert.equal(rast.cabeNaCamaraNativa50x35, true, `Sprite ${cat}/${item.id} excede 50x35 px`);
+      if (cat !== 'cenarios') {
+        assert.equal(rast.cabeNaCamaraNativa50x35, true, `Sprite ${cat}/${item.id} excede 50x35 px`);
+      }
       assert.ok(rast.pixelsTransparentes > 0, `Sprite ${cat}/${item.id} deve ter silhueta recortada com pixels transparentes '.'`);
       assert.ok(rast.pixelsContorno1px > 0 && rast.pixelsPreenchimento > 0);
       assert.ok(rast.hashFnv1aRgba > 0);
@@ -740,8 +787,15 @@ test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas
       totalSpritesExaminados += 1;
     }
   }
-  assert.equal(totalSpritesExaminados, 26, '[N4] Examinados: 26 sprites totais no Atlas Nativo');
-  assert.equal(hashesSprites.size, 26, 'Todos os 26 sprites do Atlas devem ter silhuetas e hashes FNV-1a estritamente únicos');
+  assert.equal(totalSpritesExaminados, 32, '[N4] Examinados: 32 sprites totais no Atlas Nativo (26 entidades + 6 cenários)');
+  assert.equal(hashesSprites.size, 32, 'Todos os 32 sprites do Atlas devem ter silhuetas e hashes FNV-1a estritamente únicos');
+
+  // Exportador PNG sem perda do Atlas Hi-Bit (Item Artístico A)
+  const pngAtlasBuffer = exportarAtlasHiBitsPngBuffer(4);
+  assert.equal(Buffer.isBuffer(pngAtlasBuffer), true);
+  assert.equal(pngAtlasBuffer.subarray(0, 8).toString('hex'), '89504e470d0a1a0a', 'Deve gerar cabeçalho PNG válido');
+  assert.ok(pngAtlasBuffer.includes(Buffer.from('IEND')), 'Deve conter chunk final IEND');
+  assert.ok(pngAtlasBuffer.length > 4000, 'Atlas PNG 32 sprites deve ter conteúdo comprimido real');
   assert.equal(
     rasterizarSpriteRgba('orgaos', 'BEXIGA_ALTA_PRESSAO').idSprite,
     'BEXIGA_PRESSAO_ABISSAL',
@@ -794,18 +848,59 @@ test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas
   assert.equal(frameNoFoil.linhaDaguaY, 330);
   assert.equal(frameNoFoil.larguraAsaSubmersaDesenhadaPx, 44);
   assert.equal(frameNoFoil.spritesDesenhados.length, 3, 'Deve desenhar os 3 tripulantes iniciais da Carcaça Alfa');
+  assert.equal(frameNoFoil.inimigoAssentadoNaLinhaDagua.parteSuperiorAcimaDagua, true, 'Parte superior do inimigo deve estar acima da linha dágua');
+  assert.equal(frameNoFoil.inimigoAssentadoNaLinhaDagua.parteInferiorSubmersa, true, 'Parte inferior do inimigo deve estar submersa sob a linha dágua (Regra R2.3: proibido barco voando!)');
+  assert.ok(frameNoFoil.comandosDesenho.some((c) => c.camada === 'CORACAO_BIO_ELETRICO_PIXEL'), 'Rodapé deve desenhar o órgão marinho Coração Bio-Elétrico (Regra R6)');
   assert.ok(chamadasCtx.length > 200, 'Deve desenhar HUD, câmaras, água, válvulas, armas, quilha/asa e pixels dos sprites no Canvas');
 
-  // Verifica que 2 tripulantes na mesma câmara (Slot 0 e Slot 1) são desenhados lado a lado sem sobreposição e que curto-circuito/hipóxia aparecem
+  // Verifica renderização no Canvas das 5 carcaças (incluindo SOMBRA_ABISSAL com névoa de tinta e COLMEIA_VIVA com pólipos) e do Monstro TEUTHIS_COURACADA + exportação PNG do frame 960x540 (Item Artístico B)
+  for (const idCarc of ['CARCACA_ALFA', 'MANTA_VOLT', 'COURACA_LIMIAR', 'SOMBRA_ABISSAL', 'COLMEIA_VIVA']) {
+    const estCarc = congelarProfundo({
+      ...criarEstadoInicialPartida(`seed-${idCarc}`, idCarc),
+      alvoCombate: criarAlvoSetor1Canonico(idCarc === 'SOMBRA_ABISSAL' ? 'MONSTRO_MARINHO' : 'BARCO_HUMANO'),
+    });
+    const vmCarc = projetarViewModelWireframe(estCarc);
+    const frameCarc = renderizarViewModelNoCanvas2d(vmCarc);
+    assert.equal(frameCarc.inimigoAssentadoNaLinhaDagua.parteSuperiorAcimaDagua, true);
+    assert.equal(frameCarc.inimigoAssentadoNaLinhaDagua.parteInferiorSubmersa, true);
+    if (idCarc === 'COURACA_LIMIAR') {
+      assert.ok(frameCarc.comandosDesenho.some((c) => c.camada === 'TUBO_ABORDAGEM_FRONTAL_CARNUDO'));
+    }
+    if (idCarc === 'SOMBRA_ABISSAL') {
+      assert.ok(frameCarc.comandosDesenho.some((c) => c.camada === 'NEVOA_TINTA_SOMBRA_ABISSAL'));
+      assert.equal(frameCarc.inimigoAssentadoNaLinhaDagua.idSprite, 'TEUTHIS_COURACADA');
+    }
+    if (idCarc === 'COLMEIA_VIVA') {
+      assert.ok(frameCarc.comandosDesenho.some((c) => c.camada === 'POLIPOS_BIOLUMINESCENTES_COLMEIA'));
+    }
+  }
+  const pngCenaBuffer = renderizarCenaCanvasParaPngBuffer(vmNoFoil);
+  assert.equal(Buffer.isBuffer(pngCenaBuffer), true);
+  assert.equal(pngCenaBuffer.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.ok(pngCenaBuffer.length > 5000);
+
+  // Verifica que 2 tripulantes na mesma câmara (Slot 0 e Slot 1), invasores, sala inimiga inundada e barras danificadas são desenhados
   const copia2MesmaSala = structuredClone(estadoBase);
   copia2MesmaSala.naveJogador.tripulacao[0].camaraAtualId = 4; // Polvo + Arraia juntos na Câmara 4
   copia2MesmaSala.naveJogador.camaras.find((c) => c.id === 4).curtoCircuitoAtivo = true;
+  copia2MesmaSala.naveJogador.camaras.find((c) => c.id === 4).brechaAtiva = true;
   copia2MesmaSala.naveJogador.camaras.find((c) => c.id === 4).oxigenioPct = 15;
+  copia2MesmaSala.naveJogador.camaras.find((c) => c.id === 5).barrasIntegridade = 1;
+  copia2MesmaSala.naveJogador.invasores = [
+    { id: 'inv-1', especie: 'MARINHEIRO', camaraAtualId: 4, hpAtual: 80, hpMax: 100 },
+  ];
+  copia2MesmaSala.naveJogador.armasAtivas[0].arma.orgaosEnxertados = ['ELETRO_PLACA_ARRAIA'];
+  copia2MesmaSala.alvoCombate.salasOuOrgaos[2].aguaKg = 10.0;
   const vm2MesmaSala = projetarViewModelWireframe(congelarProfundo(copia2MesmaSala));
   const frame2MesmaSala = renderizarViewModelNoCanvas2d(vm2MesmaSala, null);
   const spritesCam4 = frame2MesmaSala.spritesDesenhados.filter((s) => s.camaraId === 4);
   assert.equal(spritesCam4.length, 2);
   assert.notEqual(spritesCam4[0].x, spritesCam4[1].x, 'Dois tripulantes na mesma câmara devem ocupar X distintos (Slot 0 e Slot 1)');
+  assert.ok(frame2MesmaSala.comandosDesenho.some((c) => c.camada === 'ROMBO_PAREDE_CAMARA_4'));
+  assert.ok(frame2MesmaSala.comandosDesenho.some((c) => c.camada === 'FAISCA_REPARO_POLVO_4'));
+  assert.ok(frame2MesmaSala.comandosDesenho.some((c) => c.camada === 'INVASOR_PIXEL_inv-1'));
+  assert.ok(frame2MesmaSala.comandosDesenho.some((c) => c.camada === 'ORGAO_ENXERTADO_PIXEL_0_0'));
+  assert.ok(frame2MesmaSala.comandosDesenho.some((c) => c.camada === 'AGUA_SALA_ALVO_3'));
 
   // Infla o Baiacu e derruba a bio-nave em 2_TOUCHDOWN -> parede entre 2º e 3º andar deve cair exatamente na LINHA_DAGUA_Y = 330
   const passoInflar = despacharComandoUi(estadoBase, {
@@ -1103,6 +1198,12 @@ test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas
     assert.ok(rJs.headers.get('content-type')?.includes('application/javascript'));
     const txtJs = await rJs.text();
     assert.ok(txtJs.includes('imageSmoothingEnabled = false'));
+
+    const rPngAtlas = await fetch(`${srv.url}/atlas-hibits.png`);
+    assert.equal(rPngAtlas.status, 200);
+    assert.equal(rPngAtlas.headers.get('content-type'), 'image/png');
+    const bufPngHttp = Buffer.from(await rPngAtlas.arrayBuffer());
+    assert.equal(bufPngHttp.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
 
     const rEstado = await fetch(`${srv.url}/api/estado`);
     assert.equal(rEstado.status, 200);

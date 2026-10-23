@@ -243,6 +243,8 @@ export function alternarMergulhoTatico(estado, recolherFoil) {
       proximo.naveJogador.progressoSpoolUpSeg = 0.0;
     }
   }
+  proximo.naveJogador.pesoTotalKg = calcularPesoTotalNave(proximo.naveJogador);
+  proximo.naveJogador.sustentacaoAtualKg = calcularSustentacaoFoil(proximo.naveJogador);
   return congelarProfundo(proximo);
 }
 

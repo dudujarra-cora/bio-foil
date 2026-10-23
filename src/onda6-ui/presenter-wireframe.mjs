@@ -9,6 +9,7 @@
  *  - Seção 8.5.C (Orçamento de Layout Nativo 960x540 -> 2x 1920x1080, 12 parâmetros canônicos)
  */
 import http from 'node:http';
+import zlib from 'node:zlib';
 import { clonarProfundoCongelado } from '../gdd-parser.mjs';
 import { calcularGeometriaLayoutNativo } from '../oraculos-referencia.mjs';
 import { criarEstadoInicialPartida } from '../onda1-fisica/estado-inicial.mjs';
@@ -66,8 +67,8 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
   const deslocamentoVerticalPx = emNoFoil ? 0 : ORCAMENTO_LAYOUT_NATIVO_85C.QUEDA_TOUCHDOWN;
 
   // 1. Termômetro Vertical de Sustentação (Peso vs Sustentação + Ghost Preview Seção 2.1)
-  const pesoTotalKg = nave.pesoTotalKg ?? calcularPesoTotalNave(nave);
-  const sustentacaoAtualKg = nave.sustentacaoAtualKg ?? calcularSustentacaoFoil(nave);
+  const pesoTotalKg = calcularPesoTotalNave(nave);
+  const sustentacaoAtualKg = calcularSustentacaoFoil(nave);
   const ghostPreview = calcularGhostPreviewTermometro(estado, opcoesDebug.idHitboxHover ?? null);
 
   const termometroSustentacao = {
@@ -108,6 +109,15 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
         acopladoBulbo: Boolean(t.acopladoBulbo),
       }));
 
+    const invasoresPresentes = (nave.invasores ?? [])
+      .filter((inv) => inv.camaraAtualId === c.id && inv.hpAtual > 0)
+      .map((inv) => ({
+        id: inv.id,
+        especie: inv.especie ?? 'MARINHEIRO',
+        hpAtual: inv.hpAtual,
+        hpMax: inv.hpMax ?? 100,
+      }));
+
     const statusValvulaExterna = travadoHidrost
       ? 'TRAVADA_TOUCHDOWN'
       : c.valvulaExternaAberta
@@ -124,8 +134,8 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
       aguaKg,
       nivelAguaPct,
       oxigenioPct: Number(c.oxigenioPct ?? 100),
-      rombosCasco: Math.max(Number(c.rombosCasco ?? 0), c.brechaAtiva ? 1 : 0),
-      brechaAtiva: Boolean(c.brechaAtiva) || Number(c.rombosCasco ?? 0) > 0,
+      rombosCasco: Math.max(Number(c.rombosCasco ?? 0), c.brechaAtiva || c.arrombouCasco ? 1 : 0),
+      brechaAtiva: Boolean(c.brechaAtiva || c.arrombouCasco) || Number(c.rombosCasco ?? 0) > 0,
       curtoCircuitoAtivo: Boolean(c.curtoCircuitoAtivo),
       valvulaExternaAberta: Boolean(c.valvulaExternaAberta),
       statusValvulaExterna,
@@ -135,6 +145,7 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
       barrasIntegridade: Number(c.barrasIntegridade ?? c.integridade ?? 0),
       barrasEnergiaAlocada: Number(c.barrasEnergiaAlocada ?? c.energiaAlocada ?? 0),
       tripulantesPresentes,
+      invasoresPresentes,
     };
   });
 
@@ -179,10 +190,18 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
   const salasAlvoBrutas = estado.alvoCombate?.salasOuOrgaos ?? [];
   const salasInspecionadas = salasAlvoBrutas.map((s) => {
     const inspecao = inspecionarSalaAlvo(estado, s.id);
+    const metadadosBaseSala = {
+      salaId: s.id,
+      nomeSala: s.nome ?? `SALA_${s.id}`,
+      submersa: Boolean(s.submersa),
+      barrasIntegridade: Number(s.integridadeAtual ?? s.integridade ?? s.barrasIntegridade ?? 1),
+      barrasMax: Number(s.integridadeMax ?? s.barrasMax ?? 1),
+      aguaKg: Number(s.aguaKg ?? 0),
+    };
     if (inspecao.canalPermissao !== 'VISIVEL') {
       if (opcoesDebug.vazarZeroTripulantesQuandoCegoL3 === true) {
         return {
-          salaId: s.id,
+          ...metadadosBaseSala,
           canalPermissao: inspecao.canalPermissao,
           status: inspecao.status,
           marcadorExplicito: inspecao.marcadorExplicito,
@@ -191,7 +210,7 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
         };
       }
       return {
-        salaId: s.id,
+        ...metadadosBaseSala,
         canalPermissao: inspecao.canalPermissao,
         status: inspecao.status,
         marcadorExplicito: inspecao.marcadorExplicito,
@@ -201,7 +220,7 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
     }
     const qtd = inspecao.dados.tripulantes.length;
     return {
-      salaId: s.id,
+      ...metadadosBaseSala,
       canalPermissao: inspecao.canalPermissao,
       status: inspecao.status,
       marcadorExplicito: inspecao.marcadorExplicito,
@@ -211,11 +230,15 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
   });
 
   const esquivaEfetivaPct = calcularEsquivaEfetivaNave(nave);
-  const cargaSaltoPct = Math.min(100, Math.round(((nave.progressoFugaSeg ?? 0) / 20.0) * 100));
+  const cargaSaltoPct = Number(
+    nave.cargaSaltoPct ?? Math.min(100, Math.round(((nave.progressoFugaSeg ?? 0) / 20.0) * 100))
+  );
   const idCarcaca = nave.idArquitetura ?? nave.idCarcaca ?? 'CARCACA_ALFA';
   const barrasTotaisReator = Number(
     nave.reator?.barrasTotais ?? ((nave.reator?.barrasCompradas ?? 6) + (nave.reator?.barrasBonusArraias ?? 0))
   );
+  const somaEnergiaAlocada = camaras.reduce((acc, c) => acc + c.barrasEnergiaAlocada, 0);
+  const barrasLivresReator = Math.max(0, barrasTotaisReator - somaEnergiaAlocada);
 
   return clonarProfundoCongelado({
     idCarcaca,
@@ -238,7 +261,7 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
     barraSuperior: {
       hpCascoAtual: nave.hpCascoAtual,
       hpCascoMax: nave.hpCascoMax,
-      barreiraBolhas: Number(nave.camadasBarreiraAtivas ?? nave.barreira?.bolhasAtuais ?? 0),
+      barreiraBolhas: Number(nave.barreiraBolhas ?? nave.camadasBarreiraAtivas ?? nave.barreira?.bolhasAtuais ?? 0),
       estadoFisico: nave.estadoFisico,
       rotuloEstado: emNoFoil ? 'NO FOIL' : 'TOUCHDOWN',
       esquivaEfetivaPct,
@@ -248,6 +271,7 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
     reatorCoracaoBioEletrico: {
       barrasTotais: barrasTotaisReator,
       barrasDisponiveis: Number(nave.reator?.barrasDisponiveis ?? nave.energiaLivre ?? 0),
+      barrasLivres: barrasLivresReator,
     },
     termometroSustentacao,
     camaras,
@@ -272,157 +296,482 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
  */
 export const PALETA_PIXEL_ART_BIOFOIL = Object.freeze({
   '.': Object.freeze([0, 0, 0, 0]),
-  '#': Object.freeze([5, 8, 12, 255]),
-  Q: Object.freeze([13, 21, 32, 255]),
-  C: Object.freeze([0, 229, 255, 255]),
-  M: Object.freeze([216, 56, 72, 255]),
-  E: Object.freeze([56, 224, 120, 255]),
-  H: Object.freeze([140, 150, 164, 255]),
-  A: Object.freeze([10, 58, 74, 255]),
-  O: Object.freeze([255, 179, 0, 255]),
-  V: Object.freeze([108, 42, 168, 255]),
-  W: Object.freeze([235, 248, 255, 255]),
-  L: Object.freeze([255, 112, 32, 255]),
+  '#': Object.freeze([6, 10, 15, 255]),
+  Q: Object.freeze([8, 13, 19, 255]),
+  C: Object.freeze([79, 242, 255, 255]),
+  M: Object.freeze([255, 42, 56, 255]),
+  E: Object.freeze([57, 230, 98, 255]),
+  H: Object.freeze([110, 130, 140, 255]),
+  A: Object.freeze([30, 45, 56, 255]),
+  O: Object.freeze([245, 158, 11, 255]),
+  V: Object.freeze([91, 42, 134, 255]),
+  W: Object.freeze([214, 232, 240, 255]),
+  L: Object.freeze([255, 224, 51, 255]),
 });
 
 /**
- * Avalia a geometria anatômica individual de cada uma das 26 entidades do Atlas (garantindo 26/26 máscaras binárias distintas,
- * exterior transparente `.` e contorno de 1px `#`).
+ * Tokens Semânticos Hexadecimais Canônicos da Bíblia Artística Bio-Foil (Seção 1.3).
  */
-function pertenceSilhuetaEntidade26(idEntidade, x, y, largura, altura) {
-  const cx = (largura - 1) / 2;
-  const cy = (altura - 1) / 2;
-  const dx = (x - cx) / (largura / 2 - 0.6);
-  const dy = (y - cy) / (altura / 2 - 0.6);
-  const r2 = dx * dx + dy * dy;
-
-  switch (idEntidade) {
-    // === 5 CARCAÇAS ===
-    case 'CARCACA_ALFA': // Concha espiral de náutilo com abertura frontal à direita
-      return (r2 <= 0.95 && !(y < 3 && x > 12)) || (y >= 4 && y <= 8 && x >= 11 && x <= 14);
-    case 'MANTA_VOLT': // Asas largas em losango + cauda fina estendida à esquerda
-      return Math.abs(dx) + Math.abs(dy) <= 1.02 || (y >= 5 && y <= 6 && x >= 1 && x <= 14);
-    case 'COURACA_LIMIAR': // Domo pesado de límulo + tubo de abordagem frontal saliente à direita
-      return (y >= 2 && y <= 9 && x >= 1 && x <= 14 && r2 <= 1.05) || (y >= 4 && y <= 7 && x >= 13 && x <= 16);
-    case 'SOMBRA_ABISSAL': // Manto esguio de lula-vampiro + tentáculos traseiros recortados
-      return (x >= 5 && x <= 14 && Math.abs(dy) <= 0.78 && r2 <= 0.95) || (x >= 1 && x <= 6 && (y === 3 || y === 5 || y === 8));
-    case 'COLMEIA_VIVA': // Colônia assimétrica de corais com 3 ramos superiores
-      return (y >= 4 && y <= 10 && x >= 2 && x <= 13) || (y >= 1 && y <= 4 && (x === 4 || x === 8 || x === 11));
-
-    // === 5 ALIADOS ===
-    case 'POLVO': // Domo cefálico arredondado + 4 tentáculos inferiores separados
-      return (y >= 1 && y <= 6 && x >= 3 && x <= 10) || (y >= 7 && y <= 10 && (x === 2 || x === 5 || x === 8 || x === 11));
-    case 'ARRAIA': // Silhueta achatada de manta + ferrão caudal inferior
-      return Math.abs(dx) * 0.85 + Math.abs(dy) * 1.15 <= 0.95 || (y >= 8 && y <= 10 && x >= 7 && x <= 8);
-    case 'BAIACU_NORMAL': // Peixe compacto em gota + nadadeira caudal em V
-      return (x >= 3 && x <= 10 && y >= 3 && y <= 8) || (x >= 1 && x <= 2 && (y === 3 || y === 4 || y === 7 || y === 8));
-    case 'BAIACU_INFLADO': { // Esfera inflada 20x18 com 8 espinhos radiais pronunciados
-      const dist = Math.hypot(dx, dy);
-      const ang8 = Math.abs(Math.sin(Math.atan2(dy, dx) * 4));
-      return dist <= 0.68 || (dist <= 0.98 && ang8 > 0.76);
-    }
-    case 'CARANGUEJO': // Carapaça larga + 2 pinças erguidas no topo + patas laterais
-      return (y >= 4 && y <= 9 && x >= 3 && x <= 12) || (y >= 1 && y <= 4 && (x === 2 || x === 3 || x === 12 || x === 13)) || (y === 10 && (x === 4 || x === 7 || x === 11));
-
-    // === 3 INVASORES ===
-    case 'MARINHEIRO': // Silhueta bípede humana (cabeça, tronco, braços e duas pernas separadas)
-      return (y >= 1 && y <= 3 && x >= 4 && x <= 7) || (y >= 4 && y <= 8 && x >= 2 && x <= 9) || (y >= 9 && y <= 12 && ((x >= 3 && x <= 4) || (x >= 7 && x <= 8)));
-    case 'MERGULHADOR': // Escafandro pesado (capacete esférico largo, ombros largos e botas unidas)
-      return (y >= 1 && y <= 4 && x >= 3 && x <= 8) || (y >= 5 && y <= 9 && x >= 1 && x <= 10) || (y >= 10 && y <= 12 && x >= 3 && x <= 8);
-    case 'PARASITA': // Verme segmentado em S com mandíbulas abertas à direita
-      return (y >= 3 && y <= 6 && x >= 2 && x <= 8) || (x >= 9 && x <= 10 && (y === 2 || y === 3 || y === 6 || y === 7)) || (x === 1 && y >= 4 && y <= 5);
-
-    // === 7 ARMAS DORSAIS ===
-    case 'EMISSOR_ACUSTICO_I': // Corneta acústica que alarga na boca direita (20x10)
-      return (x >= 2 && x <= 13 && y >= 3 && y <= 6) || (x >= 14 && x <= 18 && y >= 1 && y <= 8);
-    case 'RAJADA_HIDROPNEUMATICA_II': // Canhão rotativo de 3 canos paralelos (22x10)
-      return (x >= 2 && x <= 12 && y >= 2 && y <= 7) || (x >= 13 && x <= 20 && (y === 2 || y === 4 || y === 5 || y === 7));
-    case 'CANHAO_ARPAO_CABO': // Trilho longo com carretel traseiro e ponta de arpão farpada (24x10)
-      return (x >= 1 && x <= 5 && y >= 1 && y <= 8) || (x >= 6 && x <= 18 && y >= 3 && y <= 6) || (x >= 19 && x <= 22 && (y === 4 || y === 5 || (x === 20 && (y === 2 || y === 7))));
-    case 'DISPERSOR_ESTILHACOS': // Boca dupla de flak naval (22x12)
-      return (x >= 2 && x <= 14 && y >= 2 && y <= 9) || (x >= 15 && x <= 20 && ((y >= 1 && y <= 4) || (y >= 7 && y <= 10)));
-    case 'CORTADOR_TERMICO_PLASMA': // Bobina emissora de feixe com lente focal dianteira (24x10)
-      return (x >= 2 && x <= 16 && y >= 2 && y <= 7 && x % 4 !== 0) || (x >= 3 && x <= 22 && y >= 3 && y <= 6);
-    case 'LANCADOR_TORPEDO_ABISSAL': // Tubo pesado de torpedo com aletas traseiras e ogiva (26x10)
-      return (x >= 1 && x <= 4 && y >= 1 && y <= 8) || (x >= 5 && x <= 21 && y >= 2 && y <= 7) || (x >= 22 && x <= 24 && y >= 3 && y <= 6);
-    case 'MORTEIRO_ESPOROS': // Tubo curto inclinado para o alto + bolsa de esporos (22x10)
-      return (x >= 2 && x <= 11 && y >= 4 && y <= 8) || (x >= 10 && x <= 19 && y >= 1 && y <= 5);
-
-    // === 6 ÓRGÃOS ENXERTÁVEIS (10x10) ===
-    case 'GLANDULA_BAIACU': // Glândula bi-lobada com pontas tóxicas
-      return (y >= 2 && y <= 7 && x >= 1 && x <= 8 && !(x >= 4 && x <= 5 && (y === 2 || y === 7))) || ((x === 4 || x === 5) && (y === 1 || y === 8));
-    case 'ELETRO_PLACA_ARRAIA': // Disco bio-elétrico hexagonal chanfrado
-      return x >= 1 && x <= 8 && y >= 2 && y <= 7 && (x + y >= 4) && (x + y <= 13);
-    case 'BEXIGA_PRESSAO_ABISSAL': // Bexiga piriforme com gargalo de válvula no topo
-      return (y >= 1 && y <= 3 && x >= 4 && x <= 5) || (y >= 4 && y <= 8 && x >= 2 && x <= 7);
-    case 'BOLSA_TINTA_CEGANTE': // Saco de tinta assimétrico com sifão diagonal
-      return (y >= 3 && y <= 8 && x >= 1 && x <= 6) || (y >= 1 && y <= 4 && x >= 5 && x <= 8);
-    case 'DENTE_LEVIATA_SERRILHADO': // Presa curva serrilhada em diagonal
-      return (y >= 1 && y <= 8 && x >= Math.max(1, y - 1) && x <= Math.min(8, y + 3));
-    case 'GLANDULA_TERMOFILICA': // Nódulo vulcânico com 2 chaminés termais no topo
-    default:
-      return (y >= 5 && y <= 8 && x >= 1 && x <= 8) || (y >= 1 && y <= 4 && ((x >= 2 && x <= 3) || (x >= 6 && x <= 7)));
-  }
-}
-
-function construirGradeSilhuetaPixelArt({
-  idEntidade,
-  largura,
-  altura,
-  corPrimaria,
-  corSecundaria,
-  soquetes = 0,
-}) {
-  const mascara = Array.from({ length: altura }, (_, y) =>
-    Array.from({ length: largura }, (__, x) =>
-      pertenceSilhuetaEntidade26(idEntidade, x, y, largura, altura)
-    )
-  );
-
-  const linhas = [];
-  for (let y = 0; y < altura; y += 1) {
-    let linha = '';
-    for (let x = 0; x < largura; x += 1) {
-      if (!mascara[y][x]) {
-        linha += '.';
-        continue;
-      }
-      const naBorda =
-        x === 0 ||
-        x === largura - 1 ||
-        y === 0 ||
-        y === altura - 1 ||
-        !mascara[y - 1][x] ||
-        !mascara[y + 1][x] ||
-        !mascara[y][x - 1] ||
-        !mascara[y][x + 1];
-
-      if (naBorda) {
-        linha += '#';
-      } else if (
-        soquetes > 0 &&
-        y === Math.floor(altura / 2) &&
-        x >= 4 &&
-        x < 4 + soquetes * 3 &&
-        (x - 4) % 3 === 0
-      ) {
-        linha += 'W';
-      } else if (idEntidade === 'BAIACU_INFLADO' && (x + y) % 2 === 0) {
-        linha += 'W';
-      } else if ((x + y) % 3 === 0) {
-        linha += corSecundaria;
-      } else {
-        linha += corPrimaria;
-      }
-    }
-    linhas.push(linha);
-  }
-  return linhas;
-}
+export const TOKENS_PALETA_BIBLIA_ARTISTICA_13 = Object.freeze({
+  BG_ABYSS: '#060A0F',
+  HUD_PANEL: '#080D13',
+  HUD_BORDER: '#1E2D38',
+  HUD_RIM: '#385668',
+  TXT_PRIMARY: '#D6E8F0',
+  TXT_DIM: '#6E828C',
+  BIO_GREEN: '#39E662',
+  FOIL_CYAN: '#4FF2FF',
+  LIFT_AMBER: '#F59E0B',
+  ALERT_RED: '#FF2A38',
+  SPARK_YELLOW: '#FFE033',
+  ORGAN_VIOLET: '#5B2A86',
+});
 
 /**
- * Item 3 — Retorna o Atlas de Sprites Pixel Art na Grade Nativa (960x540, câmara 50x35 px)
- * contendo as 5 Carcaças, 4 Espécies Aliadas (com Baiacu normal e inflado), 3 Invasores, 7 Armas e 6 Órgãos.
+ * Matrizes Pixel-Art Hi-Bit Artesanais das 32 entidades (26 entidades canônicas + 6 elementos cênicos da Bíblia Artística),
+ * todas com exterior transparente `.`, contorno de 1px `#`, dithering em xadrez e anatomia individual fiel às Pranchas F1..F5.
+ */
+export const GRADES_SPRITES_HIBITS_ARTESANAIS = Object.freeze({
+  // === 5 CARCAÇAS BIOLÓGICAS JOGÁVEIS (Regra R2: 100% biológicas vivas, sem ossos/caveiras, sem chapas rebitadas) ===
+  CARCACA_ALFA: Object.freeze([
+    '......############......',
+    '....##QQCCCCCCCCQQ##....',
+    '...#QQCCQQQQQQQQCCQQ#...',
+    '..#QCCQQ########QQCCQ#..',
+    '.#QCQQ##CCCCCCCC##QQCQ#.',
+    '.#QCQ#CCQQQQQQQQCC#QCMM#',
+    '#QCQ#CQ##########QC#MWWM',
+    '#QCQ#CQ#CCCCCCCC#QC#MMW#',
+    '#QCQ#CCQ########QCC#MMM#',
+    '.#QCQ##CCCCCCCCCC##QMM#.',
+    '..#QCCQQ########QQCMM#..',
+    '...#QQCCCCCCCCCCCCQQ#...',
+    '....##QQQQQQQQQQQQ##....',
+    '......############......',
+  ]),
+  MANTA_VOLT: Object.freeze([
+    '.........######.........',
+    '.......##AAOOAA##.......',
+    '.....##AAAOOOOAAA##.....',
+    '...##AAAAOLLLOOAAAA##...',
+    '.##AAACCCOOOOOOCCCAAA##.',
+    '#CCCCAAAAOLLLOOAAAACCCC#',
+    '#####AAAAOOOOOOAAAA#####',
+    '....##AAACCCCCAAA##.....',
+    '......##AAAAAAAA##......',
+    '........###AA###........',
+    '.......#AA####..........',
+    '......#A#...............',
+    '.....#A#................',
+    '.....##.................',
+  ]),
+  COURACA_LIMIAR: Object.freeze([
+    '.....##############.....',
+    '...##MMMMOOOOOOMMMM##...',
+    '..#MMMOOOOOOOOOOOOMMM#..',
+    '.#MMOOO##########OOOMM#.',
+    '#MMOO##MMMMMMMMMM##OOMM#',
+    '#MMO#MMOOOOOOOOOOMM#OMMM',
+    '#MMO#MOO########OOM#OMWL',
+    '#MMO#MMOOOOOOOOOOMM#OMWL',
+    '#MMOO##MMMMMMMMMM##OOMM#',
+    '.#MMOOO##########OOOMM#.',
+    '..#MMMMMMMMMMMMMMMMMM#..',
+    '...###MM###..###MM###...',
+    '.....#####....#####.....',
+    '........................',
+  ]),
+  SOMBRA_ABISSAL: Object.freeze([
+    '..#.#....##########.....',
+    '.#V#V#.##VVVVVVVVVV##...',
+    '..#.#.#VVVVCCCCCCVVVV#..',
+    '.#V#.###VVCCCCCCCCVVVV#.',
+    '#.#V#VVV#VVCCWWCCVVVVVV#',
+    '.###VVVV##VVCWWCCVVVVVV#',
+    '#V#VVVVV#VVCCCCCCVVVVVV#',
+    '.#.###VV##VVVVVVVVVVVV#.',
+    '..#V#.#VVVVCCCCCCVVVV#..',
+    '.#.#V#.##VVVVVVVVVV##...',
+    '..#.#....##########.....',
+    '........................',
+  ]),
+  COLMEIA_VIVA: Object.freeze([
+    '...###....####....###...',
+    '..#EEE#..#EEEE#..#EEE#..',
+    '..#ECE#..#ECCE#..#ECE#..',
+    '...#EE####EEEE####EE#...',
+    '..#MMMMMMEEEEEEMMMMMM#..',
+    '.#MMMEEEEMMMMMMEEEEMMM#.',
+    '#MMMEECCEEMMMMEECCEEMMM#',
+    '#MMMEEEEEEMMMMEEEEEEMMM#',
+    '#MMMMMMEEEEEEEEEMMMMMMM#',
+    '.#MMMMMMMEEEEEEMMMMMMM#.',
+    '..##MMMMMMMMMMMMMMMM##..',
+    '....################....',
+  ]),
+
+  // === 5 SPRITES DE TRIPULAÇÃO ALIADA (Seção 1.5 Vol. 01 + Prancha F5) ===
+  POLVO: Object.freeze([
+    '....######....',
+    '..##MMMMMM##..',
+    '.#MMCCCCCCMM#.',
+    '#MMCWWMMWWCMM#',
+    '#MMC#WMMW#CMM#',
+    '.#MMMMMMMMMM#.',
+    '..##MMMMMM##..',
+    '.#MM##MM##MM#.',
+    '#MM#.#MM#.#MM#',
+    '#ML#.#ML#.#ML#',
+    '.##...##...##.',
+    '..............',
+  ]),
+  ARRAIA: Object.freeze([
+    '.......##.......',
+    '.....##AA##.....',
+    '...##AACCAA##...',
+    '.##AACOLLOCAA##.',
+    '#AACCOLLLLOCCAA#',
+    '.##AACOLLOCAA##.',
+    '...##AACCAA##...',
+    '.....##AA##.....',
+    '.......##.......',
+    '.......#C#......',
+    '......#C#.......',
+    '......##........',
+  ]),
+  BAIACU_NORMAL: Object.freeze([
+    '....######....',
+    '..##EEOOEE##..',
+    '.#WEEOOOOEEW#.',
+    '#C#EOOW#OOEEW#',
+    '#CCEOOOOOOEEE#',
+    '#C#EOOOOOOEEW#',
+    '.#WEEOOOOEEW#.',
+    '..##EEOOEE##..',
+    '....######....',
+    '..............',
+    '..............',
+    '..............',
+  ]),
+  BAIACU_INFLADO: Object.freeze([
+    '....##...##...##....',
+    '...#WW#.#WW#.#WW#...',
+    '....#W###OO###W#....',
+    '.##.#OOOOOOOOOO#.##.',
+    '#WW##OOLLLLLLOO##WW#',
+    '.#W#OOLW#OO#WLOO#W#.',
+    '..#OOOLW#OO#WLOOO#..',
+    '#WW#OOLLLLLLLLOO#WW#',
+    '#WW#OOOOOMMMMOOO#WW#',
+    '..#OOLLLLLLLLLLOO#..',
+    '.#W#OOOOOOOOOOOO#W#.',
+    '#WW##OOLLLLLLOO##WW#',
+    '.##.#OOOOOOOOOO#.##.',
+    '....#W###OO###W#....',
+    '...#WW#.#WW#.#WW#...',
+    '....##...##...##....',
+    '....................',
+    '....................',
+  ]),
+  CARANGUEJO: Object.freeze([
+    '.###........###.',
+    '#MWM#......#MWM#',
+    '#MMM########MMM#',
+    '.#MMMMMMMMMMMM#.',
+    '#MMMW#MMMM#WMMM#',
+    '#MMOOOOOOOOOOMM#',
+    '#MMMMMMMMMMMMMM#',
+    '.###MMMMMMMM###.',
+    '#M#.#M#..#M#.#M#',
+    '##..##....##..##',
+    '................',
+    '................',
+  ]),
+
+  // === 3 INVASORES (Prancha F5) ===
+  MARINHEIRO: Object.freeze([
+    '....####....',
+    '...#HHHH#...',
+    '...#WWWW#...',
+    '..##MMMM##..',
+    '.#HMMOOOMMH#',
+    '.#HMMOOOMMH#',
+    '.#H#MMMM#H#.',
+    '..#QQQQQQ#..',
+    '..#QQ##QQ#..',
+    '..#QQ##QQ#..',
+    '..#QQ##QQ#..',
+    '..###..###..',
+    '............',
+    '............',
+  ]),
+  MERGULHADOR: Object.freeze([
+    '...######...',
+    '..#OOOOOO#..',
+    '..#OCCCCO#..',
+    '..#OOOOOO#..',
+    '.##AAAAAA##.',
+    '#AAOOOOOOAA#',
+    '#AAOOOOOOAA#',
+    '#AA#AAAA#AA#',
+    '.##.#AA#.##.',
+    '...#AAAA#...',
+    '...#AA#A#...',
+    '...######...',
+    '............',
+    '............',
+  ]),
+  PARASITA: Object.freeze([
+    '......####..',
+    '....##VVVV#.',
+    '..##VVEEVVW#',
+    '.#VVEEVVV#M#',
+    '#VVEVVV##MW#',
+    '#VEEVV#..##.',
+    '.#VVV#......',
+    '..###.......',
+    '............',
+    '............',
+  ]),
+
+  // === 7 CHASSIS DE ARMAS METÁLICAS RECUPERADAS (Regra R2: aço oxidado H/A + 2 tendões vermelhos M + soquetes exatos W: 1,1,2,1,1,2,2) ===
+  EMISSOR_ACUSTICO_I: Object.freeze([
+    '..............####..',
+    '............##HCCC#.',
+    '..##########HHCCLC#.',
+    '.#HHHHHHHHWHHCCCLC#.',
+    '.#HHHHHHHHHHHHCCLC#.',
+    '..##MM####MM##HCCC#.',
+    '...#MM#..#MM#.####..',
+    '...####..####.......',
+    '....................',
+    '....................',
+  ]),
+  RAJADA_HIDROPNEUMATICA_II: Object.freeze([
+    '..############........',
+    '.#HHHHHHHHHHHH########',
+    '.#HHHWHHHHHHHHCCCCCCL#',
+    '.#HHHHHHHHHHHH########',
+    '.#HHHHHHHHHHHHCCCCCCL#',
+    '.#HHHHHHHHHHHH########',
+    '.#HHHHHHHHHHHHCCCCCCL#',
+    '..##MM####MM##########',
+    '...#MM#..#MM#.........',
+    '...####..####.........',
+  ]),
+  CANHAO_ARPAO_CABO: Object.freeze([
+    '..####................',
+    '.#OOOO##########....#.',
+    '.#OAAOHHHWHHWHHH####C#',
+    '.#OAAOHHHHHHHHHHCCCCC#',
+    '.#OOOO##########AAAAC#',
+    '..##MM####MM####....#.',
+    '...#MM#..#MM#.........',
+    '...####..####.........',
+    '......................',
+    '......................',
+  ]),
+  DISPERSOR_ESTILHACOS: Object.freeze([
+    '..............######..',
+    '..############HLLLLH#.',
+    '.#HHHHHHHHHHHHHLLLLH#.',
+    '.#HHHWHHHHHHHH######..',
+    '.#HHHHHHHHHHHH######..',
+    '.#HHHHHHHHHHHHHLLLLH#.',
+    '..##MM####MM##HLLLLH#.',
+    '...#MM#..#MM#.######..',
+    '...####..####.........',
+    '......................',
+    '......................',
+    '......................',
+  ]),
+  CORTADOR_TERMICO_PLASMA: Object.freeze([
+    '..################......',
+    '.#HHHLLHHLLHHLLHHH####..',
+    '.#HHHWLHHLLHHLLHHHCCCC#.',
+    '.#HHHLLHHLLHHLLHHHLLLL#.',
+    '.#HHHHHHHHHHHHHHHHCCCC#.',
+    '..##MM######MM########..',
+    '...#MM#....#MM#.........',
+    '...####....####.........',
+    '........................',
+    '........................',
+  ]),
+  LANCADOR_TORPEDO_ABISSAL: Object.freeze([
+    '.####.....................',
+    '#AAAA#################....',
+    '#AAAAHHHWHHWHHHEEEEEE##...',
+    '#AAAAHHHHHHHHHHEEEEEELL#..',
+    '#AAAAHHHHHHHHHHEEEEEECC#..',
+    '#AAAA#################....',
+    '.##MM######MM###..........',
+    '..#MM#....#MM#............',
+    '..####....####............',
+    '..........................',
+  ]),
+  MORTEIRO_ESPOROS: Object.freeze([
+    '..........######......',
+    '.........#HHHHHH#.....',
+    '........#HHHHHH#......',
+    '..######HHHHHH#.......',
+    '.#HHHWHHWHHEEE#.......',
+    '.#HHHHHHHHHECE#.......',
+    '..##MM####MMEE#.......',
+    '...#MM#..#MM###.......',
+    '...####..####.........',
+    '......................',
+  ]),
+
+  // === 6 ÓRGÃOS BIOLÓGICOS DE ENXERTO (10x10 px, +5 kg cada, com dithering em xadrez nas auréolas bioluminescentes — Prancha F5) ===
+  GLANDULA_BAIACU: Object.freeze([
+    '.E.#.##.E.',
+    'E.##EEEE#.E',
+    '.#EECEECE#',
+    '#EEEEEEEE#',
+    '#EECEECEE#',
+    '.#EEEEEE#.',
+    'E.#MMMM#.E',
+    '.E.#CW#.E.',
+    '..E.##.E..',
+    '.E..E...E.',
+  ].map((s) => s.slice(0, 10))),
+  ELETRO_PLACA_ARRAIA: Object.freeze([
+    '.C.######.',
+    'C.#OOOOOO#',
+    '.#OOCCCCO#',
+    '#OCLLLLCO#',
+    '#OCLLLLCO#',
+    '#OOCCCCOO#',
+    '.#OOOOOO#C',
+    'C.#VVVV#.C',
+    '.C.####.C.',
+    'C..C..C..C',
+  ]),
+  BEXIGA_PRESSAO_ABISSAL: Object.freeze([
+    '.C.####.C.',
+    'C..#OO#..C',
+    '.##AAAA##.',
+    '#AACCCWAA#',
+    '#AACCCCAA#',
+    '#AACCCCAA#',
+    '.#AAAAAA#.',
+    'C.######.C',
+    '.C..C..C..',
+    'C..C..C..C',
+  ]),
+  BOLSA_TINTA_CEGANTE: Object.freeze([
+    '.V..V###V.',
+    'V.V.#VCC#V',
+    '.V##VVV#.V',
+    'V#VVVVVV#.',
+    '#VVQVVQVV#',
+    '#VVVVVVVV#',
+    'V#VVVVVV#V',
+    '.V######V.',
+    'V.V.V.V.V.',
+    '.V.V.V.V.V',
+  ]),
+  DENTE_LEVIATA_SERRILHADO: Object.freeze([
+    '.M.M..###.',
+    'M.M..#WWW#',
+    '.M..#WWWH#',
+    'M..#WWWH#.',
+    '..#WWWH#.M',
+    '.#MMMM#.M.',
+    '#MMMMM#M.M',
+    '.#####..M.',
+    'M.M.M.M..M',
+    '.M.M.M.M..',
+  ]),
+  GLANDULA_TERMOFILICA: Object.freeze([
+    'O###..###O',
+    '#OLO##OLO#',
+    '#OLLOOLLO#',
+    '#OOWWWWOO#',
+    '#OOWWWWOO#',
+    'O#OOOOOO#O',
+    '.O#MMMM#O.',
+    'O.O####O.O',
+    '.O.O..O.O.',
+    'O.O.OO.O.O',
+  ]),
+
+  // === 6 SPRITES CÊNICOS / ESTRUTURAIS DA BÍBLIA ARTÍSTICA (Coração Bio-Elétrico R6, Bulbo Neural, Válvula, Cadeado, Lancha e Teuthis) ===
+  CORACAO_BIO_ELETRICO: Object.freeze([
+    '.....########.....',
+    '...##VVVVVVVV##...',
+    '..#VVCCCCCCCCVV#..',
+    '.#VVCVVVVVVVVCVV#.',
+    '#VVCVVLLLLLLVVCVV#',
+    '#VVCVLLWWWWLLVCVV#',
+    '#VVCVLLWWWWLLVCVV#',
+    '#VVCVVLLLLLLVVCVV#',
+    '.#VVCVVVVVVVVCVV#.',
+    '..#VVCCCCCCCCVV#..',
+    '...##VVVVVVVV##...',
+    '.....########.....',
+  ]),
+  BULBO_NEURAL: Object.freeze([
+    '..####..',
+    '.#CCCC#.',
+    '#CCWWCC#',
+    '#CCEECC#',
+    '.#CCCC#.',
+    '..#MM#..',
+    '..####..',
+  ]),
+  VALVULA_ESFINCTER: Object.freeze([
+    '.######.',
+    '#MOOOOO#',
+    '#MOLLOM#',
+    '#M#QQ#M#',
+    '#M#QQ#M#',
+    '#MOLLOM#',
+    '#MOOOOO#',
+    '.######.',
+  ]),
+  CADEADO_HIDROSTATICO: Object.freeze([
+    '..####..',
+    '.#WWWW#.',
+    '.#W..W#.',
+    '########',
+    '#OOOOOO#',
+    '#OO##OO#',
+    '#OOOOOO#',
+    '########',
+  ]),
+  LANCHA_PATRULHEIRA: Object.freeze([
+    '.............######......########.......',
+    '.......######HHHHHH######HHHHHHHH#......',
+    '....###HHHHHHHHHHHHHHHHHHHHHHHHHH#......',
+    '..##HHHHHHHHHCCCCCCCHHHHHCCCCCCCC#......',
+    '#HHHHHHHHHHHHCCCCCCCHHHHHCCCCCCCC##.....',
+    '#CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC###..',
+    '######################################O#',
+    '.#AAAAAAAAAAAOOOOOOOAAAAACCCCCCCCAAAA#O#',
+    '..#AAAAAAAAAAOOOOOOOAAAAACCCCCCCCAAA##..',
+    '...#################################....',
+  ]),
+  TEUTHIS_COURACADA: Object.freeze([
+    '..##....##....############..............',
+    '.#VV#..#VV#.##VVVVVVVVVVVV##............',
+    '#VV#..#VV#.#VVVVCCCCCCCCVVVV#...........',
+    '.#VV##VV#.#VVVVCCWWWWWWCCVVVV#..........',
+    '..#VVVV#..#VVVVCCWWWWWWCCVVVV#..........',
+    '...####...#VVVVVVCCCCCCVVVVVV#..........',
+    '########..#VVVVVVVVVVVVVVVVVV#..........',
+    '#MMMMMM####CCCCCCCCCCCCCCCCCC##########.',
+    '.#AAAAAAAAACCCCCCOOOOOOCCCCCCCCCCCCCCC#.',
+    '..#AAAAAAAACCCCCCOOOOOOCCCCCEEEEEEEECC#.',
+    '...#AAAAAAAAACCCCCCCCCCCCCCCEEWWWWEECC#.',
+    '....##AAAAAAAAAAAAAAAAAAAAAAEEEEEEEE##..',
+    '......##############################....',
+  ]),
+});
+
+/**
+ * Item 3 — Retorna o Atlas de Sprites Pixel Art Hi-Bit na Grade Nativa (960x540, câmara 50x35 px)
+ * contendo as 5 Carcaças, 4 Espécies Aliadas (com Baiacu normal e inflado), 3 Invasores, 7 Armas, 6 Órgãos e 6 Sprites Cênicos.
  */
 export function obterAtlasSpritesNativo(opcoesDebug = {}) {
   const asaCouracaPadraoMutacao = opcoesDebug.reduzirAsaCouracaLimiar === true;
@@ -436,20 +785,14 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       hpCascoMax: 30,
       pesoTotalKg: 225,
       sustentacaoMaxKg: 260,
-      larguraSpritePx: 48,
-      alturaSpritePx: 32,
+      larguraSpritePx: 24,
+      alturaSpritePx: 14,
       larguraAsaSubmersaPx: larguraAsaPadraoPx,
       temTuboAbordagemFrontal: false,
       temNevoaTinta: false,
       temPoliposBioluminescentes: false,
       tripulacaoInicial: Object.freeze({ POLVO: 1, ARRAIA: 1, BAIACU: 1 }),
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'CARCACA_ALFA',
-        largura: 16,
-        altura: 12,
-        corPrimaria: 'Q',
-        corSecundaria: 'C',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.CARCACA_ALFA,
     },
     {
       id: 'MANTA_VOLT',
@@ -457,20 +800,14 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       hpCascoMax: 30,
       pesoTotalKg: 195,
       sustentacaoMaxKg: 260,
-      larguraSpritePx: 48,
-      alturaSpritePx: 32,
+      larguraSpritePx: 24,
+      alturaSpritePx: 14,
       larguraAsaSubmersaPx: larguraAsaPadraoPx,
       temTuboAbordagemFrontal: false,
       temNevoaTinta: false,
       temPoliposBioluminescentes: false,
       tripulacaoInicial: Object.freeze({ ARRAIA: 2, POLVO: 1 }),
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'MANTA_VOLT',
-        largura: 16,
-        altura: 12,
-        corPrimaria: 'A',
-        corSecundaria: 'O',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.MANTA_VOLT,
     },
     {
       id: 'COURACA_LIMIAR',
@@ -478,20 +815,14 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       hpCascoMax: 30,
       pesoTotalKg: 225,
       sustentacaoMaxKg: 300,
-      larguraSpritePx: 48,
-      alturaSpritePx: 32,
+      larguraSpritePx: 24,
+      alturaSpritePx: 14,
       larguraAsaSubmersaPx: larguraAsaCouracaPx,
       temTuboAbordagemFrontal: true,
       temNevoaTinta: false,
       temPoliposBioluminescentes: false,
       tripulacaoInicial: Object.freeze({ CARANGUEJO: 2, BAIACU: 1 }),
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'COURACA_LIMIAR',
-        largura: 18,
-        altura: 12,
-        corPrimaria: 'M',
-        corSecundaria: 'L',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.COURACA_LIMIAR,
     },
     {
       id: 'SOMBRA_ABISSAL',
@@ -499,20 +830,14 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       hpCascoMax: 20,
       pesoTotalKg: 220,
       sustentacaoMaxKg: 260,
-      larguraSpritePx: 48,
-      alturaSpritePx: 32,
+      larguraSpritePx: 24,
+      alturaSpritePx: 12,
       larguraAsaSubmersaPx: larguraAsaPadraoPx,
       temTuboAbordagemFrontal: false,
       temNevoaTinta: true,
       temPoliposBioluminescentes: false,
       tripulacaoInicial: Object.freeze({ POLVO: 1, CARANGUEJO: 1 }),
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'SOMBRA_ABISSAL',
-        largura: 16,
-        altura: 12,
-        corPrimaria: 'V',
-        corSecundaria: 'C',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.SOMBRA_ABISSAL,
     },
     {
       id: 'COLMEIA_VIVA',
@@ -520,20 +845,14 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       hpCascoMax: 30,
       pesoTotalKg: 230,
       sustentacaoMaxKg: 260,
-      larguraSpritePx: 48,
-      alturaSpritePx: 32,
+      larguraSpritePx: 24,
+      alturaSpritePx: 12,
       larguraAsaSubmersaPx: larguraAsaPadraoPx,
       temTuboAbordagemFrontal: false,
       temNevoaTinta: false,
       temPoliposBioluminescentes: true,
       tripulacaoInicial: Object.freeze({ BAIACU: 2, ARRAIA: 1 }),
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'COLMEIA_VIVA',
-        largura: 16,
-        altura: 12,
-        corPrimaria: 'E',
-        corSecundaria: 'M',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.COLMEIA_VIVA,
     },
   ];
 
@@ -547,13 +866,7 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       dps: 5,
       larguraPx: 14,
       alturaPx: 12,
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'POLVO',
-        largura: 14,
-        altura: 12,
-        corPrimaria: 'C',
-        corSecundaria: 'Q',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.POLVO,
     },
     {
       id: 'ARRAIA',
@@ -563,13 +876,7 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       dps: 8,
       larguraPx: 16,
       alturaPx: 12,
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'ARRAIA',
-        largura: 16,
-        altura: 12,
-        corPrimaria: 'O',
-        corSecundaria: 'A',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.ARRAIA,
     },
     {
       id: 'BAIACU_NORMAL',
@@ -579,13 +886,7 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       dps: 14,
       larguraPx: 14,
       alturaPx: 12,
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'BAIACU_NORMAL',
-        largura: 14,
-        altura: 12,
-        corPrimaria: 'E',
-        corSecundaria: 'O',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.BAIACU_NORMAL,
     },
     {
       id: 'BAIACU_INFLADO',
@@ -597,13 +898,7 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       refleteDpsPct: 50,
       larguraPx: 20,
       alturaPx: 18,
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'BAIACU_INFLADO',
-        largura: 20,
-        altura: 18,
-        corPrimaria: 'O',
-        corSecundaria: 'W',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.BAIACU_INFLADO,
     },
     {
       id: 'CARANGUEJO',
@@ -613,13 +908,7 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       dps: 12,
       larguraPx: 16,
       alturaPx: 12,
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'CARANGUEJO',
-        largura: 16,
-        altura: 12,
-        corPrimaria: 'M',
-        corSecundaria: 'L',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.CARANGUEJO,
     },
   ];
 
@@ -631,13 +920,7 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       dps: 8,
       larguraPx: 12,
       alturaPx: 14,
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'MARINHEIRO',
-        largura: 12,
-        altura: 14,
-        corPrimaria: 'H',
-        corSecundaria: 'W',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.MARINHEIRO,
     },
     {
       id: 'MERGULHADOR',
@@ -646,13 +929,7 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       dps: 12,
       larguraPx: 12,
       alturaPx: 14,
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'MERGULHADOR',
-        largura: 12,
-        altura: 14,
-        corPrimaria: 'A',
-        corSecundaria: 'L',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.MERGULHADOR,
     },
     {
       id: 'PARASITA',
@@ -661,53 +938,44 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
       dps: 10,
       larguraPx: 12,
       alturaPx: 10,
-      gradePixels: construirGradeSilhuetaPixelArt({
-        idEntidade: 'PARASITA',
-        largura: 12,
-        altura: 10,
-        corPrimaria: 'V',
-        corSecundaria: 'E',
-      }),
+      gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.PARASITA,
     },
   ];
 
   const specsArmas = [
-    { id: 'EMISSOR_ACUSTICO_I', nome: 'Acústico I', pesoKg: 10, energia: 1, soquetes: 1, municao: 0, larguraPx: 20, alturaPx: 10, corSec: 'C' },
-    { id: 'RAJADA_HIDROPNEUMATICA_II', nome: 'Rajada II', pesoKg: 18, energia: 2, soquetes: 1, municao: 0, larguraPx: 22, alturaPx: 10, corSec: 'O' },
-    { id: 'CANHAO_ARPAO_CABO', nome: 'Arpão de Cabo', pesoKg: 15, energia: 2, soquetes: 2, municao: 0, larguraPx: 24, alturaPx: 10, corSec: 'M' },
-    { id: 'DISPERSOR_ESTILHACOS', nome: 'Estilhaços', pesoKg: 22, energia: 2, soquetes: 1, municao: 0, larguraPx: 22, alturaPx: 12, corSec: 'L' },
-    { id: 'CORTADOR_TERMICO_PLASMA', nome: 'Cortador Térmico', pesoKg: 25, energia: 2, soquetes: 1, municao: 0, larguraPx: 24, alturaPx: 10, corSec: 'E' },
-    { id: 'LANCADOR_TORPEDO_ABISSAL', nome: 'Torpedo Abissal', pesoKg: 28, energia: 2, soquetes: 2, municao: 1, larguraPx: 26, alturaPx: 10, corSec: 'A' },
-    { id: 'MORTEIRO_ESPOROS', nome: 'Morteiro de Esporos', pesoKg: 12, energia: 1, soquetes: 2, municao: 1, larguraPx: 22, alturaPx: 10, corSec: 'V' },
+    { id: 'EMISSOR_ACUSTICO_I', idCatalogo52: 'EMISSOR_ACUSTICO', nome: 'Acústico I', pesoKg: 10, energia: 1, soquetes: 1, municao: 0 },
+    { id: 'RAJADA_HIDROPNEUMATICA_II', idCatalogo52: 'ACUSTICO_RAJADA_II', nome: 'Rajada II', pesoKg: 18, energia: 2, soquetes: 1, municao: 0 },
+    { id: 'CANHAO_ARPAO_CABO', idCatalogo52: 'CANHAO_ARPAO', nome: 'Arpão de Cabo', pesoKg: 15, energia: 2, soquetes: 2, municao: 0 },
+    { id: 'DISPERSOR_ESTILHACOS', idCatalogo52: 'LANCADOR_ESTILHACOS', nome: 'Estilhaços', pesoKg: 22, energia: 2, soquetes: 1, municao: 0 },
+    { id: 'CORTADOR_TERMICO_PLASMA', idCatalogo52: 'FEIXE_TERMICO', nome: 'Cortador Térmico', pesoKg: 25, energia: 2, soquetes: 1, municao: 0 },
+    { id: 'LANCADOR_TORPEDO_ABISSAL', idCatalogo52: 'TORPEDO_ABISSAL', nome: 'Torpedo Abissal', pesoKg: 28, energia: 2, soquetes: 2, municao: 1 },
+    { id: 'MORTEIRO_ESPOROS', idCatalogo52: 'MORTEIRO_ESPOROS', nome: 'Morteiro de Esporos', pesoKg: 12, energia: 1, soquetes: 2, municao: 1 },
   ];
-  const armas = specsArmas.map((a) => ({
-    id: a.id,
-    nome: a.nome,
-    pesoKg: a.pesoKg,
-    energia: a.energia,
-    soquetes: a.soquetes,
-    municao: a.municao,
-    larguraPx: a.larguraPx,
-    alturaPx: a.alturaPx,
-    materialVisual: 'CHASSI_HUMANO_RECUPERADO_COM_TENDOES',
-    gradePixels: construirGradeSilhuetaPixelArt({
-      idEntidade: a.id,
-      largura: a.larguraPx,
-      altura: a.alturaPx,
-      corPrimaria: 'H',
-      corSecundaria: a.corSec,
+  const armas = specsArmas.map((a) => {
+    const grade = GRADES_SPRITES_HIBITS_ARTESANAIS[a.id];
+    return {
+      id: a.id,
+      idCatalogo52: a.idCatalogo52,
+      nome: a.nome,
+      pesoKg: a.pesoKg,
+      energia: a.energia,
       soquetes: a.soquetes,
-    }),
-  }));
+      municao: a.municao,
+      larguraPx: grade[0].length,
+      alturaPx: grade.length,
+      materialVisual: 'CHASSI_HUMANO_RECUPERADO_COM_TENDOES',
+      gradePixels: grade,
+    };
+  });
 
   // Valores canônicos exatos da Seção 5.2 (Vol. 05)
   const specsOrgaos = [
-    { id: 'GLANDULA_BAIACU', idCatalogo52: 'GLANDULA_BAIACU', nome: 'Glândula de Baiacu', pesoKg: 5, efeito: 'veneno -6 HP/s por 10s', cor: 'E' },
-    { id: 'ELETRO_PLACA_ARRAIA', idCatalogo52: 'ELETRO_PLACA_ARRAIA', nome: 'Eletro-Placa', pesoKg: 5, efeito: 'choque 6s', cor: 'O' },
-    { id: 'BEXIGA_PRESSAO_ABISSAL', idCatalogo52: 'BEXIGA_ALTA_PRESSAO', nome: 'Bexiga de Pressão', pesoKg: 5, efeito: '+15 kg água', cor: 'C' },
-    { id: 'BOLSA_TINTA_CEGANTE', idCatalogo52: 'BOLSA_TINTA_ABISSAL', nome: 'Bolsa de Tinta', pesoKg: 5, efeito: 'cegueira 8s', cor: 'V' },
-    { id: 'DENTE_LEVIATA_SERRILHADO', idCatalogo52: 'DENTE_LEVIATA', nome: 'Dente de Leviatã', pesoKg: 5, efeito: '+1 dano', cor: 'W' },
-    { id: 'GLANDULA_TERMOFILICA', idCatalogo52: 'GLANDULA_TERMOFILICA', nome: 'Glândula Termofílica', pesoKg: 5, efeito: 'fervura 8s', cor: 'L' },
+    { id: 'GLANDULA_BAIACU', idCatalogo52: 'GLANDULA_BAIACU', nome: 'Glândula de Baiacu', pesoKg: 5, efeito: 'veneno -6 HP/s por 10s' },
+    { id: 'ELETRO_PLACA_ARRAIA', idCatalogo52: 'ELETRO_PLACA_ARRAIA', nome: 'Eletro-Placa', pesoKg: 5, efeito: 'choque 6s' },
+    { id: 'BEXIGA_PRESSAO_ABISSAL', idCatalogo52: 'BEXIGA_ALTA_PRESSAO', nome: 'Bexiga de Pressão', pesoKg: 5, efeito: '+15 kg água' },
+    { id: 'BOLSA_TINTA_CEGANTE', idCatalogo52: 'BOLSA_TINTA_ABISSAL', nome: 'Bolsa de Tinta', pesoKg: 5, efeito: 'cegueira 8s' },
+    { id: 'DENTE_LEVIATA_SERRILHADO', idCatalogo52: 'DENTE_LEVIATA', nome: 'Dente de Leviatã', pesoKg: 5, efeito: '+1 dano' },
+    { id: 'GLANDULA_TERMOFILICA', idCatalogo52: 'GLANDULA_TERMOFILICA', nome: 'Glândula Termofílica', pesoKg: 5, efeito: 'fervura 8s' },
   ];
   const orgaos = specsOrgaos.map((o) => ({
     id: o.id,
@@ -717,23 +985,32 @@ export function obterAtlasSpritesNativo(opcoesDebug = {}) {
     efeito: o.efeito,
     larguraPx: 10,
     alturaPx: 10,
-    gradePixels: construirGradeSilhuetaPixelArt({
-      idEntidade: o.id,
-      largura: 10,
-      altura: 10,
-      corPrimaria: o.cor,
-      corSecundaria: 'M',
-    }),
+    gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS[o.id],
+  }));
+
+  const cenarios = [
+    { id: 'CORACAO_BIO_ELETRICO', nome: 'Coração Bio-Elétrico Marinho', regraBiblia: 'R6_ORGAO_ELETROCITICO_MARINHO', gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.CORACAO_BIO_ELETRICO },
+    { id: 'BULBO_NEURAL', nome: 'Bulbo Neural da Câmara', regraBiblia: 'R1_GRID_2X4', gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.BULBO_NEURAL },
+    { id: 'VALVULA_ESFINCTER', nome: 'Válvula Orgânica Esfinctérica', regraBiblia: 'R1_VALVULA_LARANJA', gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.VALVULA_ESFINCTER },
+    { id: 'CADEADO_HIDROSTATICO', nome: 'Cadeado Hidrostático de Touchdown', regraBiblia: 'F2_8_CADEADOS_DOURADOS', gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.CADEADO_HIDROSTATICO },
+    { id: 'LANCHA_PATRULHEIRA', nome: 'Lancha Patrulheira Assentada na Linha d’Água', regraBiblia: 'R2_ASSENTAMENTO_HIDROSTATICO', gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.LANCHA_PATRULHEIRA },
+    { id: 'TEUTHIS_COURACADA', nome: 'Teuthis Couraçada Submersa no Mar', regraBiblia: 'R2_ASSENTAMENTO_HIDROSTATICO', gradePixels: GRADES_SPRITES_HIBITS_ARTESANAIS.TEUTHIS_COURACADA },
+  ].map((c) => ({
+    ...c,
+    larguraPx: c.gradePixels[0].length,
+    alturaPx: c.gradePixels.length,
   }));
 
   return clonarProfundoCongelado({
     resolucaoNativaReferencia: { largura: 960, altura: 540, camaraLargura: 50, camaraAltura: 35 },
     paletaRgba: PALETA_PIXEL_ART_BIOFOIL,
+    tokensBibliaArtistica: TOKENS_PALETA_BIBLIA_ARTISTICA_13,
     carcacas,
     aliados,
     invasores,
     armas,
     orgaos,
+    cenarios,
   });
 }
 
@@ -788,26 +1065,160 @@ export function rasterizarSpriteRgba(categoria, idSprite) {
   });
 }
 
+const TABELA_CRC32_PNG = (() => {
+  const tab = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    tab[n] = c >>> 0;
+  }
+  return tab;
+})();
+
+function calcularCrc32Png(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i += 1) {
+    c = TABELA_CRC32_PNG[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function empacotarChunkPng(tipoAscii, dadosBuffer) {
+  const lenBuf = Buffer.alloc(4);
+  lenBuf.writeUInt32BE(dadosBuffer.length, 0);
+  const tipoBuf = Buffer.from(tipoAscii, 'ascii');
+  const crcBuf = Buffer.alloc(4);
+  crcBuf.writeUInt32BE(calcularCrc32Png(Buffer.concat([tipoBuf, dadosBuffer])), 0);
+  return Buffer.concat([lenBuf, tipoBuf, dadosBuffer, crcBuf]);
+}
+
+function codificarBufferRgbaParaPng(largura, altura, bufferRgba) {
+  const linhasBrutas = Buffer.alloc(altura * (1 + largura * 4));
+  for (let y = 0; y < altura; y += 1) {
+    const offsetLinha = y * (1 + largura * 4);
+    linhasBrutas[offsetLinha] = 0;
+    bufferRgba.copy(linhasBrutas, offsetLinha + 1, y * largura * 4, (y + 1) * largura * 4);
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(largura, 0);
+  ihdr.writeUInt32BE(altura, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    empacotarChunkPng('IHDR', ihdr),
+    empacotarChunkPng('IDAT', zlib.deflateSync(linhasBrutas)),
+    empacotarChunkPng('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/**
+ * Exporta o Sprite Sheet Hi-Bit completo (todas as 32 entidades: 5 carcaças, 5 aliados, 3 invasores,
+ * 7 armas, 6 órgãos e 6 elementos cênicos da Bíblia Artística) num Buffer PNG real sem perdas.
+ */
+export function exportarAtlasHiBitsPngBuffer(escalaInteira = 4) {
+  const escala = Math.max(1, Math.min(8, Math.floor(Number(escalaInteira) || 4)));
+  const atlas = obterAtlasSpritesNativo();
+  const todosItens = [
+    ...atlas.carcacas.map((x) => ({ cat: 'carcacas', id: x.id })),
+    ...atlas.aliados.map((x) => ({ cat: 'aliados', id: x.id })),
+    ...atlas.invasores.map((x) => ({ cat: 'invasores', id: x.id })),
+    ...atlas.armas.map((x) => ({ cat: 'armas', id: x.id })),
+    ...atlas.orgaos.map((x) => ({ cat: 'orgaos', id: x.id })),
+    ...atlas.cenarios.map((x) => ({ cat: 'cenarios', id: x.id })),
+  ];
+  const cols = 4;
+  const rows = Math.ceil(todosItens.length / cols);
+  const celulaW = 54 * escala;
+  const celulaH = 40 * escala;
+  const larguraPng = cols * celulaW;
+  const alturaPng = rows * celulaH;
+  const rgba = Buffer.alloc(larguraPng * alturaPng * 4);
+
+  for (let i = 0; i < larguraPng * alturaPng; i += 1) {
+    rgba[i * 4] = 6;
+    rgba[i * 4 + 1] = 10;
+    rgba[i * 4 + 2] = 15;
+    rgba[i * 4 + 3] = 255;
+  }
+
+  const pintarPixel = (x, y, r, g, b, a = 255) => {
+    const idx = (y * larguraPng + x) * 4;
+    rgba[idx] = r;
+    rgba[idx + 1] = g;
+    rgba[idx + 2] = b;
+    rgba[idx + 3] = a;
+  };
+
+  todosItens.forEach((entry, idx) => {
+    const col = idx % cols;
+    const lin = Math.floor(idx / cols);
+    const ox = col * celulaW;
+    const oy = lin * celulaH;
+
+    // Moldura da célula em HUD_BORDER (#1E2D38) e filete superior HUD_RIM (#385668)
+    for (let x = 2; x < celulaW - 2; x += 1) {
+      pintarPixel(ox + x, oy + 2, 56, 86, 104, 255);
+      pintarPixel(ox + x, oy + celulaH - 3, 30, 45, 56, 255);
+    }
+    for (let y = 2; y < celulaH - 2; y += 1) {
+      pintarPixel(ox + 2, oy + y, 30, 45, 56, 255);
+      pintarPixel(ox + celulaW - 3, oy + y, 30, 45, 56, 255);
+    }
+
+    const rast = rasterizarSpriteRgba(entry.cat, entry.id);
+    const sx0 = ox + Math.floor((celulaW - rast.largura * escala) / 2);
+    const sy0 = oy + Math.floor((celulaH - rast.altura * escala) / 2);
+    for (let py = 0; py < rast.altura; py += 1) {
+      for (let px = 0; px < rast.largura; px += 1) {
+        const bi = (py * rast.largura + px) * 4;
+        if (rast.bytesRgba[bi + 3] > 0) {
+          for (let dy = 0; dy < escala; dy += 1) {
+            for (let dx = 0; dx < escala; dx += 1) {
+              pintarPixel(
+                sx0 + px * escala + dx,
+                sy0 + py * escala + dy,
+                rast.bytesRgba[bi],
+                rast.bytesRgba[bi + 1],
+                rast.bytesRgba[bi + 2],
+                255
+              );
+            }
+          }
+        }
+      }
+    }
+  });
+
+  return codificarBufferRgbaParaPng(larguraPng, alturaPng, rgba);
+}
+
 const CORES_HEX_PALETA = Object.freeze({
-  '#': '#05080c',
-  Q: '#0d1520',
-  C: '#00e5ff',
-  M: '#d83848',
-  E: '#38e078',
-  H: '#8c96a4',
-  A: '#0a3a4a',
-  O: '#ffb300',
-  V: '#6c2aa8',
-  W: '#ebf8ff',
-  L: '#ff7020',
+  '#': '#060A0F',
+  Q: '#080D13',
+  C: '#4FF2FF',
+  M: '#FF2A38',
+  E: '#39E662',
+  H: '#6E828C',
+  A: '#1E2D38',
+  O: '#F59E0B',
+  V: '#5B2A86',
+  W: '#D6E8F0',
+  L: '#FFE033',
 });
 
 /**
- * Item 1 — Renderiza o ViewModel 16:9 completo num contexto Canvas 2D nativo (960x540 -> upscale 2x 1920x1080)
- * com `imageSmoothingEnabled = false` e devolve a lista completa de primitivas desenhadas.
+ * Item 1 & Item Artístico 2 — Renderiza o ViewModel 16:9 completo num contexto Canvas 2D nativo (960x540 -> upscale 2x 1920x1080)
+ * com `imageSmoothingEnabled = false`, seguindo os tokens da Bíblia Artística (`TOKENS_PALETA_BIBLIA_ARTISTICA_13`) e todas as camadas hi-bit.
  */
 export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opcoesDebug = {}) {
   const L = viewModel.orcamentoLayoutNativo;
+  const T = TOKENS_PALETA_BIBLIA_ARTISTICA_13;
   const dy = opcoesDebug.ignorarQuedaTouchdownNoCanvas === true ? 0 : viewModel.geometria.deslocamentoVerticalAtualPx;
   const comandosDesenho = [];
   const atlas = obterAtlasSpritesNativo();
@@ -827,12 +1238,37 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     }
   };
 
+  const desenharGradeSprite = (gradePixels, x0, y0, camada, escalaX = 1, escalaY = escalaX) => {
+    for (let py = 0; py < gradePixels.length; py += 1) {
+      const linha = gradePixels[py];
+      for (let px = 0; px < linha.length; px += 1) {
+        const ch = linha[px];
+        if (ch !== '.') {
+          registrar({
+            op: 'FILL_RECT',
+            camada,
+            x: x0 + px * escalaX,
+            y: y0 + py * escalaY,
+            largura: escalaX,
+            altura: escalaY,
+            cor: CORES_HEX_PALETA[ch],
+          });
+        }
+      }
+    }
+  };
+
   if (ctxCanvas2d) {
     ctxCanvas2d.imageSmoothingEnabled = false;
+    ctxCanvas2d.font = '8px monospace';
   }
 
-  // 1. Céu tempestuoso (0..330), linha d'água e oceano subaquático contínuo abaixo de LINHA_DAGUA_Y (330..540)
-  registrar({ op: 'FILL_RECT', camada: 'CEU', x: 0, y: 0, largura: 960, altura: L.LINHA_DAGUA_Y, cor: '#05080c' });
+  // 1. Céu tempestuoso abissal (0..330) com chuva estritamente acima da linha d'água, cristas de espuma e oceano subaquático contínuo (330..540)
+  registrar({ op: 'FILL_RECT', camada: 'CEU', x: 0, y: 0, largura: 960, altura: L.LINHA_DAGUA_Y, cor: T.BG_ABYSS });
+  for (let rx = 140; rx < 940; rx += 64) {
+    const ry = 48 + ((rx * 17) % 240);
+    registrar({ op: 'FILL_RECT', camada: 'CHUVA_NOTURNA', x: rx, y: ry, largura: 1, altura: 8, cor: T.HUD_RIM });
+  }
   registrar({
     op: 'FILL_RECT',
     camada: 'OCEANO_SUBMERSO',
@@ -840,31 +1276,40 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     y: L.LINHA_DAGUA_Y,
     largura: 960,
     altura: 540 - L.LINHA_DAGUA_Y,
-    cor: '#0a3a4a',
+    cor: '#0A2636',
   });
-  registrar({ op: 'FILL_RECT', camada: 'LINHA_DAGUA', x: 112, y: L.LINHA_DAGUA_Y, largura: 848, altura: 2, cor: '#00e5ff' });
+  registrar({ op: 'FILL_RECT', camada: 'LINHA_DAGUA', x: 112, y: L.LINHA_DAGUA_Y, largura: 848, altura: 2, cor: T.FOIL_CYAN });
+  for (let wx = 120; wx < 940; wx += 36) {
+    registrar({ op: 'FILL_RECT', camada: 'CRISTA_ONDA', x: wx, y: L.LINHA_DAGUA_Y - 1, largura: 10, altura: 2, cor: T.TXT_PRIMARY });
+  }
 
-  // 2. Barra Superior (y = 0..36): Casco, Barreira, Estado/Esquiva, 4 Moedas e Carga de Salto
+  // 2. Barra Superior (y = 0..36) com tokens HUD_PANEL, HUD_BORDER e HUD_RIM
   const rec = viewModel.barraSuperior.recursos;
-  registrar({ op: 'FILL_RECT', camada: 'HUD_TOPO', x: 0, y: 0, largura: 960, altura: L.HUD_TOPO_ALTURA, cor: '#0d1520' });
+  const rotuloTouchdownRecarga =
+    viewModel.barraSuperior.estadoFisico === '2_TOUCHDOWN'
+      ? `${viewModel.barraSuperior.rotuloEstado} - ESQUIVA 0% | RECARGA -25%`
+      : `${viewModel.barraSuperior.rotuloEstado} - ESQUIVA ${viewModel.barraSuperior.esquivaEfetivaPct}%`;
+  registrar({ op: 'FILL_RECT', camada: 'HUD_TOPO', x: 0, y: 0, largura: 960, altura: L.HUD_TOPO_ALTURA, cor: T.HUD_PANEL });
+  registrar({ op: 'FILL_RECT', camada: 'HUD_TOPO_RIM', x: 0, y: L.HUD_TOPO_ALTURA - 1, largura: 960, altura: 1, cor: T.HUD_RIM });
   registrar({
     op: 'TEXT',
     camada: 'HUD_TOPO',
     x: 12,
     y: 22,
-    cor: '#00e5ff',
-    texto: `CASCO ${viewModel.barraSuperior.hpCascoAtual}/${viewModel.barraSuperior.hpCascoMax} | BARREIRA ${viewModel.barraSuperior.barreiraBolhas} | ${viewModel.barraSuperior.rotuloEstado} - ESQUIVA ${viewModel.barraSuperior.esquivaEfetivaPct}%`,
+    cor: viewModel.barraSuperior.estadoFisico === '2_TOUCHDOWN' ? T.ALERT_RED : T.BIO_GREEN,
+    texto: `CASCO ${viewModel.barraSuperior.hpCascoAtual}/${viewModel.barraSuperior.hpCascoMax} | BARREIRA ${viewModel.barraSuperior.barreiraBolhas} | ${rotuloTouchdownRecarga}`,
   });
+  const sufixoSaltoTouchdown = viewModel.barraSuperior.estadoFisico === '1_NO_FOIL' ? '' : ' (X0.5)';
   registrar({
     op: 'TEXT',
     camada: 'HUD_TOPO_RECURSOS',
-    x: 520,
+    x: 540,
     y: 22,
-    cor: '#ebf8ff',
-    texto: `SUCATA ${rec.sucata} | BIO ${rec.biomassa} | COMB ${rec.combustivel} | MUN ${rec.municao} | SALTO ${viewModel.barraSuperior.cargaSaltoPct}%`,
+    cor: T.TXT_PRIMARY,
+    texto: `SUCATA ${rec.sucata} | BIO ${rec.biomassa} | COMB ${rec.combustivel} | MUN ${rec.municao} | SALTO ${viewModel.barraSuperior.cargaSaltoPct}%${sufixoSaltoTouchdown}`,
   });
 
-  // 3. Termômetro Vertical de Sustentação (x = 0..112, y = 36..440): Escala 300..100 kg, Barra de Peso, Linha Limite, Ghost Preview e Botões
+  // 3. Termômetro Vertical de Sustentação (x = 0..112, y = 36..440) sem transbordo de texto
   const term = viewModel.termometroSustentacao;
   registrar({
     op: 'FILL_RECT',
@@ -873,38 +1318,116 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     y: L.HUD_TOPO_ALTURA,
     largura: L.COLUNA_TERMOMETRO_LARGURA,
     altura: L.PAINEL_RODAPE_TOPO_Y - L.HUD_TOPO_ALTURA,
-    cor: '#0d1520',
+    cor: T.HUD_PANEL,
   });
-  const alturaEscalaPx = 240;
-  const baseEscalaY = 300;
+  registrar({
+    op: 'STROKE_RECT',
+    camada: 'TERMOMETRO_BORDA',
+    x: 0,
+    y: L.HUD_TOPO_ALTURA,
+    largura: L.COLUNA_TERMOMETRO_LARGURA,
+    altura: L.PAINEL_RODAPE_TOPO_Y - L.HUD_TOPO_ALTURA,
+    cor: T.HUD_BORDER,
+  });
+  const alturaEscalaPx = 220;
+  const baseEscalaY = 304;
+  const topoEscalaY = baseEscalaY - alturaEscalaPx;
   const alturaPesoPx = Math.max(0, Math.min(alturaEscalaPx, Math.round(((term.pesoTotalKg - 100) / 200) * alturaEscalaPx)));
   const yLinhaSustentacao = baseEscalaY - Math.max(0, Math.min(alturaEscalaPx, Math.round(((term.sustentacaoAtualKg - 100) / 200) * alturaEscalaPx)));
   registrar({
+    op: 'STROKE_RECT',
+    camada: 'TERMOMETRO_TUBO_ESCALA',
+    x: 16,
+    y: topoEscalaY,
+    largura: 30,
+    altura: alturaEscalaPx,
+    cor: T.HUD_BORDER,
+  });
+  registrar({
+    op: 'TEXT',
+    camada: 'TERMOMETRO_ESCALA_TOPO',
+    x: 2,
+    y: topoEscalaY + 6,
+    cor: T.TXT_DIM,
+    texto: '300',
+  });
+  registrar({
+    op: 'TEXT',
+    camada: 'TERMOMETRO_ESCALA_BASE',
+    x: 2,
+    y: baseEscalaY,
+    cor: T.TXT_DIM,
+    texto: '100',
+  });
+  registrar({
     op: 'FILL_RECT',
     camada: 'TERMOMETRO_BARRA_PESO',
-    x: 24,
+    x: 18,
     y: baseEscalaY - alturaPesoPx,
-    largura: 28,
+    largura: 26,
     altura: alturaPesoPx,
-    cor: term.emSobrepeso ? '#d83848' : '#00e5ff',
+    cor: term.emSobrepeso ? T.ALERT_RED : T.LIFT_AMBER,
   });
   registrar({
     op: 'FILL_RECT',
     camada: 'TERMOMETRO_LINHA_LIMITE',
-    x: 16,
+    x: 12,
     y: yLinhaSustentacao,
-    largura: 44,
+    largura: 38,
     altura: 2,
-    cor: '#38e078',
+    cor: T.FOIL_CYAN,
+  });
+  registrar({
+    op: 'TEXT',
+    camada: 'TERMOMETRO_MARCA_LIMITE',
+    x: 52,
+    y: yLinhaSustentacao + 3,
+    cor: T.FOIL_CYAN,
+    texto: `LIM ${term.sustentacaoAtualKg}`,
+  });
+  registrar({
+    op: 'TEXT',
+    camada: 'TERMOMETRO_MARCA_PESO',
+    x: 52,
+    y: baseEscalaY - alturaPesoPx + 3,
+    cor: term.emSobrepeso ? T.ALERT_RED : T.LIFT_AMBER,
+    texto: `PES ${term.pesoTotalKg}`,
   });
   registrar({
     op: 'TEXT',
     camada: 'TERMOMETRO_TEXTO',
-    x: 8,
-    y: 54,
-    cor: '#ebf8ff',
-    texto: `${term.pesoTotalKg} kg PESO / ${term.sustentacaoAtualKg} kg LIMITE`,
+    x: 6,
+    y: 50,
+    cor: term.emSobrepeso ? T.ALERT_RED : T.LIFT_AMBER,
+    texto: `${term.pesoTotalKg} KG PESO`,
   });
+  registrar({
+    op: 'TEXT',
+    camada: 'TERMOMETRO_TEXTO_LIMITE',
+    x: 6,
+    y: 60,
+    cor: T.FOIL_CYAN,
+    texto: `${term.sustentacaoAtualKg} KG LIMITE`,
+  });
+  if (term.alertaTouchdownAtivo) {
+    registrar({
+      op: 'STROKE_RECT',
+      camada: 'ALERTA_TOUCHDOWN_BOX',
+      x: 52,
+      y: 68,
+      largura: 54,
+      altura: 14,
+      cor: T.ALERT_RED,
+    });
+    registrar({
+      op: 'TEXT',
+      camada: 'ALERTA_TOUCHDOWN_TXT',
+      x: 56,
+      y: 77,
+      cor: T.ALERT_RED,
+      texto: 'TOUCHDOWN',
+    });
+  }
   if (term.ghostPreview?.ativo) {
     const yGhost =
       baseEscalaY -
@@ -918,19 +1441,27 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     registrar({
       op: 'FILL_RECT',
       camada: 'TERMOMETRO_GHOST_LINHA',
-      x: 16,
+      x: 12,
       y: yGhost,
-      largura: 44,
+      largura: 38,
       altura: 2,
-      cor: term.ghostPreview.causariaQuedaNoMar ? '#d83848' : '#ffb300',
+      cor: term.ghostPreview.causariaQuedaNoMar ? T.ALERT_RED : T.LIFT_AMBER,
     });
     registrar({
       op: 'TEXT',
       camada: 'TERMOMETRO_GHOST_PREVIEW',
-      x: 8,
+      x: 6,
+      y: 332,
+      cor: term.ghostPreview.causariaQuedaNoMar ? T.ALERT_RED : T.LIFT_AMBER,
+      texto: `GHOST ${term.ghostPreview.pesoProjetadoKg}/${term.ghostPreview.sustentacaoProjetadaKg}KG`,
+    });
+    registrar({
+      op: 'TEXT',
+      camada: 'TERMOMETRO_GHOST_STATUS',
+      x: 6,
       y: 342,
-      cor: term.ghostPreview.causariaQuedaNoMar ? '#d83848' : '#ffb300',
-      texto: `${term.ghostPreview.pesoProjetadoKg}/${term.ghostPreview.sustentacaoProjetadaKg} kg ${term.ghostPreview.rotuloFantasma}`,
+      cor: term.ghostPreview.causariaQuedaNoMar ? T.ALERT_RED : T.LIFT_AMBER,
+      texto: term.ghostPreview.rotuloFantasma,
     });
   }
   registrar({
@@ -940,14 +1471,14 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     y: 360,
     largura: 96,
     altura: 32,
-    cor: term.botaoMergulhoTatico.ativo ? '#ffb300' : '#00e5ff',
+    cor: term.botaoMergulhoTatico.ativo ? T.LIFT_AMBER : T.FOIL_CYAN,
   });
   registrar({
     op: 'TEXT',
     camada: 'BTN_MERGULHO_TATICO',
     x: 12,
     y: 380,
-    cor: '#ebf8ff',
+    cor: T.TXT_PRIMARY,
     texto: term.botaoMergulhoTatico.rotulo,
   });
   registrar({
@@ -957,62 +1488,96 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     y: 398,
     largura: 96,
     altura: 32,
-    cor: term.botaoDrenarTudo.travadoTouchdown ? '#d83848' : '#38e078',
+    cor: term.botaoDrenarTudo.travadoTouchdown ? T.ALERT_RED : T.BIO_GREEN,
   });
   registrar({
     op: 'TEXT',
     camada: 'TERMOMETRO',
     x: 12,
     y: 418,
-    cor: term.botaoDrenarTudo.travadoTouchdown ? '#d83848' : '#38e078',
+    cor: term.botaoDrenarTudo.travadoTouchdown ? T.ALERT_RED : T.BIO_GREEN,
     texto: term.botaoDrenarTudo.atalho,
   });
 
-  // 4. Bio-nave do jogador: Armas Dorsais (y = 136+dy), 8 Câmaras (2x4, 50x35 px), Válvulas Externas, Água, Quilha e Asa Submersa
+  // 4. Bio-nave do jogador: Casco Biológico Envolvente (R2), Armas Dorsais c/ Tendões, 8 Câmaras (2x4, 50x35 px), Bulbos Neurais, Válvulas Laranja, Cadeados, Quilha e Asa
   const baseGradeX = 240;
   const baseGradeY = 156 + dy;
+  const larguraBlocoCamaras = 2 * L.CAMARA_LARGURA + 3 * L.PAREDE_ESPESSURA;
+  const alturaBlocoCamaras = 4 * L.CAMARA_ALTURA + 5 * L.PAREDE_ESPESSURA;
   const parede2e3AndarY = baseGradeY + 2 * L.CAMARA_ALTURA + 2 * L.PAREDE_ESPESSURA;
   const specCarcaca = atlas.carcacas.find((c) => c.id === viewModel.idCarcaca) ?? atlas.carcacas[0];
+  const corCascoPrincipal = specCarcaca.temNevoaTinta ? T.ORGAN_VIOLET : T.HUD_PANEL;
+  const corVeiasCasco = specCarcaca.temPoliposBioluminescentes ? T.BIO_GREEN : T.FOIL_CYAN;
 
-  // Armas dorsais presas por tendões acima do 1º andar (y = baseGradeY - 20) com pixels do sprite do Atlas
+  // Casco orgânico vivo hi-bit (28x16 escalado 7x11 = 196x176 px) envolvendo o bloco 2x4 inteiro (sem ossos/caveiras, sem chapas rebitadas e sem adesivo colado na lateral)
+  desenharGradeSprite(specCarcaca.gradePixels, baseGradeX - 42, baseGradeY - 13, `CASCO_SILHUETA_PIXEL_${specCarcaca.id}`, 7, 11);
+  registrar({
+    op: 'FILL_RECT',
+    camada: `CASCO_INTERIOR_BLOCO_${specCarcaca.id}`,
+    x: baseGradeX - 2,
+    y: baseGradeY - 2,
+    largura: larguraBlocoCamaras + 4,
+    altura: alturaBlocoCamaras + 4,
+    cor: T.HUD_PANEL,
+  });
+
+  if (specCarcaca.temTuboAbordagemFrontal) {
+    registrar({
+      op: 'FILL_RECT',
+      camada: 'TUBO_ABORDAGEM_FRONTAL_CARNUDO',
+      x: baseGradeX + larguraBlocoCamaras + 34,
+      y: baseGradeY + 28,
+      largura: 22,
+      altura: 14,
+      cor: T.ALERT_RED,
+    });
+  }
+  if (specCarcaca.temNevoaTinta) {
+    registrar({
+      op: 'STROKE_RECT',
+      camada: 'NEVOA_TINTA_SOMBRA_ABISSAL',
+      x: baseGradeX - 46,
+      y: baseGradeY - 16,
+      largura: 204,
+      altura: 182,
+      cor: T.ORGAN_VIOLET,
+    });
+  }
+  if (specCarcaca.temPoliposBioluminescentes) {
+    registrar({
+      op: 'FILL_RECT',
+      camada: 'POLIPOS_BIOLUMINESCENTES_COLMEIA',
+      x: baseGradeX - 16,
+      y: baseGradeY - 15,
+      largura: larguraBlocoCamaras + 32,
+      altura: 4,
+      cor: T.BIO_GREEN,
+    });
+  }
+
+  // Armas dorsais humanas recuperadas amarradas por tendões musculares vermelhos diretamente sobre o dorso (sem fundo opaco matando a transparência)
   viewModel.caixaArmas.forEach((slot, idx) => {
     if (slot.ocupado) {
-      const xArmaDorsal = baseGradeX + 4 + idx * 26;
-      const yArmaDorsal = baseGradeY - L.ARMAS_DORSAIS_ALTURA;
-      registrar({
-        op: 'FILL_RECT',
-        camada: `ARMA_DORSAL_${idx}`,
-        x: xArmaDorsal,
-        y: yArmaDorsal,
-        largura: 22,
-        altura: L.ARMAS_DORSAIS_ALTURA - 2,
-        cor: '#8c96a4',
-      });
+      const xArmaDorsal = baseGradeX + 6 + idx * 28;
+      const yArmaDorsal = baseGradeY - 12;
       const armaAtlas = atlas.armas.find((a) => a.id === slot.chassiId || a.idCatalogo52 === slot.chassiId);
-      for (let py = 0; py < armaAtlas.gradePixels.length; py += 1) {
-        const linha = armaAtlas.gradePixels[py];
-        for (let px = 0; px < linha.length; px += 1) {
-          const ch = linha[px];
-          if (ch !== '.') {
-            registrar({
-              op: 'FILL_RECT',
-              camada: `ARMA_DORSAL_PIXEL_${idx}`,
-              x: xArmaDorsal + px,
-              y: yArmaDorsal + py,
-              largura: 1,
-              altura: 1,
-              cor: CORES_HEX_PALETA[ch],
-            });
-          }
-        }
-      }
+      desenharGradeSprite(armaAtlas.gradePixels, xArmaDorsal, yArmaDorsal, `ARMA_DORSAL_PIXEL_${idx}`);
     }
   });
 
-  // Mastro vertical da quilha + Asa hidrofólio horizontal submersa (largura 88 px na Couraça-Limiar, 44 px nas demais)
+  // Mastro vertical da quilha biomineralizada + tendões vermelhos na raiz + Asa hidrofólio horizontal submersa (88 px na Couraça-Limiar, 44 px nas demais)
   const centroQuilhaX = baseGradeX + L.CAMARA_LARGURA + L.PAREDE_ESPESSURA;
-  const baseCascoY = baseGradeY + 4 * L.CAMARA_ALTURA + 5 * L.PAREDE_ESPESSURA;
-  const asaY = Math.max(L.LINHA_DAGUA_Y + 28, baseCascoY + 38);
+  const baseCascoY = baseGradeY + alturaBlocoCamaras;
+  const asaY = Math.min(426, Math.max(L.LINHA_DAGUA_Y + 28, baseCascoY + 18));
+  registrar({
+    op: 'FILL_RECT',
+    camada: 'TENDOES_RAIZ_QUILHA',
+    x: centroQuilhaX - 8,
+    y: baseCascoY - 2,
+    largura: 16,
+    altura: 6,
+    cor: T.ALERT_RED,
+  });
   registrar({
     op: 'FILL_RECT',
     camada: 'MASTRO_QUILHA',
@@ -1020,7 +1585,7 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     y: baseCascoY,
     largura: 8,
     altura: asaY - baseCascoY,
-    cor: '#0d1520',
+    cor: T.HUD_BORDER,
   });
   registrar({
     op: 'FILL_RECT',
@@ -1029,16 +1594,26 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     y: asaY,
     largura: specCarcaca.larguraAsaSubmersaPx,
     altura: 8,
-    cor: '#00e5ff',
+    cor: T.FOIL_CYAN,
   });
 
   const spritesDesenhados = [];
+  const SIGLAS_CAMARAS = Object.freeze({
+    1: '1:ART',
+    2: '2:CTX',
+    3: '3:BRQ',
+    4: '4:BAR',
+    5: '5:SIF',
+    6: '6:MST',
+    7: '7:ENX-A',
+    8: '8:ENX-B',
+  });
 
   for (const cam of viewModel.camaras) {
     const xCam = baseGradeX + L.PAREDE_ESPESSURA + cam.coluna * (L.CAMARA_LARGURA + L.PAREDE_ESPESSURA);
     const yCam = baseGradeY + L.PAREDE_ESPESSURA + cam.andar * (L.CAMARA_ALTURA + L.PAREDE_ESPESSURA);
 
-    // Água interna da câmara (roxa #6c2aa8 se hipóxia < 20% O2; ciano-escuro #0a3a4a normal)
+    // Água interna da câmara (roxa #5B2A86 se hipóxia < 20% O2; ciano-abissal normal)
     const alturaAguaPx = Math.round((Math.min(100, Math.max(0, cam.nivelAguaPct)) / 100) * (L.CAMARA_ALTURA - 2));
     if (alturaAguaPx > 0) {
       registrar({
@@ -1048,9 +1623,13 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
         y: yCam + L.CAMARA_ALTURA - 1 - alturaAguaPx,
         largura: L.CAMARA_LARGURA - 2,
         altura: alturaAguaPx,
-        cor: cam.oxigenioPct < 20 ? '#6c2aa8' : '#0a3a4a',
+        cor: cam.oxigenioPct < 20 ? T.ORGAN_VIOLET : '#0A3A4A',
       });
     }
+
+    // Bulbo neural luminoso no topo interno de cada câmara (Regra R1)
+    desenharGradeSprite(GRADES_SPRITES_HIBITS_ARTESANAIS.BULBO_NEURAL, xCam + 38, yCam + 2, `BULBO_NEURAL_CAMARA_${cam.id}`);
+
     if (cam.curtoCircuitoAtivo) {
       registrar({
         op: 'STROKE_RECT',
@@ -1059,11 +1638,11 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
         y: yCam + 2,
         largura: L.CAMARA_LARGURA - 4,
         altura: L.CAMARA_ALTURA - 4,
-        cor: '#ffb300',
+        cor: T.SPARK_YELLOW,
       });
     }
 
-    // Parede da câmara (50x35 px nativos)
+    // Parede da câmara (50x35 px nativos) e rótulo identificador
     registrar({
       op: 'STROKE_RECT',
       camada: `CAMARA_${cam.id}`,
@@ -1071,10 +1650,34 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       y: yCam,
       largura: L.CAMARA_LARGURA,
       altura: L.CAMARA_ALTURA,
-      cor: cam.brechaAtiva ? '#d83848' : '#00e5ff',
+      cor: cam.brechaAtiva ? T.ALERT_RED : T.FOIL_CYAN,
+    });
+    if (cam.brechaAtiva) {
+      registrar({
+        op: 'FILL_RECT',
+        camada: `ROMBO_PAREDE_CAMARA_${cam.id}`,
+        x: xCam + L.CAMARA_LARGURA - 3,
+        y: yCam + 12,
+        largura: 3,
+        altura: 12,
+        cor: T.BG_ABYSS,
+      });
+    }
+    registrar({
+      op: 'TEXT',
+      camada: `ROTULO_CAMARA_${cam.id}`,
+      x: xCam + 3,
+      y: yCam + 8,
+      cor: T.TXT_PRIMARY,
+      texto: SIGLAS_CAMARAS[cam.id],
     });
 
-    // Válvula externa e ícone de cadeado hidrostático em Touchdown
+    // Válvula orgânica esfinctérica laranja-coral desenhada APÓS a parede da câmara para não ser cortada (Regra R1)
+    if (cam.coluna === 0) {
+      desenharGradeSprite(GRADES_SPRITES_HIBITS_ARTESANAIS.VALVULA_ESFINCTER, xCam + L.CAMARA_LARGURA - 2, yCam + 13, `VALVULA_INTERNA_${cam.id}`);
+    }
+
+    // Válvula externa e sprite de Cadeado Hidrostático Dourado em Touchdown (F2)
     const xValvula = cam.coluna === 0 ? xCam - 12 : xCam + L.CAMARA_LARGURA + 2;
     const yValvula = yCam + 10;
     registrar({
@@ -1084,10 +1687,13 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       y: yValvula,
       largura: 10,
       altura: 15,
-      cor: cam.iconeCadeadoVisivel ? '#d83848' : cam.valvulaExternaAberta ? '#38e078' : '#ff7020',
+      cor: cam.iconeCadeadoVisivel ? T.ALERT_RED : cam.valvulaExternaAberta ? T.BIO_GREEN : T.LIFT_AMBER,
     });
+    if (cam.iconeCadeadoVisivel) {
+      desenharGradeSprite(GRADES_SPRITES_HIBITS_ARTESANAIS.CADEADO_HIDROSTATICO, xValvula + 1, yValvula + 3, `CADEADO_PIXEL_${cam.id}`);
+    }
 
-    // Desenho pixel-a-pixel dos sprites dos tripulantes presentes (Slot 0 à esquerda, Slot 1 à direita sem sobreposição)
+    // Desenho pixel-a-pixel dos sprites hi-bit dos tripulantes presentes (Slot 0 à esquerda, Slot 1 à direita sem sobreposição)
     cam.tripulantesPresentes.forEach((trip, slotIdx) => {
       const idSprite =
         trip.especie === 'BAIACU'
@@ -1096,24 +1702,19 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       const sprite = rasterizarSpriteRgba('aliados', idSprite);
       const itemAtlas = atlas.aliados.find((a) => a.id === idSprite);
       const xSprite = xCam + 4 + slotIdx * 22;
-      const ySprite = yCam + 10;
+      const ySprite = yCam + 12;
 
-      for (let py = 0; py < itemAtlas.gradePixels.length; py += 1) {
-        const linha = itemAtlas.gradePixels[py];
-        for (let px = 0; px < linha.length; px += 1) {
-          const ch = linha[px];
-          if (ch !== '.') {
-            registrar({
-              op: 'FILL_RECT',
-              camada: `SPRITE_PIXEL_${trip.id}`,
-              x: xSprite + px,
-              y: ySprite + py,
-              largura: 1,
-              altura: 1,
-              cor: CORES_HEX_PALETA[ch],
-            });
-          }
-        }
+      desenharGradeSprite(itemAtlas.gradePixels, xSprite, ySprite, `SPRITE_PIXEL_${trip.id}`);
+      if (trip.especie === 'POLVO' && (cam.brechaAtiva || cam.barrasIntegridade < cam.barrasNivelMax)) {
+        registrar({
+          op: 'FILL_RECT',
+          camada: `FAISCA_REPARO_POLVO_${cam.id}`,
+          x: xSprite + 16,
+          y: ySprite + 2,
+          largura: 3,
+          altura: 3,
+          cor: T.SPARK_YELLOW,
+        });
       }
 
       spritesDesenhados.push({
@@ -1126,27 +1727,116 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
         hashFnv1aRgba: sprite.hashFnv1aRgba,
       });
     });
+
+    // Desenho de invasores presentes na câmara (MARINHEIRO, MERGULHADOR ou PARASITA de atlas.invasores)
+    (cam.invasoresPresentes ?? []).forEach((inv, invIdx) => {
+      const invAtlas = atlas.invasores.find((i) => i.id === inv.especie) ?? atlas.invasores[0];
+      desenharGradeSprite(invAtlas.gradePixels, xCam + 18 + invIdx * 12, yCam + 12, `INVASOR_PIXEL_${inv.id}`);
+    });
   }
 
-  // 5. Painel do Alvo (x = 600..960) alinhado com obterMapaHitboxesNativo (x = 640 + col*110, y = 160 + row*70) e Lei L3
+  // 5. Inimigo Assentado na Linha d'Água (Regra R2.3: NUNCA voando no ar! Salas 1 e 2 acima de 330; Salas 3 e 4 submersas abaixo de 330)
+  let inimigoAssentadoNaLinhaDagua = null;
+  const ehMonstroAlvo = String(viewModel.painelAlvo.classeAlvo ?? '').includes('MONSTRO');
   if (viewModel.painelAlvo.presente) {
+    const idSpriteInimigo = ehMonstroAlvo ? 'TEUTHIS_COURACADA' : 'LANCHA_PATRULHEIRA';
+    const gradeInimigo = GRADES_SPRITES_HIBITS_ARTESANAIS[idSpriteInimigo];
+    const escalaInimigoX = 8;
+    const escalaInimigoY = ehMonstroAlvo ? 11 : 15;
+    const linhaDaguaRelativaSprite = (ehMonstroAlvo ? 7 : 6) * escalaInimigoY;
+    const yTopoInimigo = L.LINHA_DAGUA_Y - linhaDaguaRelativaSprite;
+    const yBaseInimigo = yTopoInimigo + gradeInimigo.length * escalaInimigoY;
+    const xInimigo = 592;
+
+    // Sprite hi-bit completo do Barco/Monstro (288 px de largura) assentado na linha d'água envolvendo as 4 salas/órgãos (zero miniatura duplicada!)
+    desenharGradeSprite(gradeInimigo, xInimigo, yTopoInimigo, 'INIMIGO_CORPO_PIXEL', escalaInimigoX, escalaInimigoY);
+
     registrar({
       op: 'TEXT',
       camada: 'PAINEL_ALVO_CABECALHO',
-      x: 640,
-      y: 140,
-      cor: '#d83848',
-      texto: `${viewModel.painelAlvo.nomeAlvo} | CASCO ${viewModel.painelAlvo.hpCascoAtual}/${viewModel.painelAlvo.hpCascoMax} | ESQUIVA ${viewModel.painelAlvo.esquivaPct}%`,
+      x: 616,
+      y: 232,
+      cor: T.ALERT_RED,
+      texto: `${viewModel.painelAlvo.nomeAlvo} | CASCO ${viewModel.painelAlvo.hpCascoAtual}/${viewModel.painelAlvo.hpCascoMax} | ESQUIVA ${viewModel.painelAlvo.esquivaPct}% | BARREIRA ${viewModel.painelAlvo.barreiraBolhas}`,
     });
+
+    if (ehMonstroAlvo) {
+      registrar({
+        op: 'FILL_RECT',
+        camada: 'ESPUMA_MONSTRO_LINHA_DAGUA',
+        x: 590,
+        y: L.LINHA_DAGUA_Y - 3,
+        largura: 276,
+        altura: 4,
+        cor: T.TXT_PRIMARY,
+      });
+    }
+
+    // Arco vermelho pontilhado de mira inimiga (F1: Torreta -> Câmara 5 SIFÃO com "3.2S"; F3: Bico Quitinso -> Mastro com "MIRANDO: MASTRO")
+    const yArcoMira = ehMonstroAlvo ? L.LINHA_DAGUA_Y - 6 : L.LINHA_DAGUA_Y - 40;
+    for (let ax = 356; ax <= 630; ax += 20) {
+      registrar({
+        op: 'FILL_RECT',
+        camada: 'ARCO_MIRA_INIMIGO',
+        x: ax,
+        y: yArcoMira,
+        largura: 6,
+        altura: 2,
+        cor: T.ALERT_RED,
+      });
+    }
+    registrar({
+      op: 'TEXT',
+      camada: 'ROTULO_MIRA_INIMIGO',
+      x: 440,
+      y: yArcoMira - 4,
+      cor: T.ALERT_RED,
+      texto: ehMonstroAlvo ? 'MIRANDO: MASTRO (8S)' : 'MIRA -> 5:SIF (3.2S)',
+    });
+
+    inimigoAssentadoNaLinhaDagua = {
+      idSprite: idSpriteInimigo,
+      classeAlvo: viewModel.painelAlvo.classeAlvo,
+      yTopoPx: yTopoInimigo,
+      yBasePx: yBaseInimigo,
+      linhaDaguaY: L.LINHA_DAGUA_Y,
+      parteSuperiorAcimaDagua: yTopoInimigo < L.LINHA_DAGUA_Y,
+      parteInferiorSubmersa: yBaseInimigo > L.LINHA_DAGUA_Y,
+    };
   }
+
   const textosPainelAlvo = [];
   for (const [idx, sala] of viewModel.painelAlvo.salasInspecionadas.entries()) {
     const colAlvo = idx % 2;
     const linAlvo = Math.floor(idx / 2);
     const xSala = 640 + colAlvo * 110;
-    const ySala = 160 + linAlvo * 70;
+    const ySala = linAlvo === 0 ? 270 : 334;
     const textoSala = `${sala.salaId}: ${sala.textoTripulacao}`;
     textosPainelAlvo.push(textoSala);
+
+    registrar({
+      op: 'FILL_RECT',
+      camada: `FUNDO_SALA_ALVO_${sala.salaId}`,
+      x: xSala,
+      y: ySala,
+      largura: 96,
+      altura: 56,
+      cor: ehMonstroAlvo ? '#180B26' : T.HUD_PANEL,
+    });
+
+    if (!ehMonstroAlvo && Number(sala.aguaKg ?? 0) > 0) {
+      const hAguaInimigo = Math.min(52, Math.max(8, Math.round((Number(sala.aguaKg) / 12.5) * 52)));
+      registrar({
+        op: 'FILL_RECT',
+        camada: `AGUA_SALA_ALVO_${sala.salaId}`,
+        x: xSala + 1,
+        y: ySala + 55 - hAguaInimigo,
+        largura: 94,
+        altura: hAguaInimigo,
+        cor: '#0A3A4A',
+      });
+    }
+
     registrar({
       op: 'STROKE_RECT',
       camada: `SALA_ALVO_${sala.salaId}`,
@@ -1154,19 +1844,61 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       y: ySala,
       largura: 96,
       altura: 56,
-      cor: sala.canalPermissao === 'VISIVEL' ? '#00e5ff' : '#ffb300',
+      cor:
+        ehMonstroAlvo && sala.salaId === 2
+          ? T.ALERT_RED
+          : sala.canalPermissao === 'VISIVEL'
+            ? T.FOIL_CYAN
+            : T.LIFT_AMBER,
     });
+    const nomeCurtoSala = String(sala.nomeSala ?? `SALA_${sala.salaId}`).slice(0, 12);
+    registrar({
+      op: 'TEXT',
+      camada: `NOME_SALA_ALVO_${sala.salaId}`,
+      x: xSala + 4,
+      y: ySala + 10,
+      cor: T.FOIL_CYAN,
+      texto: `${sala.salaId}:${nomeCurtoSala} ${sala.barrasIntegridade ?? 1}/${sala.barrasMax ?? 1}`,
+    });
+    const rotuloDetalheSala =
+      sala.canalPermissao !== 'VISIVEL'
+        ? sala.textoTripulacao
+        : ehMonstroAlvo
+          ? sala.salaId === 3
+            ? 'ESQUIVA 20%'
+            : sala.tripulantesVisiveis.length > 0
+              ? 'ANTICORPO ATIVO'
+              : 'ORGAO VITAL'
+          : sala.textoTripulacao;
     registrar({
       op: 'TEXT',
       camada: 'PAINEL_ALVO_L3',
-      x: xSala + 6,
-      y: ySala + 28,
-      cor: sala.canalPermissao === 'VISIVEL' ? '#ebf8ff' : '#ffb300',
-      texto: textoSala,
+      x: xSala + 4,
+      y: ySala + 22,
+      cor: sala.canalPermissao === 'VISIVEL' ? T.TXT_PRIMARY : T.LIFT_AMBER,
+      texto: rotuloDetalheSala,
     });
+
+    if (sala.canalPermissao === 'VISIVEL' && Array.isArray(sala.tripulantesVisiveis)) {
+      sala.tripulantesVisiveis.forEach((tripInimigo, tIdx) => {
+        const espInimigo = tripInimigo.especie ?? (ehMonstroAlvo ? 'PARASITA' : 'MARINHEIRO');
+        const invAtlas = atlas.invasores.find((i) => i.id === espInimigo) ?? atlas.invasores[0];
+        desenharGradeSprite(invAtlas.gradePixels, xSala + 8 + tIdx * 18, ySala + 30, `INIMIGO_SALA_PIXEL_${sala.salaId}_${tIdx}`);
+      });
+    }
   }
 
-  // 6. Rodapé Completo (y = 440..540): Coração Bio-Elétrico, 8 Sistemas, 4 Slots de Armas c/ Soquetes e Cartões de Tripulação
+  // Camada Frontal da Linha d'Água (Z-order acima dos cascos): corta visivelmente entre o 2º e o 3º andar em Touchdown (F2) e entre as salas secas e submersas do inimigo (F1/F2/F3)
+  registrar({ op: 'FILL_RECT', camada: 'LINHA_DAGUA_FRENTE', x: 112, y: L.LINHA_DAGUA_Y, largura: 848, altura: 2, cor: T.FOIL_CYAN });
+  if (dy > 0) {
+    registrar({ op: 'FILL_RECT', camada: 'ESPUMA_TOUCHDOWN_ESQ', x: baseGradeX - 44, y: L.LINHA_DAGUA_Y - 4, largura: 22, altura: 6, cor: T.TXT_PRIMARY });
+    registrar({ op: 'FILL_RECT', camada: 'ESPUMA_TOUCHDOWN_DIR', x: baseGradeX + larguraBlocoCamaras + 16, y: L.LINHA_DAGUA_Y - 4, largura: 22, altura: 6, cor: T.TXT_PRIMARY });
+    registrar({ op: 'FILL_RECT', camada: 'EXPLOSAO_RAIZ_QUILHA_TOUCHDOWN', x: centroQuilhaX - 12, y: baseCascoY + 2, largura: 24, altura: 10, cor: T.LIFT_AMBER });
+  } else {
+    registrar({ op: 'FILL_RECT', camada: 'SPRAY_QUILHA_FOIL', x: centroQuilhaX - 10, y: L.LINHA_DAGUA_Y - 2, largura: 20, altura: 4, cor: T.FOIL_CYAN });
+  }
+
+  // 6. Rodapé Completo (y = 440..540): Coração Bio-Elétrico Marinho (Regra R6), 8 Sistemas c/ Pips, 4 Slots de Armas c/ Soquetes e Órgãos, e Cartões de Tripulação
   registrar({
     op: 'FILL_RECT',
     camada: 'RODAPE',
@@ -1174,16 +1906,46 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     y: L.PAINEL_RODAPE_TOPO_Y,
     largura: 960,
     altura: 540 - L.PAINEL_RODAPE_TOPO_Y,
-    cor: '#0d1520',
+    cor: T.HUD_PANEL,
   });
+  registrar({
+    op: 'FILL_RECT',
+    camada: 'RODAPE_RIM',
+    x: 0,
+    y: L.PAINEL_RODAPE_TOPO_Y,
+    largura: 960,
+    altura: 1,
+    cor: T.HUD_RIM,
+  });
+  desenharGradeSprite(GRADES_SPRITES_HIBITS_ARTESANAIS.CORACAO_BIO_ELETRICO, 8, 474, 'CORACAO_BIO_ELETRICO_PIXEL');
   registrar({
     op: 'TEXT',
     camada: 'RODAPE_REATOR',
-    x: 8,
-    y: 468,
-    cor: '#38e078',
-    texto: `CORAÇÃO ${viewModel.reatorCoracaoBioEletrico.barrasDisponiveis}/${viewModel.reatorCoracaoBioEletrico.barrasTotais} LIVRES`,
+    x: 6,
+    y: 456,
+    cor: T.BIO_GREEN,
+    texto: 'CORACAO BIO-ELETR.',
   });
+  const livresExibidos = viewModel.reatorCoracaoBioEletrico.barrasLivres ?? viewModel.reatorCoracaoBioEletrico.barrasDisponiveis;
+  registrar({
+    op: 'TEXT',
+    camada: 'RODAPE_REATOR_LIVRES',
+    x: 6,
+    y: 466,
+    cor: T.TXT_PRIMARY,
+    texto: `${livresExibidos}/${viewModel.reatorCoracaoBioEletrico.barrasTotais} LIVRES`,
+  });
+  for (let b = 0; b < viewModel.reatorCoracaoBioEletrico.barrasTotais; b += 1) {
+    registrar({
+      op: 'FILL_RECT',
+      camada: `REATOR_PIP_${b}`,
+      x: 34 + (b % 4) * 18,
+      y: 476 + Math.floor(b / 4) * 8,
+      largura: 14,
+      altura: 5,
+      cor: T.BIO_GREEN,
+    });
+  }
 
   viewModel.caixaSistemas.forEach((sys, idx) => {
     const xSys = 120 + idx * 38;
@@ -1194,16 +1956,44 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       y: 448,
       largura: 34,
       altura: 80,
-      cor: sys.instalado ? '#00e5ff' : '#8c96a4',
+      cor: sys.instalado ? T.FOIL_CYAN : T.TXT_DIM,
     });
+    for (let b = 0; b < sys.barrasNivelMax; b += 1) {
+      const yPip = 504 - b * 9;
+      const corPip =
+        b >= sys.barrasIntegridade
+          ? T.ALERT_RED
+          : b < sys.barrasEnergiaAlocada
+            ? T.BIO_GREEN
+            : T.HUD_BORDER;
+      registrar({
+        op: 'FILL_RECT',
+        camada: `SISTEMA_PIP_${sys.sigla}_${b}`,
+        x: xSys + 5,
+        y: yPip,
+        largura: 24,
+        altura: 6,
+        cor: corPip,
+      });
+    }
     registrar({
       op: 'TEXT',
       camada: `SISTEMA_${sys.sigla}`,
-      x: xSys + 4,
-      y: 520,
-      cor: '#ebf8ff',
+      x: xSys + 3,
+      y: 522,
+      cor: T.TXT_PRIMARY,
       texto: `${sys.sigla} ${sys.barrasEnergiaAlocada}/${sys.barrasIntegridade}`,
     });
+  });
+
+  const NOMES_CURTOS_ARMAS = Object.freeze({
+    EMISSOR_ACUSTICO_I: 'ACUSTICO',
+    RAJADA_HIDROPNEUMATICA_II: 'RAJADA',
+    CANHAO_ARPAO_CABO: 'ARPAO',
+    DISPERSOR_ESTILHACOS: 'FLAK',
+    CORTADOR_TERMICO_PLASMA: 'BEAM',
+    LANCADOR_TORPEDO_ABISSAL: 'TORPEDO',
+    MORTEIRO_ESPOROS: 'MORTEIRO',
   });
 
   viewModel.caixaArmas.forEach((slot, idx) => {
@@ -1215,17 +2005,28 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       y: 448,
       largura: 54,
       altura: 80,
-      cor: slot.ocupado ? '#ffb300' : '#8c96a4',
+      cor: slot.ocupado ? T.LIFT_AMBER : T.TXT_DIM,
     });
+    const rotuloArmaCurto = slot.ocupado
+      ? `${idx + 1}:${NOMES_CURTOS_ARMAS[slot.chassiId] ?? slot.chassiId.slice(0, 7)}`
+      : `${idx + 1}:VAZIO`;
     registrar({
       op: 'TEXT',
       camada: `ARMA_SLOT_${idx}`,
-      x: xSlot + 4,
-      y: 468,
-      cor: '#ebf8ff',
-      texto: slot.ocupado ? `${idx + 1}:${slot.chassiId.slice(0, 6)} (${slot.orgaosEnxertados.length}/${slot.soquetesMax})` : `${idx + 1}:VAZIO`,
+      x: xSlot + 3,
+      y: 460,
+      cor: T.TXT_PRIMARY,
+      texto: rotuloArmaCurto,
     });
     if (slot.ocupado) {
+      registrar({
+        op: 'TEXT',
+        camada: `ARMA_SLOT_SOQ_${idx}`,
+        x: xSlot + 3,
+        y: 470,
+        cor: T.FOIL_CYAN,
+        texto: `SOQ ${slot.orgaosEnxertados.length}/${slot.soquetesMax}`,
+      });
       registrar({
         op: 'FILL_RECT',
         camada: `ARMA_RECARGA_${idx}`,
@@ -1233,23 +2034,31 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
         y: 480,
         largura: Math.min(46, Math.round((slot.progressoRecargaSeg / 10) * 46)),
         altura: 6,
-        cor: '#38e078',
+        cor: T.BIO_GREEN,
       });
       for (let s = 0; s < slot.soquetesMax; s += 1) {
+        const xSoq = xSlot + 4 + s * 16;
+        const ySoq = 494;
         registrar({
           op: 'STROKE_RECT',
           camada: `ARMA_SOQUETE_${idx}_${s}`,
-          x: xSlot + 4 + s * 14,
-          y: 494,
-          largura: 10,
-          altura: 10,
-          cor: s < slot.orgaosEnxertados.length ? '#38e078' : '#8c96a4',
+          x: xSoq,
+          y: ySoq,
+          largura: 12,
+          altura: 12,
+          cor: s < slot.orgaosEnxertados.length ? T.BIO_GREEN : T.TXT_DIM,
         });
+        if (s < slot.orgaosEnxertados.length) {
+          const idOrgao = slot.orgaosEnxertados[s];
+          const orgaoAtlas =
+            atlas.orgaos.find((o) => o.id === idOrgao || o.idCatalogo52 === idOrgao) ?? atlas.orgaos[0];
+          desenharGradeSprite(orgaoAtlas.gradePixels, xSoq + 1, ySoq + 1, `ORGAO_ENXERTADO_PIXEL_${idx}_${s}`);
+        }
       }
     }
   });
 
-  // Cartões de Tripulação no Rodapé Direito (x = 680 + idx * 45, y = 448, largura = 42, altura = 80), alinhados com obterMapaHitboxesNativo
+  // Cartões de Tripulação no Rodapé Direito (x = 680 + idx * 45, y = 448, largura = 42, altura = 80), sem transbordo e com sprite
   const todosTripulantes = viewModel.camaras.flatMap((c) => c.tripulantesPresentes);
   todosTripulantes.forEach((trip, idx) => {
     const xCard = 680 + idx * 45;
@@ -1260,16 +2069,30 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       y: 448,
       largura: 42,
       altura: 80,
-      cor: trip.inflado ? '#ffb300' : '#00e5ff',
+      cor: trip.inflado ? T.LIFT_AMBER : T.FOIL_CYAN,
     });
     registrar({
       op: 'TEXT',
       camada: `TRIPULANTE_CARD_${trip.id}`,
-      x: xCard + 2,
-      y: 468,
-      cor: '#ebf8ff',
-      texto: `${trip.especie.slice(0, 3)} ${trip.hpAtual}/${trip.hpMax}`,
+      x: xCard + 3,
+      y: 460,
+      cor: T.TXT_PRIMARY,
+      texto: trip.especie.slice(0, 6),
     });
+    registrar({
+      op: 'TEXT',
+      camada: `TRIPULANTE_CARD_HP_${trip.id}`,
+      x: xCard + 3,
+      y: 470,
+      cor: T.BIO_GREEN,
+      texto: `${trip.hpAtual}/${trip.hpMax}`,
+    });
+    const idSpriteCard =
+      trip.especie === 'BAIACU'
+        ? (trip.inflado ? 'BAIACU_INFLADO' : 'BAIACU_NORMAL')
+        : trip.especie;
+    const itemCardAtlas = atlas.aliados.find((a) => a.id === idSpriteCard);
+    desenharGradeSprite(itemCardAtlas.gradePixels, xCard + 11, 482, `TRIPULANTE_CARD_PIXEL_${trip.id}`);
   });
 
   return clonarProfundoCongelado({
@@ -1279,11 +2102,91 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     paredeEntre2e3AndarY: parede2e3AndarY,
     linhaDaguaY: L.LINHA_DAGUA_Y,
     larguraAsaSubmersaDesenhadaPx: specCarcaca.larguraAsaSubmersaPx,
+    inimigoAssentadoNaLinhaDagua,
     totalPrimitivasDesenhadas: comandosDesenho.length,
     spritesDesenhados,
     textosPainelAlvo,
     comandosDesenho,
   });
+}
+
+function converterHexParaRgb(hex) {
+  const limpo = String(hex).replace('#', '');
+  const n = Number.parseInt(limpo, 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+}
+
+const FONTE_PIXEL_3X5 = Object.freeze({
+  A: 0b010101111101101, B: 0b110101110101110, C: 0b011100100100011, D: 0b110101101101110,
+  E: 0b111100110100111, F: 0b111100110100100, G: 0b011100101101011, H: 0b101101111101101,
+  I: 0b111010010010111, J: 0b001001001101010, K: 0b101101110101101, L: 0b100100100100111,
+  M: 0b101111111101101, N: 0b101111111111101, O: 0b010101101101010, P: 0b110101110100100,
+  Q: 0b010101101111011, R: 0b110101110101101, S: 0b011100010001110, T: 0b111010010010010,
+  U: 0b101101101101111, V: 0b101101101101010, W: 0b101101111111101, X: 0b101101010101101,
+  Y: 0b101101010010010, Z: 0b111001010100111,
+  '0': 0b111101101101111, '1': 0b010110010010111, '2': 0b111001111100111, '3': 0b111001111001111,
+  '4': 0b101101111001001, '5': 0b111100111001111, '6': 0b111100111101111, '7': 0b111001001010010,
+  '8': 0b111101111101111, '9': 0b111101111001111,
+  ':': 0b000010000010000, '/': 0b001001010100100, '-': 0b000000111000000, '%': 0b101001010100101,
+  '[': 0b110100100100110, ']': 0b011001001001011, '(': 0b010100100100010, ')': 0b010001001001010,
+  '.': 0b000000000000010, '|': 0b010010010010010, '_': 0b000000000000111,
+});
+
+/**
+ * Rasteriza o quadro completo 960x540 de `renderizarViewModelNoCanvas2d(viewModel)` num Buffer PNG real sem perdas.
+ */
+export function renderizarCenaCanvasParaPngBuffer(viewModel) {
+  const frame = renderizarViewModelNoCanvas2d(viewModel, null);
+  const W = 960;
+  const H = 540;
+  const rgba = Buffer.alloc(W * H * 4);
+
+  const pintar = (x, y, r, g, b) => {
+    if (x < 0 || x >= W || y < 0 || y >= H) return;
+    const i = (y * W + x) * 4;
+    rgba[i] = r;
+    rgba[i + 1] = g;
+    rgba[i + 2] = b;
+    rgba[i + 3] = 255;
+  };
+
+  for (const cmd of frame.comandosDesenho) {
+    const [r, g, b] = converterHexParaRgb(cmd.cor);
+    if (cmd.op === 'FILL_RECT') {
+      for (let y = cmd.y; y < cmd.y + cmd.altura; y += 1) {
+        for (let x = cmd.x; x < cmd.x + cmd.largura; x += 1) {
+          pintar(x, y, r, g, b);
+        }
+      }
+    } else if (cmd.op === 'STROKE_RECT') {
+      for (let x = cmd.x; x < cmd.x + cmd.largura; x += 1) {
+        pintar(x, cmd.y, r, g, b);
+        pintar(x, cmd.y + cmd.altura - 1, r, g, b);
+      }
+      for (let y = cmd.y; y < cmd.y + cmd.altura; y += 1) {
+        pintar(cmd.x, y, r, g, b);
+        pintar(cmd.x + cmd.largura - 1, y, r, g, b);
+      }
+    } else {
+      const txtNorm = String(cmd.texto)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase();
+      for (let c = 0; c < txtNorm.length; c += 1) {
+        const mascara = FONTE_PIXEL_3X5[txtNorm[c]] ?? 0;
+        for (let lin = 0; lin < 5; lin += 1) {
+          for (let col = 0; col < 3; col += 1) {
+            const bit = 14 - (lin * 3 + col);
+            if ((mascara >> bit) & 1) {
+              pintar(cmd.x + c * 4 + col, cmd.y - 4 + lin, r, g, b);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return codificarBufferRgbaParaPng(W, H, rgba);
 }
 
 /**
@@ -1346,6 +2249,7 @@ export function gerarCodigoJsClienteBiofoil() {
   function desenhar(vm, frameCanvas) {
     if (!vm || !frameCanvas || !Array.isArray(frameCanvas.comandosDesenho)) return;
     ctx.imageSmoothingEnabled = false;
+    ctx.font = '8px monospace';
     for (const cmd of frameCanvas.comandosDesenho) {
       if (cmd.op === 'FILL_RECT') {
         ctx.fillStyle = cmd.cor;
@@ -1519,7 +2423,12 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
 
     const urlLimpa = String(req.url ?? '/').split('?')[0];
 
-    if (urlLimpa === '/' || urlLimpa === '/cliente.js' || urlLimpa === '/api/estado') {
+    if (
+      urlLimpa === '/' ||
+      urlLimpa === '/cliente.js' ||
+      urlLimpa === '/atlas-hibits.png' ||
+      urlLimpa === '/api/estado'
+    ) {
       if (req.method !== 'GET') {
         res.writeHead(405, { ...cabecalhosSeguranca, Allow: 'GET', 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ erro: 'METODO_NAO_PERMITIDO' }));
@@ -1535,6 +2444,16 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
         const js = gerarCodigoJsClienteBiofoil();
         res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/javascript; charset=utf-8' });
         res.end(js);
+        return;
+      }
+      if (urlLimpa === '/atlas-hibits.png') {
+        const pngBuffer = exportarAtlasHiBitsPngBuffer(4);
+        res.writeHead(200, {
+          ...cabecalhosSeguranca,
+          'Content-Type': 'image/png',
+          'Content-Length': String(pngBuffer.length)
+        });
+        res.end(pngBuffer);
         return;
       }
       const vm = projetarViewModelWireframe(estadoAtual);
@@ -1640,19 +2559,23 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
             );
             idHitboxHover = traducao.hitboxAtingida ?? null;
             acaoLocalUi = traducao.acaoLocalUi ?? null;
+            const slotCand =
+              traducao.slotArmaSelecionado !== undefined
+                ? traducao.slotArmaSelecionado
+                : Number(ctxEntrada.slotArmaSelecionado ?? 0);
+            const tripCand = String(
+              traducao.tripulanteSelecionadoId !== undefined
+                ? traducao.tripulanteSelecionadoId
+                : (ctxEntrada.tripulanteSelecionadoId ?? 'trip-polvo-1')
+            ).slice(0, 64);
             contextoUiServidor = {
               pausaTaticaAtiva:
                 traducao.pausaTaticaAtiva !== undefined
                   ? traducao.pausaTaticaAtiva
                   : Boolean(ctxEntrada.pausaTaticaAtiva),
               slotArmaSelecionado:
-                traducao.slotArmaSelecionado !== undefined
-                  ? traducao.slotArmaSelecionado
-                  : Number(ctxEntrada.slotArmaSelecionado ?? 0),
-              tripulanteSelecionadoId:
-                traducao.tripulanteSelecionadoId !== undefined
-                  ? traducao.tripulanteSelecionadoId
-                  : String(ctxEntrada.tripulanteSelecionadoId ?? 'trip-polvo-1'),
+                Number.isInteger(slotCand) && slotCand >= 0 && slotCand <= 3 ? slotCand : 0,
+              tripulanteSelecionadoId: tripCand,
             };
             ultimoResultadoComando = traducao.resultadoMotor;
             if (ultimoResultadoComando?.estado) {

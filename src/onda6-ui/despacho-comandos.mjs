@@ -595,8 +595,27 @@ export function despacharComandoUi(estado, comando) {
       let novaCarteiraLoja = { ...baseCarteira };
       let novoHpCascoLoja = nave.hpCascoAtual;
       let novaTripulacaoLoja = nave.tripulacao;
+      let novasArmasLoja = nave.armasAtivas ?? [];
+      let novoPoraoLoja = [...(nave.poraoCarga ?? [])];
       if (acao === 'VENDER') {
         if ((item.valorVenda ?? 0) <= 0) {
+          return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+        }
+        const idxArmaAtiva = novasArmasLoja.findIndex(
+          (s) => s?.arma && (s.arma.chassiId === item.id || s.arma.idArma === item.id)
+        );
+        const idxPorao = novoPoraoLoja.findIndex(
+          (it) => (it?.item?.id ?? it?.id) === item.id
+        );
+        if (idxPorao >= 0) {
+          novoPoraoLoja = novoPoraoLoja.map((s, idx) =>
+            idx === idxPorao ? { ...s, item: null } : s
+          );
+        } else if (idxArmaAtiva >= 0) {
+          novasArmasLoja = novasArmasLoja.map((s, idx) =>
+            idx === idxArmaAtiva ? { ...s, arma: null } : s
+          );
+        } else {
           return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
         }
         novaCarteiraLoja[chaveMoeda] += item.valorVenda;
@@ -641,12 +660,29 @@ export function despacharComandoUi(estado, comando) {
               },
             ];
           }
+        } else if (item.categoria === 'ARMA' || item.categoria === 'ORGAO') {
+          const idxLivrePorao = novoPoraoLoja.findIndex((s) => !s?.item);
+          if (idxLivrePorao < 0) {
+            return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+          }
+          novoPoraoLoja = novoPoraoLoja.map((s, idx) =>
+            idx === idxLivrePorao
+              ? { ...s, item: { id: item.id, tipo: item.categoria, pesoKg: Number(item.pesoKg ?? 5.0) } }
+              : s
+          );
         }
         novaCarteiraLoja[chaveMoeda] -= preco;
         if (item.id === 'INSUMO_COMBUSTIVEL') novaCarteiraLoja.combustivel += 1;
         if (item.id === 'INSUMO_MUNICAO') novaCarteiraLoja.municao += 1;
         if (item.categoria === 'REPARO') novoHpCascoLoja = Math.min(nave.hpCascoMax, novoHpCascoLoja + 1);
       }
+      const navePosLoja = recalcularFoilEPesoNave({
+        ...nave,
+        hpCascoAtual: novoHpCascoLoja,
+        tripulacao: novaTripulacaoLoja,
+        armasAtivas: novasArmasLoja,
+        poraoCarga: novoPoraoLoja,
+      });
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
@@ -655,11 +691,7 @@ export function despacharComandoUi(estado, comando) {
           ...estado,
           economia: novaCarteiraLoja,
           recursos: novaCarteiraLoja,
-          naveJogador: {
-            ...nave,
-            hpCascoAtual: novoHpCascoLoja,
-            tripulacao: novaTripulacaoLoja,
-          },
+          naveJogador: navePosLoja,
         },
       });
     }
@@ -944,7 +976,7 @@ export function obterMapaHitboxesNativo(viewModel) {
     });
   });
 
-  // 6. Salas/Órgãos do Painel do Alvo (x = 600..960, y = 120..380)
+  // 6. Salas/Órgãos do Painel do Alvo assentados na Linha d'Água (Andar superior 270..326 acima de 330; Andar inferior 334..390 submerso abaixo de 330)
   (viewModel.painelAlvo?.salasInspecionadas ?? []).forEach((sala, idx) => {
     const colAlvo = idx % 2;
     const linAlvo = Math.floor(idx / 2);
@@ -952,7 +984,7 @@ export function obterMapaHitboxesNativo(viewModel) {
       idHitbox: `SALA_ALVO_${sala.salaId}`,
       tipo: 'SALA_ALVO',
       x: 640 + colAlvo * 110,
-      y: 160 + linAlvo * 70,
+      y: linAlvo === 0 ? 270 : 334,
       largura: 96,
       altura: 56,
       metadados: {
@@ -972,8 +1004,8 @@ export function obterMapaHitboxesNativo(viewModel) {
  */
 export function calcularGhostPreviewTermometro(estado, idHitboxHover = null) {
   const nave = estado.naveJogador;
-  const pesoAtualKg = nave.pesoTotalKg ?? calcularPesoTotalNave(nave);
-  const sustentacaoAtualKg = nave.sustentacaoAtualKg ?? calcularSustentacaoFoil(nave);
+  const pesoAtualKg = calcularPesoTotalNave(nave);
+  const sustentacaoAtualKg = calcularSustentacaoFoil(nave);
 
   const ehHitboxGhost =
     idHitboxHover === 'SISTEMA_SIF' ||
