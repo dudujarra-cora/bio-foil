@@ -1037,19 +1037,18 @@ test('MCP para Testes e Jogo Bio-Foil (L1/L2/L3/L4/L6/N4): 12 ferramentas, 4 rec
     comandos: [
       { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 8, deltaBarras: -1 } },
       { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 3, deltaBarras: 1 } },
-      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 0, salaAlvoId: 1 } },
-      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 1 } },
+      { tipo: 'MOVER_TRIPULANTE', payload: { tripulanteId: 'trip-polvo-1', camaraDestinoId: 1 } },
+      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 3 } },
     ],
-    passosTick: 48,
+    passosTick: 60,
     dtSeg: 0.5,
   });
   const rCaptura = executarAcaoJogoMcp({
     sessaoId: 'sessao-captura',
     comandos: [
-      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 0, salaAlvoId: 3 } },
-      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 3 } },
+      { tipo: 'MIRAR_ARMA', payload: { slotIndex: 1, salaAlvoId: 1 } },
     ],
-    passosTick: 48,
+    passosTick: 100,
     dtSeg: 0.5,
   });
   assert.equal(rCaptura.structuredContent.metricasRun.barcosCapturadosIntactosNestaRun, 1);

@@ -1508,6 +1508,54 @@
         "tests/08-onda6-ui-juncao.test.mjs"
       ],
       "falhaEsperada": "[MUT-O6-07] Câmara 6 deve encaixar 1 slot sem colisão"
+    },
+    {
+      "id": "MUT-95",
+      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "lei": "N1 / L4 (MUT-O6-10)",
+      "descricao": "obterMapaHitboxesNativo introduz desvio de +48 px nas hitboxes da grade 960x540, desalinhando os quadrados de ação das câmaras e estourando a borda direita na Draga",
+      "trocas": [
+        {
+          "buscar": "  const desalinhamentoMutacao = opcoesDebug.desalinharHitboxesCenaMutacao === true ? 48 : 0;",
+          "substituir": "  const desalinhamentoMutacao = 48;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-10] Cenário F1_FOIL_BARCO não pode ter nenhuma hitbox fora da grade nativa 960x540"
+    },
+    {
+      "id": "MUT-96",
+      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "lei": "L1 / N1 (MUT-O6-11)",
+      "descricao": "avancarTickPartidaEmTempoReal suprime o fogo de retorno determinístico das armas e órgãos inimigos contra a bio-nave",
+      "trocas": [
+        {
+          "buscar": "  if (\n    !opcoesDebug.suprimirAtaqueInimigoMutacao &&\n    estadoAtual.alvoCombate?.ativo &&\n    estadoAtual.alvoCombate.hpCascoAtual > 0\n  ) {",
+          "substituir": "  if (\n    false &&\n    !opcoesDebug.suprimirAtaqueInimigoMutacao &&\n    estadoAtual.alvoCombate?.ativo &&\n    estadoAtual.alvoCombate.hpCascoAtual > 0\n  ) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-11] O fogo de retorno determinístico do inimigo deve atingir a Barreira/Casco da bio-nave"
+    },
+    {
+      "id": "MUT-97",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "L4 / Seção 8.5.C (MUT-O6-12)",
+      "descricao": "renderizarCenaCanvasParaPngBuffer fixa segmentos largos na barra de 24/24 HP da CHEFE_DRAGA, vazando pixels vermelhos para fora da moldura X=956",
+      "trocas": [
+        {
+          "buscar": "    if (opcoes.estourarBarraChefeMutacao === true) {",
+          "substituir": "    if (true || opcoes.estourarBarraChefeMutacao === true) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-12] A barra de 24/24 HP da CHEFE_DRAGA jamais pode vazar para fora da moldura X=956"
     }
   ]
 }

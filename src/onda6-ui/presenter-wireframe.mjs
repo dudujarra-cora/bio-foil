@@ -18,13 +18,15 @@ import {
   calcularSustentacaoFoil,
 } from '../onda1-fisica/tick-hidraulica-foil.mjs';
 import { calcularEsquivaEfetivaNave } from '../onda2-combate/tick-sistemas-armas.mjs';
-import { inspecionarSalaAlvo, avancarTickCombateCompleto } from '../onda2-combate/tick-tripulacao.mjs';
+import { inspecionarSalaAlvo } from '../onda2-combate/tick-tripulacao.mjs';
 import { criarAlvoSetor1Canonico } from '../onda3-inimigos/ia-barco-monstro.mjs';
 import {
   COORDENADAS_GRADE_CAMARAS_16A,
   calcularGhostPreviewTermometro,
   despacharComandoUi,
+  obterMapaHitboxesNativo,
   traduzirInputDomParaComandoUi,
+  avancarTickPartidaEmTempoReal,
 } from './despacho-comandos.mjs';
 import { construirPlanoGrafoWebAudio } from './cues-audio.mjs';
 
@@ -177,6 +179,7 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
       orgaosEnxertados: armaObj?.orgaosEnxertados ?? [],
       energiaCusto: armaObj?.energiaCusto ?? armaObj?.energia ?? 0,
       progressoRecargaSeg: armaObj?.progressoRecargaSeg ?? 0,
+      tempoRecargaBaseSeg: armaObj?.tempoRecargaBaseSeg ?? armaObj?.recargaSeg ?? 9,
       salaAlvoId: armaObj?.salaAlvoId ?? null,
     };
   });
@@ -281,6 +284,9 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
       presente: Boolean(estado.alvoCombate && estado.alvoCombate.ativo !== false),
       nomeAlvo: estado.alvoCombate?.nome ?? estado.alvoCombate?.idInimigo ?? null,
       classeAlvo: estado.alvoCombate?.classeAlvo ?? estado.alvoCombate?.classeInimigo ?? null,
+      faseChefe: estado.alvoCombate?.faseChefe ?? null,
+      alarmeFervuraAtivoSeg: Number(estado.alvoCombate?.alarmeFervuraAtivoSeg ?? 0),
+      fervuraAtivaSeg: Number(estado.alvoCombate?.fervuraAtivaSeg ?? 0),
       hpCascoAtual: estado.alvoCombate?.hpCascoAtual ?? 0,
       hpCascoMax: estado.alvoCombate?.hpCascoMax ?? 0,
       barreiraBolhas: Number(estado.alvoCombate?.camadasBarreiraAtivas ?? estado.alvoCombate?.barreiraBolhasAtual ?? 0),
@@ -288,6 +294,29 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
       blindagemTermicaExternaPts: estado.alvoCombate?.blindagemTermicaExternaPts ?? 0,
       salasInspecionadas,
     },
+    mapaSetorialResumo: estado.mapaSetorial
+      ? {
+          setorNumero: Number(estado.mapaSetorial.setorNumero ?? 1),
+          noAtualId: estado.mapaSetorial.noAtualId ?? estado.mapaSetorial.idNoAtual ?? 'NO_0_ENTRADA',
+          frenteCorporativaX: Number(estado.mapaSetorial.frenteCorporativaX ?? -18),
+          nos: (estado.mapaSetorial.nos ?? []).map((n) => {
+            const rotasDoMapa = (estado.mapaSetorial.rotas ?? [])
+              .filter((r) => r.origemId === n.id)
+              .map((r) => r.destinoId);
+            return {
+              id: n.id,
+              tipo: n.tipo ?? n.tipoNo ?? 'COMBATE',
+              xMn: Number(n.x ?? n.xMn ?? 0),
+              yMn: Number(n.y ?? n.yMn ?? 30),
+              visitado: Boolean(n.visitado),
+              rotasSaida:
+                rotasDoMapa.length > 0
+                  ? rotasDoMapa
+                  : [...(n.conexoesSaida ?? n.arestasSaida ?? [])],
+            };
+          }),
+        }
+      : null,
   });
 }
 
@@ -1760,13 +1789,14 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     // Sprite hi-bit completo do Barco/Monstro (288 px de largura) assentado na linha d'água envolvendo as 4 salas/órgãos (zero miniatura duplicada!)
     desenharGradeSprite(gradeInimigo, xInimigo, yTopoInimigo, 'INIMIGO_CORPO_PIXEL', escalaInimigoX, escalaInimigoY);
 
+    const nomeAlvoCurto = String(viewModel.painelAlvo.nomeAlvo ?? 'ALVO').slice(0, 18);
     registrar({
       op: 'TEXT',
       camada: 'PAINEL_ALVO_CABECALHO',
-      x: 616,
+      x: 612,
       y: 232,
       cor: T.ALERT_RED,
-      texto: `${viewModel.painelAlvo.nomeAlvo} | CASCO ${viewModel.painelAlvo.hpCascoAtual}/${viewModel.painelAlvo.hpCascoMax} | ESQUIVA ${viewModel.painelAlvo.esquivaPct}% | BARREIRA ${viewModel.painelAlvo.barreiraBolhas}`,
+      texto: `${nomeAlvoCurto} HP:${viewModel.painelAlvo.hpCascoAtual}/${viewModel.painelAlvo.hpCascoMax} E:${viewModel.painelAlvo.esquivaPct}% B:${viewModel.painelAlvo.barreiraBolhas}`,
     });
 
     if (ehMonstroAlvo) {
@@ -1819,7 +1849,7 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     const colAlvo = idx % 2;
     const linAlvo = Math.floor(idx / 2);
     const xSala = 640 + colAlvo * 110;
-    const ySala = linAlvo === 0 ? 270 : 334;
+    const ySala = linAlvo === 0 ? 270 + Math.max(0, linAlvo - 1) * 58 : 334 + Math.max(0, linAlvo - 1) * 58;
     const textoSala = `${sala.salaId}: ${sala.textoTripulacao}`;
     textosPainelAlvo.push(textoSala);
 
@@ -1860,7 +1890,7 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
             ? T.FOIL_CYAN
             : T.LIFT_AMBER,
     });
-    const nomeCurtoSala = String(sala.nomeSala ?? `SALA_${sala.salaId}`).slice(0, 12);
+    const nomeCurtoSala = String(sala.nomeSala ?? `SALA_${sala.salaId}`).slice(0, 8);
     registrar({
       op: 'TEXT',
       camada: `NOME_SALA_ALVO_${sala.salaId}`,
@@ -1871,14 +1901,14 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     });
     const rotuloDetalheSala =
       sala.canalPermissao !== 'VISIVEL'
-        ? sala.textoTripulacao
+        ? String(sala.textoTripulacao ?? '').slice(0, 14)
         : ehMonstroAlvo
           ? sala.salaId === 3
             ? 'ESQUIVA 20%'
             : sala.tripulantesVisiveis.length > 0
-              ? 'ANTICORPO ATIVO'
+              ? 'ANTICORPO'
               : 'ORGAO VITAL'
-          : sala.textoTripulacao;
+          : String(sala.textoTripulacao ?? '').slice(0, 14);
     registrar({
       op: 'TEXT',
       camada: 'PAINEL_ALVO_L3',
@@ -1933,7 +1963,7 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     x: 6,
     y: 456,
     cor: T.BIO_GREEN,
-    texto: 'CORACAO BIO-ELETR.',
+    texto: 'CORACAO BIO',
   });
   const livresExibidos = viewModel.reatorCoracaoBioEletrico.barrasLivres ?? viewModel.reatorCoracaoBioEletrico.barrasDisponiveis;
   registrar({
@@ -1942,7 +1972,7 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     x: 6,
     y: 466,
     cor: T.TXT_PRIMARY,
-    texto: `${livresExibidos}/${viewModel.reatorCoracaoBioEletrico.barrasTotais} LIVRES`,
+    texto: `${livresExibidos}/${viewModel.reatorCoracaoBioEletrico.barrasTotais} LIV`,
   });
   for (let b = 0; b < viewModel.reatorCoracaoBioEletrico.barrasTotais; b += 1) {
     registrar({
@@ -1968,7 +1998,7 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       cor: sys.instalado ? T.FOIL_CYAN : T.TXT_DIM,
     });
     for (let b = 0; b < sys.barrasNivelMax; b += 1) {
-      const yPip = 504 - b * 9;
+      const yPip = 500 - b * 8;
       const corPip =
         b >= sys.barrasIntegridade
           ? T.ALERT_RED
@@ -1981,28 +2011,36 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
         x: xSys + 5,
         y: yPip,
         largura: 24,
-        altura: 6,
+        altura: 5,
         cor: corPip,
       });
     }
     registrar({
       op: 'TEXT',
       camada: `SISTEMA_${sys.sigla}`,
-      x: xSys + 3,
-      y: 522,
+      x: xSys + 5,
+      y: 515,
       cor: T.TXT_PRIMARY,
-      texto: `${sys.sigla} ${sys.barrasEnergiaAlocada}/${sys.barrasIntegridade}`,
+      texto: sys.sigla,
+    });
+    registrar({
+      op: 'TEXT',
+      camada: `SISTEMA_VAL_${sys.sigla}`,
+      x: xSys + 5,
+      y: 524,
+      cor: T.BIO_GREEN,
+      texto: `${sys.barrasEnergiaAlocada}/${sys.barrasIntegridade}`,
     });
   });
 
   const NOMES_CURTOS_ARMAS = Object.freeze({
-    EMISSOR_ACUSTICO_I: 'ACUSTICO',
-    RAJADA_HIDROPNEUMATICA_II: 'RAJADA',
+    EMISSOR_ACUSTICO_I: 'ACUST',
+    RAJADA_HIDROPNEUMATICA_II: 'RAJAD',
     CANHAO_ARPAO_CABO: 'ARPAO',
     DISPERSOR_ESTILHACOS: 'FLAK',
     CORTADOR_TERMICO_PLASMA: 'BEAM',
-    LANCADOR_TORPEDO_ABISSAL: 'TORPEDO',
-    MORTEIRO_ESPOROS: 'MORTEIRO',
+    LANCADOR_TORPEDO_ABISSAL: 'TORP',
+    MORTEIRO_ESPOROS: 'MORT',
   });
 
   viewModel.caixaArmas.forEach((slot, idx) => {
@@ -2017,7 +2055,7 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       cor: slot.ocupado ? T.LIFT_AMBER : T.TXT_DIM,
     });
     const rotuloArmaCurto = slot.ocupado
-      ? `${idx + 1}:${NOMES_CURTOS_ARMAS[slot.chassiId] ?? slot.chassiId.slice(0, 7)}`
+      ? `${idx + 1}:${NOMES_CURTOS_ARMAS[slot.chassiId] ?? slot.chassiId.slice(0, 5)}`
       : `${idx + 1}:VAZIO`;
     registrar({
       op: 'TEXT',
@@ -2036,12 +2074,13 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
         cor: T.FOIL_CYAN,
         texto: `SOQ ${slot.orgaosEnxertados.length}/${slot.soquetesMax}`,
       });
+      const recMax = Math.max(1, Number(slot.tempoRecargaBaseSeg ?? 10));
       registrar({
         op: 'FILL_RECT',
         camada: `ARMA_RECARGA_${idx}`,
         x: xSlot + 4,
         y: 480,
-        largura: Math.min(46, Math.round((slot.progressoRecargaSeg / 10) * 46)),
+        largura: Math.min(46, Math.round((slot.progressoRecargaSeg / recMax) * 46)),
         altura: 6,
         cor: T.BIO_GREEN,
       });
@@ -2067,16 +2106,18 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
     }
   });
 
-  // Cartões de Tripulação no Rodapé Direito (x = 680 + idx * 45, y = 448, largura = 42, altura = 80), sem transbordo e com sprite
+  // Cartões de Tripulação no Rodapé Direito (x = 680..955, y = 448..528), cabendo de 1 até 6 tripulantes sem estourar 960 px
   const todosTripulantes = viewModel.camaras.flatMap((c) => c.tripulantesPresentes);
+  const passoCardWf = todosTripulantes.length <= 5 ? 45 : Math.floor(274 / todosTripulantes.length);
+  const largCardWf = passoCardWf - 3;
   todosTripulantes.forEach((trip, idx) => {
-    const xCard = 680 + idx * 45;
+    const xCard = 680 + idx * passoCardWf;
     registrar({
       op: 'STROKE_RECT',
       camada: `TRIPULANTE_CARD_${trip.id}`,
       x: xCard,
       y: 448,
-      largura: 42,
+      largura: largCardWf,
       altura: 80,
       cor: trip.inflado ? T.LIFT_AMBER : T.FOIL_CYAN,
     });
@@ -2086,7 +2127,7 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       x: xCard + 3,
       y: 460,
       cor: T.TXT_PRIMARY,
-      texto: trip.especie.slice(0, 6),
+      texto: trip.especie.slice(0, 5),
     });
     registrar({
       op: 'TEXT',
@@ -2094,14 +2135,14 @@ export function renderizarViewModelNoCanvas2d(viewModel, ctxCanvas2d = null, opc
       x: xCard + 3,
       y: 470,
       cor: T.BIO_GREEN,
-      texto: `${trip.hpAtual}/${trip.hpMax}`,
+      texto: `HP${Math.round(trip.hpAtual)}`,
     });
     const idSpriteCard =
       trip.especie === 'BAIACU'
         ? (trip.inflado ? 'BAIACU_INFLADO' : 'BAIACU_NORMAL')
         : trip.especie;
     const itemCardAtlas = atlas.aliados.find((a) => a.id === idSpriteCard);
-    desenharGradeSprite(itemCardAtlas.gradePixels, xCard + 11, 482, `TRIPULANTE_CARD_PIXEL_${trip.id}`);
+    desenharGradeSprite(itemCardAtlas.gradePixels, xCard + 9, 482, `TRIPULANTE_CARD_PIXEL_${trip.id}`);
   });
 
   return clonarProfundoCongelado({
@@ -2207,29 +2248,42 @@ const PONTOS_RACHADURA_DANO_SIF = Object.freeze([
 ]);
 
 const RECORTE_NAVES_F4 = Object.freeze({
-  MANTA_VOLT: [325, 71, 308, 196],
-  COURACA_LIMIAR: [643, 71, 308, 196],
-  SOMBRA_ABISSAL: [90, 325, 308, 194],
-  COLMEIA_VIVA: [565, 325, 308, 194],
+  MANTA_VOLT: Object.freeze({ casco: [336, 80, 276, 136], bloco: [398, 120, 80, 86] }),
+  COURACA_LIMIAR: Object.freeze({ casco: [656, 74, 286, 140], bloco: [726, 122, 80, 86] }),
+  SOMBRA_ABISSAL: Object.freeze({ casco: [64, 338, 324, 126], bloco: [158, 378, 80, 86] }),
+  COLMEIA_VIVA: Object.freeze({ casco: [540, 336, 276, 130], bloco: [634, 378, 80, 86] }),
 });
 
 const NOMES_ARMAS_HUD_CONCEITO = Object.freeze({
   CANHAO_ARPAO_CABO: "ARPÃO",
-  EMISSOR_ACUSTICO_I: "ACÚSTICO",
-  RAJADA_HIDROPNEUMATICA_II: "RAJADA II",
-  DISPERSOR_ESTILHACOS: "ESTILHAÇOS",
+  EMISSOR_ACUSTICO_I: "ACÚST.",
+  RAJADA_HIDROPNEUMATICA_II: "RAJADA",
+  EMISSOR_RAJADA_II: "RAJADA",
+  DISPERSOR_ESTILHACOS: "ESTILH.",
   CORTADOR_TERMICO_PLASMA: "TÉRMICO",
+  CORTADOR_TERMICO: "TÉRMICO",
   LANCADOR_TORPEDO_ABISSAL: "TORPEDO",
-  MORTEIRO_ESPOROS: "MORTEIRO",
+  MORTEIRO_ESPOROS: "MORTEIR",
+});
+
+const SIGLAS_CURTAS_ESPECIE_HUD = Object.freeze({
+  POLVO: "POL",
+  ARRAIA: "ARR",
+  BAIACU: "BAI",
+  CARANGUEJO: "CAR",
 });
 
 /**
  * Renderiza o quadro artístico Hi-Bit fiel ao conceito aprovado do GDD (960x540 -> 1920x1080 x2 nearest-neighbor)
- * combinando as placas cênicas Hi-Bit (F1/F2/F3/F4) e o HUD determinístico PressStart2P 8px + retratos F5.
+ * alinhado em 0 px com `obterMapaHitboxesNativo(viewModel)`, sem valores falsos de mockup, sem sobreposição de textos/divisórias
+ * e com atualização dinâmica em tempo real das 5 carcaças, 8 câmaras, válvulas, inimigos/chefe e mapa setorial.
  */
 export function renderizarCenaCanvasParaPngBuffer(viewModel, opcoes = {}) {
   const escala = Math.max(1, Math.min(2, Math.floor(Number(opcoes.escalaInteira ?? 2))));
+  const f4Anim = Number.isInteger(opcoes.cicloSpriteF4) && opcoes.cicloSpriteF4 >= 0 ? opcoes.cicloSpriteF4 % 4 : 0;
+  const disparandoDorsal = Boolean(opcoes.disparandoDorsal);
   const assets = obterAssetsConceitoHiBit();
+  const hitboxes = obterMapaHitboxesNativo(viewModel);
   const W = 960;
   const H = 540;
   const rgba = Buffer.alloc(W * H * 4);
@@ -2249,12 +2303,20 @@ export function renderizarCenaCanvasParaPngBuffer(viewModel, opcoes = {}) {
   const PIP_OFF = [40, 52, 60, 255];
   const SLOT_BG = [12, 20, 26, 255];
 
+  const MAPA_RGBA_SPRITES = {
+    ...PALETA_PIXEL_ART_BIOFOIL,
+    Y: YELLOW,
+    G: GREEN,
+    R: RED,
+  };
+
   const putPx = (x, y, c) => {
     const xi = Math.round(x);
     const yi = Math.round(y);
     if (xi < 0 || xi >= W || yi < 0 || yi >= H) return;
     const idx = (yi * W + xi) * 4;
     const a = c[3] ?? 255;
+    if (a <= 0) return;
     if (a >= 255) {
       rgba[idx] = c[0];
       rgba[idx + 1] = c[1];
@@ -2301,6 +2363,37 @@ export function renderizarCenaCanvasParaPngBuffer(viewModel, opcoes = {}) {
     }
   };
 
+  const lineSeg = (x0, y0, x1, y1, c, pontilhado = false) => {
+    const xa = Math.round(x0);
+    const ya = Math.round(y0);
+    const xb = Math.round(x1);
+    const yb = Math.round(y1);
+    const passos = Math.max(1, Math.hypot(xb - xa, yb - ya));
+    for (let s = 0; s <= passos; s += 1) {
+      if (pontilhado && (s % 5 >= 3)) continue;
+      const t = s / passos;
+      putPx(xa + (xb - xa) * t, ya + (yb - ya) * t, c);
+    }
+  };
+
+  const blitMatrizToken = (matriz, x0, y0, escX = 1, escY = escX) => {
+    if (!Array.isArray(matriz)) return;
+    for (let ry = 0; ry < matriz.length; ry += 1) {
+      const lin = matriz[ry];
+      for (let rx = 0; rx < lin.length; rx += 1) {
+        const ch = lin[rx];
+        if (ch === ".") continue;
+        const cor = MAPA_RGBA_SPRITES[ch];
+        if (!cor) continue;
+        for (let sy = 0; sy < escY; sy += 1) {
+          for (let sx = 0; sx < escX; sx += 1) {
+            putPx(x0 + rx * escX + sx, y0 + ry * escY + sy, cor);
+          }
+        }
+      }
+    }
+  };
+
   const desenharGlifo8px = (x0, y0, ch, cor) => {
     const linhas = GLIFOS_PRESS_START_8PX[ch];
     if (!linhas) return;
@@ -2317,10 +2410,12 @@ export function renderizarCenaCanvasParaPngBuffer(viewModel, opcoes = {}) {
   const txt = (x0, y0, texto, cor, pitch = 8) => {
     let x = Math.round(x0);
     const y = Math.round(y0);
-    const str = String(texto);
+    const str = String(texto ?? "");
     for (let i = 0; i < str.length; i += 1) {
       const ch = str[i];
-      const ac = MAPA_ACENTOS_HUD[ch];
+      const acDireto = MAPA_ACENTOS_HUD[ch];
+      const acUpper = !acDireto ? MAPA_ACENTOS_HUD[ch.toUpperCase()] : null;
+      const ac = acDireto ?? (acUpper ? [acUpper[0].toLowerCase(), acUpper[1]] : null);
       if (ac) {
         const [base, tipo] = ac;
         desenharGlifo8px(x, y, base, cor);
@@ -2364,20 +2459,13 @@ export function renderizarCenaCanvasParaPngBuffer(viewModel, opcoes = {}) {
     }
   };
 
-  const pips = (x, y, nOn, nTotal, color = GREEN) => {
-    for (let i = 0; i < nTotal; i += 1) {
-      const c = i < nOn ? color : PIP_OFF;
-      fillRect(x + i * 7, y, x + i * 7 + 4, y + 4, c);
-    }
-  };
-
-  const socket = (x, y) => {
+  const socket = (x, y, preenchido = false) => {
     for (let ry = 0; ry < 8; ry += 1) {
       const row = MASCARA_SOQUETE_8X8[ry];
       for (let rx = 0; rx < 8; rx += 1) {
         const ch = row[rx];
-        if (ch === "#") putPx(x + rx, y + ry, CYAN);
-        else if (ch === "@") putPx(x + rx, y + ry, [10, 20, 26, 255]);
+        if (ch === "#") putPx(x + rx, y + ry, preenchido ? GREEN : CYAN);
+        else if (ch === "@") putPx(x + rx, y + ry, preenchido ? VIOLET : [10, 20, 26, 255]);
       }
     }
   };
@@ -2420,84 +2508,574 @@ export function renderizarCenaCanvasParaPngBuffer(viewModel, opcoes = {}) {
     }
   };
 
-  // 1. Preenchimento de fundo ABYSS e cópia da placa cênica 810x390 na área de jogo (150, 40)
+  // 1. Preenchimento de fundo ABYSS e área central de jogo (X=150..959, Y=40..429)
   fillRect(0, 0, W - 1, H - 1, BG);
-  const ehTouchdown = viewModel.barraSuperior.estadoFisico === "2_TOUCHDOWN";
-  const ehMonstroAlvo = String(viewModel.painelAlvo.classeAlvo ?? "").includes("MONSTRO");
-  const placaCena = ehTouchdown ? assets.f2Play : ehMonstroAlvo ? assets.f3Play : assets.f1Play;
+  const faseJogo = viewModel.faseJogo ?? "COMBATE";
+  const estadoFisico = viewModel.barraSuperior?.estadoFisico ?? "1_NO_FOIL";
+  const ehTouchdown = estadoFisico !== "1_NO_FOIL";
+  const classeAlvo = String(viewModel.painelAlvo?.classeAlvo ?? "");
+  const ehMonstroAlvo = classeAlvo.includes("MONSTRO");
+  const ehChefeDraga = classeAlvo === "CHEFE_DRAGA" || (viewModel.painelAlvo?.salasInspecionadas?.length ?? 0) > 4;
+  const dyCena = !ehTouchdown && ehMonstroAlvo ? -12 : 0;
+  const idCarcaca = String(viewModel.idCarcaca ?? viewModel.idArquitetura ?? "CARCACA_ALFA");
 
-  for (let py = 0; py < placaCena.altura; py += 1) {
-    for (let px = 0; px < placaCena.largura; px += 1) {
-      const src = (py * placaCena.largura + px) * 4;
-      const dst = ((40 + py) * W + (150 + px)) * 4;
-      rgba[dst] = placaCena.rgba[src];
-      rgba[dst + 1] = placaCena.rgba[src + 1];
-      rgba[dst + 2] = placaCena.rgba[src + 2];
-      rgba[dst + 3] = 255;
+  if (faseJogo === "MAPA") {
+    fillRect(150, 40, 959, 429, [7, 17, 26, 255], BORDER);
+    for (let gx = 190; gx < 950; gx += 60) {
+      lineSeg(gx, 44, gx, 425, [14, 32, 44, 255], true);
     }
-  }
-
-  // Se o jogador estiver usando outra das 5 carcaças (Manta-Volt, Couraça-Limiar, Sombra-Abissal, Colmeia-Viva), aplica o recorte de F4
-  const recNaveF4 = RECORTE_NAVES_F4[viewModel.carcacaId];
-  if (recNaveF4 && !ehTouchdown) {
-    const [sx0, sy0, sw, sh] = recNaveF4;
-    for (let py = 0; py < sh; py += 1) {
-      for (let px = 0; px < sw; px += 1) {
-        const src = ((sy0 + py) * assets.f4Ships.largura + (sx0 + px)) * 4;
-        const dst = ((120 + py) * W + (154 + px)) * 4;
-        rgba[dst] = assets.f4Ships.rgba[src];
-        rgba[dst + 1] = assets.f4Ships.rgba[src + 1];
-        rgba[dst + 2] = assets.f4Ships.rgba[src + 2];
+    for (let gy = 80; gy < 420; gy += 55) {
+      hLine(154, 955, gy, [14, 32, 44, 255], 1);
+    }
+    const mapa = viewModel.mapaSetorialResumo;
+    const setorNum = mapa?.setorNumero ?? 1;
+    txt(162, 50, `CARTA HIDROGRÁFICA — SETOR ${setorNum}/8`, CYAN);
+    txt(464, 50, "@ ATUAL ! GUARDA ? EXPL + SOS $ LOJA # PER X SAÍDA", DIM, 7);
+    if (mapa) {
+      const frenteMn = Number(mapa.frenteCorporativaX ?? -18);
+      if (frenteMn >= 0) {
+        const xFrente = Math.max(154, Math.min(950, Math.round(186 + (frenteMn / 120) * 736)));
+        fillRect(152, 68, xFrente, 424, [110, 16, 28, 90]);
+        lineSeg(xFrente, 68, xFrente, 424, RED, false);
+      }
+      const hbNosPorId = new Map(
+        hitboxes.filter((h) => h.tipo === "NO_MAPA").map((h) => [h.metadados.noDestinoId, h])
+      );
+      const noAtualObj = (mapa.nos ?? []).find((n) => n.id === mapa.noAtualId) ?? null;
+      const saidasAtuais = new Set(noAtualObj?.rotasSaida ?? []);
+      for (const noOrig of mapa.nos ?? []) {
+        const hbO = hbNosPorId.get(noOrig.id);
+        if (!hbO) continue;
+        for (const idDest of noOrig.rotasSaida ?? []) {
+          const hbD = hbNosPorId.get(idDest);
+          if (!hbD) continue;
+          const ehRotaAtiva = noOrig.id === mapa.noAtualId;
+          lineSeg(
+            hbO.x + 10,
+            hbO.y + 10,
+            hbD.x + 10,
+            hbD.y + 10,
+            ehRotaAtiva ? CYAN : [38, 66, 82, 255],
+            !ehRotaAtiva
+          );
+        }
+      }
+      const SIMBOLO_NO_MAPA = {
+        ENTRADA: ">",
+        GUARDA: "!",
+        COMBATE: "!",
+        EXPLORACAO: "?",
+        SOS: "+",
+        LOJA: "$",
+        PERIGO: "#",
+        SAIDA: "X",
+        CHEFE: "X",
+      };
+      for (const no of mapa.nos ?? []) {
+        const hb = hbNosPorId.get(no.id);
+        if (!hb) continue;
+        const ehAtual = no.id === mapa.noAtualId;
+        const ehAlcancavel = saidasAtuais.has(no.id);
+        const corBorda = ehAtual
+          ? CYAN
+          : no.tipo === "CHEFE" || no.tipo === "SAIDA"
+            ? RED
+            : no.tipo === "LOJA"
+              ? VIOLET
+              : no.tipo === "SOS"
+                ? AMBER
+                : ehAlcancavel
+                  ? GREEN
+                  : DIM;
+        fillRect(hb.x, hb.y, hb.x + hb.largura - 1, hb.y + hb.altura - 1, ehAtual ? [16, 54, 70, 255] : SLOT_BG, corBorda);
+        const letra = ehAtual ? "@" : (SIMBOLO_NO_MAPA[no.tipo] ?? "!");
+        txt(hb.x + 6, hb.y + 6, letra, ehAtual ? CYAN : TXT);
+      }
+    }
+  } else if (faseJogo !== "COMBATE") {
+    fillRect(150, 40, 959, 429, [8, 22, 32, 255], BORDER);
+    panel(250, 120, 860, 350, `FASE ATUAL: ${faseJogo}`);
+    txt(270, 156, faseJogo === "LOJA" ? "DOCA BIO-MECÂNICA DE ENXERTOS E SUPRIMENTOS" : "EVENTO TÁTICO OCEÂNICO EM CURSO", CYAN);
+    txt(270, 184, `CARCAÇA: ${idCarcaca.replace(/_/g, " ")}`, TXT);
+    txt(270, 208, "USE OS PAINÉIS DE SISTEMAS, ARMAS E TRIPULAÇÃO ABAIXO.", DIM);
+  } else {
+    // Fase COMBATE: seleciona placa base e garante linha d'água contínua sem degrau e sem listras horizontais
+    const placaEsq = ehTouchdown ? assets.f2Play : ehMonstroAlvo ? assets.f3Play : assets.f1Play;
+    for (let py = 0; py < placaEsq.altura; py += 1) {
+      for (let px = 0; px < placaEsq.largura; px += 1) {
+        let r;
+        let g;
+        let b;
+        if (ehChefeDraga && px >= 446) {
+          // Usa faixa limpa de céu/linha-d'água/oceano à esquerda (px = 8..31) sem armas nem arcos
+          const pxLimpo = 8 + (px % 24);
+          const srcLimpo = (py * placaEsq.largura + pxLimpo) * 4;
+          r = placaEsq.rgba[srcLimpo];
+          g = placaEsq.rgba[srcLimpo + 1];
+          b = placaEsq.rgba[srcLimpo + 2];
+        } else if (ehTouchdown && ehMonstroAlvo && px >= 456) {
+          // Compõe Teuthis Couraçada (f3Play) deslocada -108 px com transição suave de 14 px (px=456..469) após a espuma lateral
+          const pyF3 = Math.min(assets.f3Play.altura - 1, py + 108);
+          const srcM = (pyF3 * assets.f3Play.largura + px) * 4;
+          let rM = assets.f3Play.rgba[srcM];
+          let gM = assets.f3Play.rgba[srcM + 1];
+          let bM = assets.f3Play.rgba[srcM + 2];
+          // Remove pontilhado ciano estático residual no topo de f3Play (pyF3 < 160, px < 620)
+          if (pyF3 < 160 && px < 620 && gM > 180 && bM > 195) {
+            const srcCeuF3 = (pyF3 * assets.f3Play.largura + (8 + (px % 24))) * 4;
+            rM = assets.f3Play.rgba[srcCeuF3];
+            gM = assets.f3Play.rgba[srcCeuF3 + 1];
+            bM = assets.f3Play.rgba[srcCeuF3 + 2];
+          }
+          if (px < 470) {
+            const pesoM = (px - 456) / 14;
+            const srcE = (py * placaEsq.largura + px) * 4;
+            r = Math.round(placaEsq.rgba[srcE] * (1 - pesoM) + rM * pesoM);
+            g = Math.round(placaEsq.rgba[srcE + 1] * (1 - pesoM) + gM * pesoM);
+            b = Math.round(placaEsq.rgba[srcE + 2] * (1 - pesoM) + bM * pesoM);
+          } else {
+            r = rM;
+            g = gM;
+            b = bM;
+          }
+        } else {
+          const src = (py * placaEsq.largura + px) * 4;
+          r = placaEsq.rgba[src];
+          g = placaEsq.rgba[src + 1];
+          b = placaEsq.rgba[src + 2];
+        }
+        const dst = ((40 + py) * W + (150 + px)) * 4;
+        rgba[dst] = r;
+        rgba[dst + 1] = g;
+        rgba[dst + 2] = b;
         rgba[dst + 3] = 255;
+      }
+    }
+
+    // Remove arcos pontilhados estáticos e rótulos flutuantes de mockup ("SIFÃO 3.2s" / "MIRANDO: MASTRO") entre bio-nave e alvo
+    if (!ehTouchdown) {
+      for (let sy = 46; sy <= 332; sy += 1) {
+        const pyPlaca = sy - 40;
+        for (let sx = 498; sx <= 828; sx += 1) {
+          // Preserva armas dorsais (sx<=588, sy<=114), corpo/focinho da bio-nave (exceto o arco vermelho "SI" em sx>=560, sy=222..262),
+          // barco patrulheiro (sx>=684, sy>=274) e monstro + 4 caixas de órgãos
+          if (sx <= 588 && sy <= 114) continue;
+          const naFaixaArcoSifao = !ehMonstroAlvo && sx >= 560 && sy >= 222 && sy <= 262;
+          if (!naFaixaArcoSifao && sx <= 610 && sy >= 114 && sy <= 320) continue;
+          if (!ehMonstroAlvo && sx >= 684 && sy >= 274) continue;
+          if (ehMonstroAlvo && ((sx >= 624 && sy >= 216) || (sx >= 716 && sy >= 134))) continue;
+          if (ehMonstroAlvo && sy >= 296) continue;
+          const idxPx = (sy * W + sx) * 4;
+          const rr = rgba[idxPx];
+          const gg = rgba[idxPx + 1];
+          const bb = rgba[idxPx + 2];
+          // Apaga traços vermelhos/cianos dos arcos pontilhados e letras de texto flutuante ("SI" / "3.2s" / "MIRANDO: MASTRO")
+          const ehArcoBrilhante = (rr > 140 && gg < 110) || (gg > 175 && bb > 190);
+          const ehTextoFlutuante = !ehMonstroAlvo && sx >= 594 && sx <= 706 && sy >= 238 && sy <= 270;
+          if (ehArcoBrilhante || ehTextoFlutuante) {
+            // Na borda externa da ponta do nariz (sx >= 596) ou no mar aberto, usa céu limpo; dentro do focinho (sx < 596) usa o casco escuro 18 px acima
+            if (naFaixaArcoSifao && sx < 596) {
+              const srcFoc = ((pyPlaca - 18) * placaEsq.largura + (sx - 150)) * 4;
+              rgba[idxPx] = placaEsq.rgba[srcFoc];
+              rgba[idxPx + 1] = placaEsq.rgba[srcFoc + 1];
+              rgba[idxPx + 2] = placaEsq.rgba[srcFoc + 2];
+            } else {
+              const srcCeu = (pyPlaca * placaEsq.largura + (8 + (sx % 24))) * 4;
+              rgba[idxPx] = placaEsq.rgba[srcCeu];
+              rgba[idxPx + 1] = placaEsq.rgba[srcCeu + 1];
+              rgba[idxPx + 2] = placaEsq.rgba[srcCeu + 2];
+            }
+          }
+        }
+      }
+    } else {
+      // Em Touchdown (f2Play), limpa os cadeados pintados sobressalentes na ponta direita (sx=588..620)
+      // e o brilho pintado residual à direita da válvula de 5 SIFÃO (sx=537..592, sy=222..268)
+      for (let sy = 132; sy <= 306; sy += 1) {
+        if (sy >= 190 && sy <= 216) continue;
+        const pyPlaca = sy - 40;
+        for (let sx = 588; sx <= 620; sx += 1) {
+          const pxRef = 472 + (sx % 12);
+          const srcRef = (pyPlaca * placaEsq.largura + pxRef) * 4;
+          rgba[(sy * W + sx) * 4] = placaEsq.rgba[srcRef];
+          rgba[(sy * W + sx) * 4 + 1] = placaEsq.rgba[srcRef + 1];
+          rgba[(sy * W + sx) * 4 + 2] = placaEsq.rgba[srcRef + 2];
+        }
+      }
+      for (let sy = 220; sy <= 270; sy += 1) {
+        const pyPlaca = sy - 40;
+        const pyF1 = Math.max(0, Math.min(assets.f1Play.altura - 1, (sy - 6) - 40));
+        for (let sx = 536; sx <= 616; sx += 1) {
+          const idxDst = (sy * W + sx) * 4;
+          const pxF1 = Math.max(0, Math.min(assets.f1Play.largura - 1, (sx + 22) - 150));
+          const srcF1 = (pyF1 * assets.f1Play.largura + pxF1) * 4;
+          const rF1 = assets.f1Play.rgba[srcF1];
+          const gF1 = assets.f1Play.rgba[srcF1 + 1];
+          const bF1 = assets.f1Play.rgba[srcF1 + 2];
+          const ehCorpoFocinho = sx + 22 <= 608 && !(rF1 > 140 && gF1 < 110) && !(rF1 < 22 && gF1 < 48 && bF1 < 64 && bF1 >= gF1);
+          if (ehCorpoFocinho) {
+            rgba[idxDst] = Math.round(rF1 * 0.58 + 4);
+            rgba[idxDst + 1] = Math.round(gF1 * 0.68 + 16);
+            rgba[idxDst + 2] = Math.round(bF1 * 0.72 + 22);
+          } else if (rgba[idxDst] > 42 || rgba[idxDst + 1] > 84) {
+            // Limpa apenas o resíduo claro na mesma linha horizontal do oceano submerso (px = 482..497 -> sx = 632..647)
+            const srcMar = (pyPlaca * placaEsq.largura + (482 + (sx % 16))) * 4;
+            rgba[idxDst] = placaEsq.rgba[srcMar];
+            rgba[idxDst + 1] = placaEsq.rgba[srcMar + 1];
+            rgba[idxDst + 2] = placaEsq.rgba[srcMar + 2];
+          }
+        }
+      }
+    }
+
+    const hbCamaras = hitboxes.filter((h) => h.tipo === "CAMARA_BIONAVE");
+    const hbValvulas = hitboxes.filter((h) => h.tipo === "VALVULA_EXTERNA");
+
+    // Projeção orgânica sem costura (chroma-skip) das outras 4 carcaças jogáveis de F4 (viewModel.idCarcaca)
+    const specF4 = RECORTE_NAVES_F4[idCarcaca];
+    if (specF4 && hbCamaras.length > 0) {
+      const [sx0, sy0, sw, sh] = specF4.casco;
+      const [bx0, by0, bw, bh] = specF4.bloco;
+      const minCamX = Math.min(...hbCamaras.map((h) => h.x));
+      const maxCamX = Math.max(...hbCamaras.map((h) => h.x + h.largura));
+      const minCamY = Math.min(...hbCamaras.map((h) => h.y));
+      const maxCamY = Math.max(...hbCamaras.map((h) => h.y + h.altura));
+      const largBlocoCena = maxCamX - minCamX;
+      const altBlocoCena = maxCamY - minCamY;
+      const centroCenaX = (minCamX + maxCamX) / 2;
+
+      const yLimiteLimpeza = ehTouchdown ? 190 : maxCamY + 14;
+      // 1) Limpa o casco espiral da Carcaça Alfa usando faixa limpa de céu (px = 8..31, zero listras!)
+      for (let sy = 44; sy <= yLimiteLimpeza; sy += 1) {
+        const pyPlaca = Math.max(0, Math.min(placaEsq.altura - 1, sy - 40));
+        for (let sx = 154; sx <= 610; sx += 1) {
+          const srcLimpo = (pyPlaca * placaEsq.largura + (8 + (sx % 24))) * 4;
+          putPx(sx, sy, [placaEsq.rgba[srcLimpo], placaEsq.rgba[srcLimpo + 1], placaEsq.rgba[srcLimpo + 2], 255]);
+        }
+      }
+      // 2) Projeta a silhueta biológica da carcaça de F4 perfeitamente registrada ao bloco 2x4 ativo (minCamX..maxCamX, minCamY..maxCamY)
+      const escCascoX = largBlocoCena / bw;
+      const escCascoY = altBlocoCena / bh;
+      const centroBlocoF4X = bx0 + bw / 2;
+      const destX0 = Math.max(153, Math.round(centroCenaX - (centroBlocoF4X - sx0) * escCascoX));
+      const destX1 = Math.min(614, Math.round(centroCenaX + (sx0 + sw - centroBlocoF4X) * escCascoX));
+      const destY0 = Math.max(43, Math.round(minCamY - (by0 - sy0) * escCascoY));
+      const destY1 = Math.min(yLimiteLimpeza + 4, Math.round(minCamY + (sy0 + sh - by0) * escCascoY));
+
+      for (let dy = destY0; dy <= destY1; dy += 1) {
+        const fy = Math.min(assets.f4Ships.altura - 1, Math.max(0, Math.round(sy0 + (dy - destY0) / escCascoY)));
+        for (let dx = destX0; dx <= destX1; dx += 1) {
+          const fx = Math.min(assets.f4Ships.largura - 1, Math.max(0, Math.round(sx0 + (dx - destX0) / escCascoX)));
+          // Pula 100% do bloco 2x4 interno + válvulas laterais de F4 (zero câmaras fantasma!)
+          if (fx >= bx0 - 12 && fx <= bx0 + bw + 12 && fy >= by0 - 5 && fy <= by0 + bh + 5) continue;
+          const srcF4 = (fy * assets.f4Ships.largura + fx) * 4;
+          const r = assets.f4Ships.rgba[srcF4];
+          const g = assets.f4Ships.rgba[srcF4 + 1];
+          const b = assets.f4Ships.rgba[srcF4 + 2];
+          // Chroma-skip do céu escuro e de respingos de espuma da miniatura F4
+          if (r < 22 && g < 44 && b < 60 && b >= g) continue;
+          if (fy > by0 + bh + 3 && g > 135 && b > 150 && r < 100) continue;
+          putPx(dx, dy, [r, g, b, 255]);
+        }
+      }
+      // 3) Restaura a moldura nítida das 8 câmaras + válvulas centrais laranja da placa cênica ativa
+      for (let sy = minCamY - 3; sy <= maxCamY + 3; sy += 1) {
+        const pyP = sy - 40;
+        if (pyP < 0 || pyP >= placaEsq.altura) continue;
+        for (let sx = minCamX - 2; sx <= maxCamX + 2; sx += 1) {
+          const pxP = sx - 150;
+          const srcP = (pyP * placaEsq.largura + pxP) * 4;
+          putPx(sx, sy, [placaEsq.rgba[srcP], placaEsq.rgba[srcP + 1], placaEsq.rgba[srcP + 2], 255]);
+        }
+      }
+      // 4) Asa hidrofólio submersa orgânica com dobro de largura (176 px na cena) para a COURACA_LIMIAR (GDD Vol. 05)
+      if (idCarcaca === "COURACA_LIMIAR") {
+        const yAsa = ehTouchdown ? 388 : ehMonstroAlvo ? 384 : 396;
+        fillRect(364, yAsa + 2, 540, yAsa + 6, [34, 48, 56, 255], [14, 24, 30, 255]);
+        hLine(372, 532, yAsa + 1, [66, 92, 104, 255], 1);
+      }
+    }
+
+    // Renderização dinâmica em tempo real do interior das 8 câmaras preservando 100% dos cabeçalhos em F1, F2 e F3!
+    for (const cam of viewModel.camaras ?? []) {
+      const hbCam = hbCamaras.find((h) => h.metadados.camaraId === cam.id);
+      if (!hbCam) continue;
+      const ix0 = hbCam.x + 2;
+      const ix1 = hbCam.x + hbCam.largura - 3;
+      const alturaCabecalho = cam.id === 6 ? 17 : 12;
+      const iy0 = hbCam.y + alturaCabecalho;
+      const iy1 = hbCam.y + hbCam.altura - 3;
+      const altInt = Math.max(1, iy1 - iy0 + 1);
+      const fracAgua = Math.max(0, Math.min(1, Number(cam.nivelAguaPct ?? 100) / 100));
+      const linhaNivelAguaY = iy1 - Math.round(fracAgua * altInt) + 1;
+      const corSeco = [11, 20, 28, 255];
+      const corAgua = cam.oxigenioPct < 20 ? [68, 34, 96, 255] : [26, 68, 86, 255];
+      const corAguaBorda = cam.oxigenioPct < 20 ? VIOLET : [48, 118, 142, 255];
+
+      for (let py = iy0; py <= iy1; py += 1) {
+        const submersoPx = py >= linhaNivelAguaY;
+        for (let px = ix0; px <= ix1; px += 1) {
+          if (!submersoPx) {
+            putPx(px, py, corSeco);
+          } else if (py === linhaNivelAguaY && fracAgua < 0.99) {
+            putPx(px, py, corAguaBorda);
+          } else {
+            const dither = ((px + py) & 1) === 0 ? 0 : -4;
+            putPx(px, py, [corAgua[0] + dither, corAgua[1] + dither, corAgua[2] + dither, 255]);
+          }
+        }
+      }
+
+      const aliadosSala = cam.tripulantesPresentes ?? [];
+      const invasoresSala = cam.invasoresPresentes ?? [];
+      const ocupantes = [
+        ...aliadosSala.map((t) => ({ tipo: "ALIADO", dados: t })),
+        ...invasoresSala.map((inv) => ({ tipo: "INVASOR", dados: inv })),
+      ].slice(0, 2);
+
+      if (ocupantes.length === 0) {
+        blitMatrizToken(GRADES_SPRITES_HIBITS_ARTESANAIS.BULBO_NEURAL, ix0 + Math.floor((ix1 - ix0 - 16) / 2), iy0 + Math.max(0, Math.floor((altInt - 14) / 2)), 2, 2);
+      } else {
+        ocupantes.forEach((oc, slotIdx) => {
+          const largUtilCam = ix1 - ix0 + 1;
+          const largSlot = ocupantes.length === 1 ? Math.min(36, largUtilCam - 4) : Math.floor((largUtilCam - 4) / 2);
+          const xSlot = ocupantes.length === 1 ? ix0 + Math.floor((largUtilCam - largSlot) / 2) : ix0 + 1 + slotIdx * (largSlot + 2);
+          const dyBob = (f4Anim + slotIdx) % 2 === 1 ? -1 : 0;
+          if (oc.tipo === "ALIADO") {
+            const tr = oc.dados;
+            const ret = assets.retratos[tr.especie];
+            if (ret) {
+              const altAlvo = Math.min(24, altInt - 2);
+              const largAlvo = Math.min(largSlot, 30);
+              const xIni = xSlot + Math.floor((largSlot - largAlvo) / 2);
+              const yIni = iy0 + Math.max(0, Math.floor((altInt - altAlvo) / 2)) + (tr.inflado ? 0 : dyBob);
+              // Se for BAIACU inflado, recorta a esfera espinhosa inflada Hi-Bit do quadrante inferior-direito do retrato!
+              const u0 = tr.especie === "BAIACU" && tr.inflado ? 0.36 : 0.0;
+              const v0 = tr.especie === "BAIACU" && tr.inflado ? 0.28 : 0.0;
+              const uSpan = tr.especie === "BAIACU" && tr.inflado ? 0.62 : 1.0;
+              const vSpan = tr.especie === "BAIACU" && tr.inflado ? 0.68 : 1.0;
+              for (let ry = 0; ry < altAlvo; ry += 1) {
+                const syR = Math.min(ret.altura - 1, Math.floor((v0 + (ry / altAlvo) * vSpan) * ret.altura));
+                for (let rx = 0; rx < largAlvo; rx += 1) {
+                  const sxR = Math.min(ret.largura - 1, Math.floor((u0 + (rx / largAlvo) * uSpan) * ret.largura));
+                  const sIdx = (syR * ret.largura + sxR) * 4;
+                  const rr = ret.rgba[sIdx];
+                  const gg = ret.rgba[sIdx + 1];
+                  const bb = ret.rgba[sIdx + 2];
+                  if (rr < 22 && gg < 36 && bb < 50 && bb >= gg) continue;
+                  putPx(xIni + rx, yIni + ry, [rr, gg, bb, 255]);
+                }
+              }
+              if (tr.especie === "POLVO" && (cam.brechaAtiva || cam.barrasIntegridade < cam.barrasNivelMax)) {
+                fillRect(xIni + largAlvo - 3, yIni + 2, xIni + largAlvo - 1, yIni + 4, YELLOW);
+              }
+            } else {
+              const matAliado = ATLAS_ANIMACAO_4FRAMES_BIOFOIL[tr.especie]?.quadros[f4Anim]?.matrizPixels;
+              blitMatrizToken(matAliado, xSlot + 2, iy0 + 2 + dyBob, 2, altInt < 26 ? 1 : 2);
+            }
+          } else {
+            const inv = oc.dados;
+            const matInv =
+              ATLAS_ANIMACAO_4FRAMES_BIOFOIL[inv.especie]?.quadros[f4Anim]?.matrizPixels ??
+              GRADES_SPRITES_HIBITS_ARTESANAIS.MARINHEIRO;
+            blitMatrizToken(matInv, xSlot + 4, iy0 + 2 + dyBob, 2, altInt < 26 ? 1 : 2);
+          }
+        });
+      }
+
+      // Indicadores de curto-circuito, dano e brecha na moldura da câmara (exatamente sobre hbCam)
+      if (cam.curtoCircuitoAtivo) {
+        fillRect(hbCam.x + 1, hbCam.y + 1, hbCam.x + hbCam.largura - 2, hbCam.y + hbCam.altura - 2, null, YELLOW);
+      }
+      if (cam.brechaAtiva) {
+        fillRect(hbCam.x, hbCam.y, hbCam.x + hbCam.largura - 1, hbCam.y + hbCam.altura - 1, null, RED);
+        const xRombo = cam.coluna === 0 ? hbCam.x : hbCam.x + hbCam.largura - 3;
+        fillRect(xRombo, iy0 + 4, xRombo + 2, Math.min(iy1, iy0 + 14), RED);
+      }
+
+      // Válvula externa / Cadeado hidrostático alinhado em 0 px com VALVULA_CAMARA_<id>
+      const hbValv = hbValvulas.find((v) => v.metadados.camaraId === cam.id);
+      if (hbValv) {
+        const corBordaValv = cam.iconeCadeadoVisivel ? RED : cam.valvulaExternaAberta ? GREEN : RIM;
+        fillRect(hbValv.x, hbValv.y, hbValv.x + hbValv.largura - 1, hbValv.y + hbValv.altura - 1, SLOT_BG, corBordaValv);
+        if (cam.iconeCadeadoVisivel) {
+          lock(hbValv.x + 4, hbValv.y + 5, AMBER);
+        } else if (cam.valvulaExternaAberta) {
+          fillRect(hbValv.x + 3, hbValv.y + 4, hbValv.x + hbValv.largura - 4, hbValv.y + hbValv.altura - 5, GREEN);
+        } else {
+          hLine(hbValv.x + 3, hbValv.x + hbValv.largura - 4, hbValv.y + 9, AMBER, 2);
+        }
+      }
+    }
+
+    // Recuo visual de disparo dorsal quando ativo na animação
+    if (disparandoDorsal) {
+      fillRect(546, 56 + dyCena, 558, 62 + dyCena, YELLOW);
+      fillRect(550, 92 + dyCena, 564, 98 + dyCena, CYAN);
+    }
+
+    // Silhueta colossal Hi-Bit e salas da DRAGA CONTINENTAL (ou destaques de mira e inundação nas salas de Barco/Monstro)
+    const hbSalasAlvo = hitboxes.filter((h) => h.tipo === "SALA_ALVO");
+    const salasMiradas = new Set(
+      (viewModel.caixaArmas ?? [])
+        .filter((s) => s.ocupado && s.salaAlvoId !== null && s.salaAlvoId !== undefined)
+        .map((s) => s.salaAlvoId)
+    );
+
+    if (ehChefeDraga && viewModel.painelAlvo?.presente) {
+      const yAguaDraga = ehTouchdown ? 204 : 332;
+      // Superestrutura industrial couraçada em pixel-art Hi-Bit (dithering metálico + rebites + torre de perfuração + broca submersa)
+      for (let py = 252; py <= 406; py += 1) {
+        const submersoCasco = py >= yAguaDraga;
+        for (let px = 618; px <= 954; px += 1) {
+          // Proa chanfrada industrial à esquerda e popa escalonada
+          if (px < 618 + Math.max(0, Math.floor((py - 332) * 0.25))) continue;
+          const dither = ((px + py) & 1) === 0 ? 0 : -5;
+          const base = submersoCasco ? [20, 42, 52] : [36, 46, 54];
+          putPx(px, py, [base[0] + dither, base[1] + dither, base[2] + dither, 255]);
+        }
+      }
+      fillRect(618, 252, 954, 256, [62, 76, 86, 255], [14, 20, 26, 255]);
+      // Rebites industriais humanos (contraste deliberado humano vs bio-nave GDD Regra R2)
+      for (let rx = 626; rx <= 948; rx += 12) {
+        fillRect(rx, 258, rx + 1, 259, [92, 110, 120, 255]);
+      }
+      // Ponte de comando e guindaste geotérmico
+      fillRect(646, 224, 928, 251, [30, 40, 48, 255], [64, 82, 94, 255]);
+      fillRect(790, 204, 888, 224, [26, 36, 44, 255], RIM);
+      // Visores amarelos da ponte corporativa
+      for (let vx = 800; vx <= 876; vx += 14) {
+        fillRect(vx, 210, vx + 8, 215, AMBER);
+      }
+      // Chaminés térmicas industriais + pluma de fumaça/vapor em dithering
+      fillRect(666, 190, 686, 224, [44, 54, 62, 255], [16, 22, 28, 255]);
+      fillRect(712, 184, 734, 224, [44, 54, 62, 255], [16, 22, 28, 255]);
+      hLine(666, 686, 194, RED, 2);
+      hLine(712, 734, 188, RED, 2);
+      for (let syF = 166; syF <= 188; syF += 2) {
+        for (let sxF = 668; sxF <= 748; sxF += 3) {
+          if (((sxF + syF) % 5) === 0) putPx(sxF, syF, [90, 102, 110, 190]);
+        }
+      }
+      // Broca geotérmica submersa sob a quilha da Draga
+      fillRect(768, 406, 816, 422, [52, 40, 36, 255], AMBER);
+      fillRect(780, 412, 804, 420, RED);
+      // Espuma da linha d'água batendo no casco da Draga
+      hLine(612, 956, yAguaDraga, TXT, 2);
+      hLine(616, 954, yAguaDraga + 2, CYAN, 1);
+      if ((viewModel.painelAlvo.fervuraAtivaSeg ?? 0) > 0 || (viewModel.painelAlvo.alarmeFervuraAtivoSeg ?? 0) > 0) {
+        hLine(596, 958, yAguaDraga - 2, RED, 2);
+      }
+      if ((viewModel.painelAlvo.blindagemTermicaExternaPts ?? 0) > 0) {
+        fillRect(616, 248, 955, 253, AMBER, RED);
+      }
+      for (const hbSala of hbSalasAlvo) {
+        const infoSala = viewModel.painelAlvo.salasInspecionadas.find((s) => s.salaId === hbSala.metadados.salaId);
+        const mirada = salasMiradas.has(hbSala.metadados.salaId);
+        const fundoSala = hbSala.metadados.submersa ? [12, 38, 50, 255] : [16, 24, 30, 255];
+        fillRect(
+          hbSala.x,
+          hbSala.y,
+          hbSala.x + hbSala.largura - 1,
+          hbSala.y + hbSala.altura - 1,
+          fundoSala,
+          mirada ? RED : CYAN
+        );
+        const maxChars = Math.max(4, Math.floor((hbSala.largura - 8) / 7));
+        const rotSala = String(infoSala?.nomeSala ?? `S${hbSala.metadados.salaId}`).toUpperCase().slice(0, maxChars);
+        txt(hbSala.x + 4, hbSala.y + 6, rotSala, TXT, 7);
+        if (infoSala) {
+          const intAtu = Math.max(0, Number(infoSala.integridade ?? 0));
+          const intMax = Math.max(1, Number(infoSala.integridadeMax ?? 2));
+          segBar(hbSala.x + 4, hbSala.y + 20, intMax, intAtu, 6, 5, 2, intAtu > 0 ? GREEN : RED);
+          const rotVis =
+            infoSala.canalPermissao === "VISIVEL"
+              ? `${infoSala.contagemTripulantes ?? 0} TRP`
+              : infoSala.canalPermissao === "OCULTO_TURVO"
+                ? "TURVO"
+                : "CEGO";
+          txt(hbSala.x + 4, hbSala.y + 34, rotVis.slice(0, maxChars), infoSala.canalPermissao === "VISIVEL" ? AMBER : DIM, 7);
+        }
+      }
+    } else {
+      // Barco Humano ou Monstro Marinho: desenha mira ativa e estado dinâmico exatamente nas hitboxes SALA_ALVO_*
+      for (const hbSala of hbSalasAlvo) {
+        const infoSala = viewModel.painelAlvo?.salasInspecionadas?.find((s) => s.salaId === hbSala.metadados.salaId);
+        const mirada = salasMiradas.has(hbSala.metadados.salaId);
+        if (infoSala && Number(infoSala.aguaKg ?? 0) > 5 && !ehMonstroAlvo) {
+          const altAguaAlvo = Math.min(hbSala.altura - 6, Math.round((Number(infoSala.aguaKg) / 50) * (hbSala.altura - 6)));
+          if (altAguaAlvo > 2) {
+            fillRect(
+              hbSala.x + 2,
+              hbSala.y + hbSala.altura - 2 - altAguaAlvo,
+              hbSala.x + hbSala.largura - 3,
+              hbSala.y + hbSala.altura - 3,
+              [22, 86, 112, 150]
+            );
+          }
+        }
+        if (mirada) {
+          fillRect(hbSala.x, hbSala.y, hbSala.x + hbSala.largura - 1, hbSala.y + hbSala.altura - 1, null, RED);
+          lineSeg(540, 86 + dyCena, hbSala.x + hbSala.largura / 2, hbSala.y + hbSala.altura / 2, CYAN, true);
+        }
       }
     }
   }
 
-  // 2. Barra Superior (top_bar)
-  const cascoAtual = ehTouchdown && viewModel.barraSuperior.hpCascoAtual === 30 ? 28 : viewModel.barraSuperior.hpCascoAtual;
-  const cascoMax = viewModel.barraSuperior.hpCascoMax;
-  const rec = viewModel.barraSuperior.recursos;
-  const sucataExibida = rec.sucata === 30 && rec.biomassa === 15 ? 45 : rec.sucata;
-  const bioExibida = rec.sucata === 30 && rec.biomassa === 15 ? 20 : rec.biomassa;
-  const saltoPct = viewModel.barraSuperior.cargaSaltoPct > 0 ? viewModel.barraSuperior.cargaSaltoPct : 65;
+  // 2. Barra Superior (X=0..959, Y=0..39) — 100% valores reais do estado (zero overrides de mockup)
+  const cascoAtual = Math.max(0, Number(viewModel.barraSuperior.hpCascoAtual ?? 0));
+  const cascoMax = Math.max(1, Number(viewModel.barraSuperior.hpCascoMax ?? 30));
+  const rec = viewModel.barraSuperior.recursos ?? { sucata: 0, biomassa: 0, combustivel: 0, municao: 0 };
+  const saltoPct = Math.max(0, Math.min(100, Math.round(Number(viewModel.barraSuperior.cargaSaltoPct ?? 0))));
   const saltoTexto = ehTouchdown ? `${saltoPct}% (x0,5)` : `${saltoPct}%`;
 
-  panel(0, 0, W - 1, 40);
+  panel(0, 0, W - 1, 39);
   txt(6, 6, `CASCO ${cascoAtual}/${cascoMax}`, TXT);
-  segBar(130, 6, cascoMax, cascoAtual, 3, 8, 1, GREEN);
-  txt(262, 6, "BARREIRA", TXT);
-  bolhaBarreira(334, 5, viewModel.barraSuperior.barreiraBolhas > 0);
-  txt(
-    6,
-    24,
-    ehTouchdown ? "TOUCHDOWN - ESQUIVA 0%" : `NO FOIL - ESQUIVA ${viewModel.barraSuperior.esquivaEfetivaPct}%`,
-    ehTouchdown ? RED : GREEN
-  );
-  if (ehTouchdown) {
-    txt(420, 24, "RECARGA -25%", CYAN);
-  } else if (ehMonstroAlvo) {
-    txt(420, 24, `ALVO: TEUTHIS COURAÇADA ${viewModel.painelAlvo.hpCascoAtual}/${viewModel.painelAlvo.hpCascoMax} HP`, RED);
+  const wPipCasco = cascoMax > 26 ? 2 : 3;
+  segBar(110, 6, cascoMax, cascoAtual, wPipCasco, 8, 1, cascoAtual <= 8 ? RED : GREEN);
+  txt(214, 6, "BARREIRA", TXT);
+  const bolhasAtivas = Math.max(0, Number(viewModel.barraSuperior.barreiraBolhas ?? 0));
+  for (let b = 0; b < Math.max(1, Math.min(4, bolhasAtivas || 1)); b += 1) {
+    bolhaBarreira(282 + b * 12, 5, b < bolhasAtivas);
   }
-  txt(W / 2 - 32, 6, "BIO-FOIL", CYAN);
-  const eco = `SUCATA ${sucataExibida}  BIO ${bioExibida}  COMB ${rec.combustivel}  MUN ${rec.municao}`;
+  txt(436, 6, "BIO-FOIL", CYAN);
+  const eco = `SUC ${rec.sucata} BIO ${rec.biomassa} CMB ${rec.combustivel} MUN ${rec.municao}`;
   txt(W - 6 - eco.length * 8, 6, eco, TXT);
+
+  const rotEstadoTopo =
+    estadoFisico === "3_SPOOL_UP"
+      ? "SPOOL-UP - ESQUIVA 0%"
+      : ehTouchdown
+        ? "TOUCHDOWN - ESQUIVA 0%"
+        : `NO FOIL - ESQUIVA ${viewModel.barraSuperior.esquivaEfetivaPct}%`;
+  txt(6, 24, rotEstadoTopo, estadoFisico === "3_SPOOL_UP" ? AMBER : ehTouchdown ? RED : GREEN);
+
+  if (ehTouchdown) {
+    txt(238, 24, "RECARGA -25%", CYAN);
+  } else if ((viewModel.painelAlvo?.alarmeFervuraAtivoSeg ?? 0) > 0) {
+    txt(238, 24, `ALARME FERVURA ${viewModel.painelAlvo.alarmeFervuraAtivoSeg.toFixed(1)}s`, RED);
+  } else if ((viewModel.painelAlvo?.fervuraAtivaSeg ?? 0) > 0) {
+    txt(238, 24, "MAR EM FERVURA!", RED);
+  } else {
+    txt(238, 24, idCarcaca.replace(/_/g, " ").slice(0, 20), DIM);
+  }
+
   const rotSalto = `SALTO ${saltoTexto}`;
   txt(W - 6 - 64 - 6 - rotSalto.length * 8, 24, rotSalto, TXT);
   segBar(W - 6 - 64, 24, 16, Math.round((16 * saltoPct) / 100), 3, 8, 1, AMBER);
 
-  // 3. Termômetro Hidrostático Esquerdo (thermometer)
-  panel(0, 40, 150, 430, "SUSTENTAÇÃO");
+  // 3. Termômetro Hidrostático Esquerdo (X=0..150, Y=40..429) — 0 px delta com BTN_MERGULHO_TATICO e BTN_DRENAR_TUDO
+  panel(0, 40, 150, 429, "SUSTENTAÇÃO");
   const topY = 64;
-  const botY = 340;
-  const tx = 44;
-  const ky = (kg) => Math.round(topY + ((300 - kg) * (botY - topY)) / 200);
+  const botY = 336;
+  const tx = 42;
+  const ky = (kg) => {
+    const kgClamped = Math.max(80, Math.min(320, Number(kg) || 0));
+    return Math.max(topY, Math.min(botY, Math.round(topY + ((300 - kgClamped) * (botY - topY)) / 200)));
+  };
 
-  const limiteKg = ehTouchdown && viewModel.termometroSustentacao.sustentacaoAtualKg === 0
-    ? 180
-    : Math.round(viewModel.termometroSustentacao.sustentacaoAtualKg);
-  const pesoKg = ehTouchdown && Math.round(viewModel.termometroSustentacao.pesoTotalKg) === 225
-    ? 224
-    : Math.round(viewModel.termometroSustentacao.pesoTotalKg);
+  const limiteKg = Math.round(Number(viewModel.termometroSustentacao.sustentacaoAtualKg ?? 0));
+  const pesoKg = Math.round(Number(viewModel.termometroSustentacao.pesoTotalKg ?? 0));
 
   fillRect(tx, topY, tx + 12, botY, [14, 22, 28, 255], RIM);
   for (const kgEsc of [300, 250, 200, 150, 100]) {
@@ -2506,7 +3084,9 @@ export function renderizarCenaCanvasParaPngBuffer(viewModel, opcoes = {}) {
   }
   const py = ky(pesoKg);
   const ly = ky(limiteKg);
-  fillRect(tx + 2, py, tx + 10, botY - 1, AMBER);
+  if (py < botY) {
+    fillRect(tx + 2, py, tx + 10, botY - 1, pesoKg > limiteKg ? RED : AMBER);
+  }
   hLine(tx - 2, tx + 14, ly, CYAN, 2);
 
   if (opcoes.exibirGhostPreview === true && viewModel.termometroSustentacao.ghostPreview?.ativo) {
@@ -2516,152 +3096,265 @@ export function renderizarCenaCanvasParaPngBuffer(viewModel, opcoes = {}) {
     }
   }
 
-  if (py > ly) {
-    txt(62, ly - 4, `${limiteKg} kg`, CYAN);
-    txt(62, ly + 6, "LIMITE", CYAN);
-    txt(62, py - 2, `${pesoKg} kg`, AMBER);
-    txt(62, py + 8, "PESO", AMBER);
-  } else {
-    txt(62, py - 14, `${pesoKg} kg`, AMBER);
-    txt(62, py - 4, "PESO", AMBER);
-    txt(62, ly + 2, `${limiteKg} kg`, CYAN);
-    txt(62, ly + 12, "LIMITE", CYAN);
+  // Separação vertical mínima garantida (>= 22 px) entre rótulos LIMITE e PESO para zero colisão de texto
+  let yRotLim = Math.max(66, Math.min(276, ly - 4));
+  let yRotPeso = Math.max(66, Math.min(276, py - 4));
+  if (Math.abs(yRotPeso - yRotLim) < 22) {
+    if (pesoKg >= limiteKg) {
+      yRotPeso = Math.max(66, yRotLim - 22);
+      if (Math.abs(yRotPeso - yRotLim) < 22) yRotLim = Math.min(278, yRotPeso + 22);
+    } else {
+      yRotPeso = Math.min(278, yRotLim + 22);
+      if (Math.abs(yRotPeso - yRotLim) < 22) yRotLim = Math.max(66, yRotPeso - 22);
+    }
   }
-  if (ehTouchdown || viewModel.termometroSustentacao.alertaTouchdownAtivo) {
-    fillRect(62, 300, 146, 316, [70, 8, 14, 255], RED);
-    txt(66, 305, "TOUCHDOWN", RED);
-  }
-  fillRect(6, 360, 144, 390, SLOT_BG, RIM);
-  txt(14, 367, "MERGULHO", TXT);
-  txt(14, 378, "TÁTICO", TXT);
-  fillRect(6, 396, 144, 424, SLOT_BG, RIM);
-  txt(14, 402, "[V] DRENAR", TXT);
-  txt(14, 413, "TUDO", TXT);
+  txt(60, yRotLim, `${limiteKg} kg`, CYAN);
+  txt(60, yRotLim + 9, "LIMITE", CYAN);
+  txt(60, yRotPeso, `${pesoKg} kg`, AMBER);
+  txt(60, yRotPeso + 9, "PESO", AMBER);
 
-  // 4. Painel do Inimigo (enemy_panel)
-  if (viewModel.painelAlvo.presente) {
-    const caixaInimigo = ehMonstroAlvo ? [726, 44, 956, 132] : [720, 44, 956, 124];
-    const [ex0, ey0, ex1, ey1] = caixaInimigo;
-    const nomeInimigo = ehMonstroAlvo ? "TEUTHIS COURAÇADA" : "LANCHA PATRULHEIRA";
-    const hpInimigoMax = viewModel.painelAlvo.hpCascoMax;
-    const hpInimigoAtual = ehTouchdown && viewModel.painelAlvo.hpCascoAtual === 8 ? 7 : viewModel.painelAlvo.hpCascoAtual;
-    panel(ex0, ey0, ex1, ey1);
-    txt(ex0 + 6, ey0 + 6, nomeInimigo, RED);
-    txt(ex0 + 6, ey0 + 20, `CASCO ${hpInimigoAtual}/${hpInimigoMax}`, TXT);
-    segBar(ex0 + 110, ey0 + 20, hpInimigoMax, hpInimigoAtual, hpInimigoMax <= 8 ? 9 : 7, 8, 2, RED);
-    const linhasInimigo = ehMonstroAlvo
-      ? [
-          "SEM BARREIRA",
-          "TENTÁCULOS: RECARGA 8s",
-          "SIFÃO MUSC.: ESQUIVA 20%",
-          ["GÂNGLIO: 3/3", 3],
-          "BICO: MIRANDO NO MASTRO",
-        ]
-      : ehTouchdown
-        ? ["SEM BARREIRA", "ESQUIVA 0%"]
-        : ["SEM BARREIRA", "MIRANDO: SIFÃO 3.2s"];
-    let lyInimigo = ey0 + 34;
-    for (const lin of linhasInimigo) {
-      if (Array.isArray(lin)) {
-        const [rotLin, barrasLin] = lin;
-        txt(ex0 + 6, lyInimigo, rotLin, AMBER);
-        const bx = ex0 + 6 + rotLin.length * 8 + 4;
-        for (let bi = 0; bi < barrasLin; bi += 1) {
-          fillRect(bx + bi * 6, lyInimigo, bx + bi * 6 + 3, lyInimigo + 6, GREEN);
-        }
-      } else {
-        txt(ex0 + 6, lyInimigo, lin, AMBER);
-      }
-      lyInimigo += 11;
+  if (ehTouchdown || viewModel.termometroSustentacao.alertaTouchdownAtivo) {
+    fillRect(60, 304, 146, 320, [70, 8, 14, 255], RED);
+    txt(64, 309, "TOUCHDOWN", RED);
+  }
+
+  const hbMergulho = hitboxes.find((h) => h.idHitbox === "BTN_MERGULHO_TATICO");
+  if (hbMergulho) {
+    fillRect(
+      hbMergulho.x,
+      hbMergulho.y,
+      hbMergulho.x + hbMergulho.largura - 1,
+      hbMergulho.y + hbMergulho.altura - 1,
+      ehTouchdown ? [18, 40, 52, 255] : SLOT_BG,
+      ehTouchdown ? CYAN : RIM
+    );
+    txt(hbMergulho.x + 8, hbMergulho.y + 6, ehTouchdown ? "EMERGIR" : "MERGULHO", TXT);
+    txt(hbMergulho.x + 8, hbMergulho.y + 17, ehTouchdown ? "AO FOIL" : "TÁTICO", ehTouchdown ? CYAN : TXT);
+  }
+
+  const hbDrenar = hitboxes.find((h) => h.idHitbox === "BTN_DRENAR_TUDO");
+  if (hbDrenar) {
+    fillRect(
+      hbDrenar.x,
+      hbDrenar.y,
+      hbDrenar.x + hbDrenar.largura - 1,
+      hbDrenar.y + hbDrenar.altura - 1,
+      SLOT_BG,
+      ehTouchdown ? RED : RIM
+    );
+    txt(hbDrenar.x + 8, hbDrenar.y + 5, "[V] DRENAR", ehTouchdown ? DIM : TXT);
+    txt(hbDrenar.x + 8, hbDrenar.y + 16, "TUDO", ehTouchdown ? DIM : TXT);
+    if (ehTouchdown) {
+      lock(hbDrenar.x + hbDrenar.largura - 14, hbDrenar.y + 9, AMBER);
     }
   }
 
-  // 5. Barra Inferior (bottom_bar: Coração Bio-Elétrico, Sistemas, Armas e Tripulação com retratos F5)
-  const y0 = 430;
-  const energiaTotal = viewModel.reatorCoracaoBioEletrico.barrasTotais;
-  const livres = viewModel.reatorCoracaoBioEletrico.barrasLivres ?? 0;
-  const energiaUsada = energiaTotal - livres;
+  // 4. Painel Superior Direito do Alvo (em COMBATE) — barra auto-escalada que nunca vaza de X=956 (MUT-97)
+  if (faseJogo === "COMBATE" && viewModel.painelAlvo?.presente) {
+    const caixaInimigo = ehChefeDraga ? [620, 44, 956, 138] : [716, 44, 956, 132];
+    const [ex0, ey0, ex1, ey1] = caixaInimigo;
+    const maxCharsNome = Math.floor((ex1 - ex0 - 12) / 8);
+    const nomeBruto = ehChefeDraga
+      ? `DRAGA CONTINENTAL F${viewModel.painelAlvo.faseChefe ?? 1}`
+      : String(viewModel.painelAlvo.nomeAlvo ?? (ehMonstroAlvo ? "TEUTHIS COURAÇADA" : "LANCHA PATRULHEIRA")).toUpperCase();
+    const nomeInimigo = nomeBruto.slice(0, maxCharsNome);
+    const hpInimigoMax = Math.max(1, Number(viewModel.painelAlvo.hpCascoMax ?? 8));
+    const hpInimigoAtual = Math.max(0, Number(viewModel.painelAlvo.hpCascoAtual ?? 0));
 
-  panel(0, y0, 228, H - 1, "CORAÇÃO BIO-ELÉTRICO");
+    panel(ex0, ey0, ex1, ey1);
+    txt(ex0 + 6, ey0 + 6, nomeInimigo, RED);
+    const rotCascoAlvo = `CASCO ${hpInimigoAtual}/${hpInimigoMax}`;
+    txt(ex0 + 6, ey0 + 20, rotCascoAlvo, TXT);
+
+    const xBarraAlvo = ex0 + 6 + rotCascoAlvo.length * 8 + 6;
+    const largDispBarra = Math.max(24, ex1 - 6 - xBarraAlvo);
+    let wSegAlvo;
+    let gapSegAlvo;
+    if (opcoes.estourarBarraChefeMutacao === true) {
+      wSegAlvo = 9;
+      gapSegAlvo = 2;
+    } else {
+      const passoSeg = Math.max(2, Math.min(10, Math.floor(largDispBarra / hpInimigoMax)));
+      gapSegAlvo = passoSeg >= 5 ? 2 : 1;
+      wSegAlvo = Math.max(1, passoSeg - gapSegAlvo);
+    }
+    segBar(xBarraAlvo, ey0 + 20, hpInimigoMax, hpInimigoAtual, wSegAlvo, 8, gapSegAlvo, RED);
+
+    const barreiraAlvo = Number(viewModel.painelAlvo.barreiraBolhas ?? 0);
+    const esquivaAlvo = Number(viewModel.painelAlvo.esquivaPct ?? 0);
+    const linhasInimigo = [];
+    linhasInimigo.push(
+      barreiraAlvo > 0 ? `BARREIRA: ${barreiraAlvo} BOLHA(S) | ESQ ${esquivaAlvo}%` : `SEM BARREIRA | ESQUIVA ${esquivaAlvo}%`
+    );
+    if (ehChefeDraga) {
+      if ((viewModel.painelAlvo.blindagemTermicaExternaPts ?? 0) > 0) {
+        linhasInimigo.push(`BLINDAGEM TÉRMICA: ${viewModel.painelAlvo.blindagemTermicaExternaPts} PTS`);
+      }
+      if ((viewModel.painelAlvo.alarmeFervuraAtivoSeg ?? 0) > 0) {
+        linhasInimigo.push(`ALARME FERVURA: ${viewModel.painelAlvo.alarmeFervuraAtivoSeg.toFixed(1)}s`);
+      } else if ((viewModel.painelAlvo.fervuraAtivaSeg ?? 0) > 0) {
+        linhasInimigo.push(`FERVURA ATIVA: ${viewModel.painelAlvo.fervuraAtivaSeg.toFixed(1)}s`);
+      } else {
+        linhasInimigo.push(`SALAS ATIVAS: ${viewModel.painelAlvo.salasInspecionadas.length}`);
+      }
+    } else if (ehMonstroAlvo) {
+      const ganglio = viewModel.painelAlvo.salasInspecionadas.find((s) => /GANGLIO/i.test(s.nomeSala));
+      const intG = ganglio?.integridade ?? 3;
+      const maxG = ganglio?.integridadeMax ?? 3;
+      linhasInimigo.push([`GÂNGLIO: ${intG}/${maxG}`, intG]);
+      linhasInimigo.push("BICO -> MASTRO | TENT. 8s");
+    } else {
+      linhasInimigo.push("TORRETA + TORPEDO ATIVOS");
+    }
+
+    let lyInimigo = ey0 + 35;
+    for (const lin of linhasInimigo) {
+      if (lyInimigo + 8 > ey1 - 2) break;
+      if (Array.isArray(lin)) {
+        const [rotLin, barrasLin] = lin;
+        txt(ex0 + 6, lyInimigo, rotLin.slice(0, maxCharsNome), AMBER);
+        const bx = ex0 + 6 + rotLin.length * 8 + 4;
+        for (let bi = 0; bi < barrasLin; bi += 1) {
+          if (bx + bi * 6 + 3 < ex1 - 4) {
+            fillRect(bx + bi * 6, lyInimigo, bx + bi * 6 + 3, lyInimigo + 6, GREEN);
+          }
+        }
+      } else {
+        txt(ex0 + 6, lyInimigo, String(lin).slice(0, maxCharsNome), AMBER);
+      }
+      lyInimigo += 12;
+    }
+  }
+
+  // 5. Barra Inferior (Y=430..539): 4 Painéis estritamente alinhados em 0 px com obterMapaHitboxesNativo
+  const y0 = 430;
+  const energiaTotal = Math.max(1, Number(viewModel.reatorCoracaoBioEletrico.barrasTotais ?? 7));
+  const livres = Math.max(0, Number(viewModel.reatorCoracaoBioEletrico.barrasLivres ?? 0));
+  const energiaUsada = Math.max(0, energiaTotal - livres);
+
+  // 5A. CORAÇÃO BIO-ELÉTRICO (X=0..198) — suporta até 18 barras em 2 fileiras sem vazar X=198
+  panel(0, y0, 198, H - 1, "CORAÇÃO BIO-ELÉTRICO");
   heartOrgan(10, y0 + 30);
-  for (let i = 0; i < energiaTotal; i += 1) {
-    const c = i < energiaUsada ? GREEN : PIP_OFF;
-    fillRect(50 + i * 14, y0 + 26, 50 + i * 14 + 9, y0 + 70, c, RIM);
+  if (energiaTotal <= 10) {
+    const passoB = energiaTotal <= 8 ? 16 : 14;
+    const largB = passoB - 4;
+    for (let i = 0; i < energiaTotal; i += 1) {
+      const c = i < energiaUsada ? GREEN : PIP_OFF;
+      fillRect(50 + i * passoB, y0 + 26, 50 + i * passoB + largB - 1, y0 + 68, c, RIM);
+    }
+  } else {
+    const cols = Math.ceil(energiaTotal / 2);
+    const passoB = Math.max(10, Math.floor(142 / cols));
+    const largB = Math.max(6, passoB - 3);
+    for (let i = 0; i < energiaTotal; i += 1) {
+      const row = Math.floor(i / cols);
+      const col = i % cols;
+      const c = i < energiaUsada ? GREEN : PIP_OFF;
+      const by0 = y0 + 24 + row * 23;
+      fillRect(50 + col * passoB, by0, 50 + col * passoB + largB - 1, by0 + 19, c, RIM);
+    }
   }
   txt(50, y0 + 82, `${livres}/${energiaTotal} LIVRES`, TXT);
 
-  panel(230, y0, 446, H - 1, "SISTEMAS");
-  const siglasSistemasHud = ["ESC", "SIF", "BRQ", "TUB"];
-  siglasSistemasHud.forEach((sigla, i) => {
-    const sys = viewModel.caixaSistemas.find((s) => s.sigla === sigla);
-    const bx = 238 + i * 52;
-    const bloqueado = !sys || !sys.instalado;
-    const danificado = !bloqueado && (ehTouchdown && sigla === "SIF" ? true : sys.barrasIntegridade < sys.barrasNivelMax);
-    const on = bloqueado
-      ? 0
-      : ehTouchdown && sigla === "SIF"
-        ? 1
-        : ehTouchdown && sigla === "BRQ" && sys.barrasEnergiaAlocada === 0
-          ? 1
-          : sys.barrasEnergiaAlocada;
-    const tot = bloqueado ? 0 : sys.barrasNivelMax;
-    fillRect(bx, y0 + 22, bx + 46, y0 + 64, SLOT_BG, danificado ? RED : RIM);
+  // 5B. SISTEMAS (X=200..495) — todos os 8 sistemas alinhados em 0 px com SISTEMA_*
+  panel(200, y0, 495, H - 1, "SISTEMAS");
+  const hbSistemas = hitboxes.filter((h) => h.tipo === "SISTEMA_RODAPE");
+  (viewModel.caixaSistemas ?? []).forEach((sys, i) => {
+    const hb = hbSistemas[i];
+    if (!hb) return;
+    const bloqueado = !sys.instalado;
+    const danificado = !bloqueado && sys.barrasIntegridade < sys.barrasNivelMax;
+    const ionizado = !bloqueado && Number(sys.barrasIonizadas ?? 0) > 0;
+    fillRect(
+      hb.x,
+      hb.y,
+      hb.x + hb.largura - 1,
+      hb.y + hb.altura - 1,
+      SLOT_BG,
+      danificado ? RED : ionizado ? CYAN : RIM
+    );
+    txt(hb.x + 5, hb.y + 4, String(sys.sigla).slice(0, 3), bloqueado ? DIM : TXT, 7);
     if (bloqueado) {
-      lock(bx + 19, y0 + 30, DIM);
-      txt(bx + 11, y0 + 50, sigla, DIM);
+      lock(hb.x + 12, hb.y + 28, DIM);
+      txt(hb.x + 5, hb.y + 66, "BLQ", DIM, 7);
     } else {
-      txt(bx + 11, y0 + 30, sigla, TXT);
-      pips(bx + 6, y0 + 50, on, tot, GREEN);
-      if (danificado) {
-        for (const [dx, dy] of PONTOS_RACHADURA_DANO_SIF) {
-          putPx(bx + 30 + dx, y0 + 46 + dy, RED);
-        }
+      const tot = Math.min(8, Math.max(0, Number(sys.barrasNivelMax ?? 0)));
+      const on = Math.max(0, Number(sys.barrasEnergiaAlocada ?? 0));
+      const integ = Math.max(0, Number(sys.barrasIntegridade ?? tot));
+      for (let b = 0; b < tot; b += 1) {
+        const pyPip = hb.y + 56 - b * 5;
+        const corPip = b < on ? (ionizado ? CYAN : GREEN) : b < integ ? PIP_OFF : RED;
+        fillRect(hb.x + 5, pyPip, hb.x + hb.largura - 6, pyPip + 3, corPip);
       }
+      txt(hb.x + 5, hb.y + 66, `${on}/${integ}`, danificado ? RED : TXT, 7);
     }
-    const rot = bloqueado ? "BLOQ." : `${sigla} ${on}`;
-    txt(bx + 4, y0 + 72, rot, bloqueado ? DIM : TXT);
   });
 
-  panel(448, y0, 726, H - 1, "ARMAS");
-  viewModel.caixaArmas.forEach((slot, i) => {
-    const bx = 454 + i * 68;
-    fillRect(bx, y0 + 22, bx + 63, y0 + 100, SLOT_BG, RIM);
-    txt(bx + 4, y0 + 26, String(i + 1), DIM);
+  // 5C. ARMAS (X=497..735) — 4 slots alinhados em 0 px com ARMA_SLOT_0..3
+  panel(497, y0, 735, H - 1, "ARMAS");
+  const hbArmas = hitboxes.filter((h) => h.tipo === "SLOT_ARMA");
+  (viewModel.caixaArmas ?? []).forEach((slot, i) => {
+    const hb = hbArmas[i];
+    if (!hb) return;
+    const temAlvo = slot.ocupado && slot.salaAlvoId !== null && slot.salaAlvoId !== undefined;
+    fillRect(hb.x, hb.y, hb.x + hb.largura - 1, hb.y + hb.altura - 1, SLOT_BG, temAlvo ? CYAN : RIM);
+    txt(hb.x + 3, hb.y + 4, `[${i + 1}]`, temAlvo ? CYAN : DIM, 7);
     if (!slot.ocupado) {
-      txt(bx + 12, y0 + 56, "VAZIO", DIM);
+      txt(hb.x + 10, hb.y + 36, "VAZIO", DIM, 7);
       return;
     }
-    const nomeArma = NOMES_ARMAS_HUD_CONCEITO[slot.chassiId] ?? String(slot.chassiId).slice(0, 8);
-    txt(bx + 4, y0 + 40, nomeArma, TXT, 7);
-    pips(bx + 4, y0 + 58, slot.energiaCusto, slot.energiaCusto, GREEN);
-    for (let s = 0; s < slot.soquetesMax; s += 1) {
-      socket(bx + 4 + s * 11, y0 + 74);
+    const nomeArma = (NOMES_ARMAS_HUD_CONCEITO[slot.chassiId] ?? String(slot.chassiId).slice(0, 7)).slice(0, 7);
+    txt(hb.x + 3, hb.y + 16, nomeArma, TXT, 7);
+
+    // Pips de energia + barra de recarga em tempo real
+    const eneCusto = Math.max(1, Number(slot.energiaCusto ?? 1));
+    for (let e = 0; e < Math.min(4, eneCusto); e += 1) {
+      fillRect(hb.x + 3 + e * 8, hb.y + 29, hb.x + 8 + e * 8, hb.y + 33, GREEN);
     }
-    txt(bx + 4, y0 + 88, `${slot.soquetesMax} SOQ.`, DIM);
+    const tBase = Math.max(0.1, Number(slot.tempoRecargaBaseSeg ?? 9));
+    const fracRec = Math.max(0, Math.min(1, Number(slot.progressoRecargaSeg ?? 0) / tBase));
+    fillRect(hb.x + 3, hb.y + 38, hb.x + hb.largura - 4, hb.y + 43, [20, 30, 38, 255], BORDER);
+    const largRec = Math.round((hb.largura - 9) * fracRec);
+    if (largRec > 0) {
+      fillRect(hb.x + 4, hb.y + 39, hb.x + 3 + largRec, hb.y + 42, fracRec >= 1 ? YELLOW : CYAN);
+    }
+
+    const enxertados = slot.orgaosEnxertados ?? [];
+    for (let s = 0; s < Math.min(3, Number(slot.soquetesMax ?? 0)); s += 1) {
+      socket(hb.x + 4 + s * 11, hb.y + 49, Boolean(enxertados[s]));
+    }
+    const rotAlvo = temAlvo ? `ALV:${slot.salaAlvoId}` : "S/MIRA";
+    txt(hb.x + 3, hb.y + 66, rotAlvo.slice(0, 7), temAlvo ? AMBER : DIM, 7);
   });
 
-  panel(728, y0, W - 1, H - 1, "TRIPULAÇÃO");
-  const ordemEspecies = { POLVO: 0, ARRAIA: 1, BAIACU: 2, CARANGUEJO: 3 };
-  const tripulantesOrdenados = [...viewModel.camaras.flatMap((c) => c.tripulantesPresentes)].sort(
-    (a, b) => (ordemEspecies[a.especie] ?? 9) - (ordemEspecies[b.especie] ?? 9)
-  );
-  tripulantesOrdenados.slice(0, 3).forEach((trip, i) => {
-    const bx = 734 + i * 74;
-    fillRect(bx, y0 + 22, bx + 69, y0 + 82, SLOT_BG, RIM);
-    const ret = assets.retratos[trip.especie] ?? assets.retratos.POLVO;
-    for (let ry = 0; ry < ret.altura; ry += 1) {
-      for (let rx = 0; rx < ret.largura; rx += 1) {
-        const src = (ry * ret.largura + rx) * 4;
-        const dst = ((y0 + 26 + ry) * W + (bx + 2 + rx)) * 4;
-        rgba[dst] = ret.rgba[src];
-        rgba[dst + 1] = ret.rgba[src + 1];
-        rgba[dst + 2] = ret.rgba[src + 2];
-        rgba[dst + 3] = 255;
+  // 5D. TRIPULAÇÃO (X=737..959) — até 6 cartões na exata ordem e coordenada de TRIPULANTE_CARD_*
+  panel(737, y0, W - 1, H - 1, "TRIPULAÇÃO");
+  const hbCards = hitboxes.filter((h) => h.tipo === "CARD_TRIPULANTE");
+  hbCards.forEach((hb) => {
+    const { especie, hpAtual, hpMax, inflado } = hb.metadados;
+    fillRect(hb.x, hb.y, hb.x + hb.largura - 1, hb.y + hb.altura - 1, SLOT_BG, inflado ? AMBER : RIM);
+    const ret = assets.retratos[especie] ?? assets.retratos.POLVO;
+    const largRet = Math.max(12, hb.largura - 4);
+    const altRet = 48;
+    for (let ry = 0; ry < altRet; ry += 1) {
+      const sy = Math.min(ret.altura - 1, Math.floor((ry * ret.altura) / altRet));
+      for (let rx = 0; rx < largRet; rx += 1) {
+        const sx = Math.min(ret.largura - 1, Math.floor((rx * ret.largura) / largRet));
+        const src = (sy * ret.largura + sx) * 4;
+        putPx(hb.x + 2 + rx, hb.y + 3 + ry, [ret.rgba[src], ret.rgba[src + 1], ret.rgba[src + 2], 255]);
       }
     }
-    const hpExibido = ehTouchdown && trip.especie === "BAIACU" && trip.hpAtual === 150 ? 135 : trip.hpAtual;
-    const corHp = hpExibido < trip.hpMax ? AMBER : GREEN;
-    txt(bx + 1, y0 + 88, `${trip.especie} ${hpExibido}`, corHp, 7);
+    const fracHp = Math.max(0, Math.min(1, Number(hpAtual) / Math.max(1, Number(hpMax))));
+    const corHp = fracHp < 0.5 ? RED : fracHp < 1 ? AMBER : GREEN;
+    fillRect(hb.x + 2, hb.y + 54, hb.x + hb.largura - 3, hb.y + 59, PIP_OFF);
+    const largHp = Math.round((hb.largura - 5) * fracHp);
+    if (largHp > 0) {
+      fillRect(hb.x + 2, hb.y + 54, hb.x + 1 + largHp, hb.y + 59, corHp);
+    }
+    const maxCh = Math.max(3, Math.floor((hb.largura - 4) / 7));
+    const siglaEsp = SIGLAS_CURTAS_ESPECIE_HUD[especie] ?? String(especie).slice(0, 3);
+    const rotCard = hb.largura >= 52 ? `${siglaEsp} ${hpAtual}` : String(hpAtual);
+    txt(hb.x + 3, hb.y + 66, rotCard.slice(0, maxCh), corHp, 7);
   });
 
   const finalImg = escalarNearestRgba(W, H, rgba, escala);
@@ -2696,6 +3389,8 @@ export function gerarCodigoJsClienteBiofoil() {
   let estadoCliente = JSON.parse(bootEl.textContent || '{}');
   let contextoUi = { pausaTaticaAtiva: false, slotArmaSelecionado: 0, tripulanteSelecionadoId: 'trip-polvo-1' };
   let audioCtx = null;
+  let cenaHiBitCarregada = false;
+  let seqCena = 0;
 
   function tocarPlanoAudio(planoAudio) {
     if (!planoAudio || typeof window.AudioContext !== 'function') return;
@@ -2728,23 +3423,31 @@ export function gerarCodigoJsClienteBiofoil() {
   function desenhar(vm, frameCanvas) {
     if (!vm || !frameCanvas || !Array.isArray(frameCanvas.comandosDesenho)) return;
     ctx.imageSmoothingEnabled = false;
+    const minhaSeq = ++seqCena;
     const imgCena = new window.Image();
     imgCena.onload = () => {
+      if (minhaSeq < seqCena) return;
+      cenaHiBitCarregada = true;
       ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, 960, 540);
       ctx.drawImage(imgCena, 0, 0, 960, 540);
     };
-    imgCena.src = '/cena-atual.png?t=' + Date.now();
-    ctx.font = '8px monospace';
-    for (const cmd of frameCanvas.comandosDesenho) {
-      if (cmd.op === 'FILL_RECT') {
-        ctx.fillStyle = cmd.cor;
-        ctx.fillRect(cmd.x, cmd.y, cmd.largura, cmd.altura);
-      } else if (cmd.op === 'STROKE_RECT') {
-        ctx.strokeStyle = cmd.cor;
-        ctx.strokeRect(cmd.x, cmd.y, cmd.largura, cmd.altura);
-      } else if (cmd.op === 'TEXT') {
-        ctx.fillStyle = cmd.cor;
-        ctx.fillText(cmd.texto, cmd.x, cmd.y);
+    imgCena.src = '/cena-atual.png?t=' + Date.now() + '&s=' + minhaSeq;
+    // Fallback síncrono inicial apenas antes da primeira placa Hi-Bit carregar (evita flickering e sobreposição dupla!)
+    if (!cenaHiBitCarregada) {
+      ctx.clearRect(0, 0, 960, 540);
+      ctx.font = '8px monospace';
+      for (const cmd of frameCanvas.comandosDesenho) {
+        if (cmd.op === 'FILL_RECT') {
+          ctx.fillStyle = cmd.cor;
+          ctx.fillRect(cmd.x, cmd.y, cmd.largura, cmd.altura);
+        } else if (cmd.op === 'STROKE_RECT') {
+          ctx.strokeStyle = cmd.cor;
+          ctx.strokeRect(cmd.x, cmd.y, cmd.largura, cmd.altura);
+        } else if (cmd.op === 'TEXT') {
+          ctx.fillStyle = cmd.cor;
+          ctx.fillText(cmd.texto, cmd.x, cmd.y);
+        }
       }
     }
   }
@@ -2876,6 +3579,9 @@ function gerarQuatroMatrizesAnimadasHiBit(chaveAtlasBase, categoria) {
   const linhasBase = GRADES_SPRITES_HIBITS_ARTESANAIS[chaveAtlasBase] ?? ['.#O#.', '#OOO#', '.#O#.'];
   const tokensEstagio = ['C', 'Y', 'G', 'R'];
   return [0, 1, 2, 3].map((fIdx) => {
+    if (chaveAtlasBase === 'BAIACU_NORMAL' && fIdx === 3 && GRADES_SPRITES_HIBITS_ARTESANAIS.BAIACU_INFLADO) {
+      return [...GRADES_SPRITES_HIBITS_ARTESANAIS.BAIACU_INFLADO];
+    }
     const tokDestaque = tokensEstagio[fIdx];
     return linhasBase.map((linha, rIdx) => {
       const chars = linha.split('');
@@ -2897,29 +3603,29 @@ function construirCatalogoAnimacao4Frames() {
     // 7 Personagens (4 Aliados + 3 Invasores)
     { id: 'POLVO', chaveAtlas: 'POLVO', categoria: 'TRIPULANTE_ALIADO', frames: ['F0_IDLE_BULBO', 'F1_NADO', 'F2_SOLDA_REPARO_2X', 'F3_ATAQUE_TENTACULAR'], hpMax: 80 },
     { id: 'ARRAIA', chaveAtlas: 'ARRAIA', categoria: 'TRIPULANTE_ALIADO', frames: ['F0_IDLE_PLANANDO', 'F1_NADO_ASA_ACIMA', 'F2_NADO_ASA_ABAIXO', 'F3_DESCARGA_ELETRICA'], hpMax: 70 },
-    { id: 'BAIACU', chaveAtlas: 'BAIACU_COMPACTO', categoria: 'TRIPULANTE_ALIADO', frames: ['F0_NORMAL_COMPACTO', 'F1_NADO_PROPULSAO', 'F2_INFLANDO_TRANSICAO', 'F3_INFLADO_SELA_BRECHA'], hpMax: 150 },
+    { id: 'BAIACU', chaveAtlas: 'BAIACU_NORMAL', categoria: 'TRIPULANTE_ALIADO', frames: ['F0_NORMAL_COMPACTO', 'F1_NADO_PROPULSAO', 'F2_INFLANDO_TRANSICAO', 'F3_INFLADO_SELA_BRECHA'], hpMax: 150 },
     { id: 'CARANGUEJO', chaveAtlas: 'CARANGUEJO', categoria: 'TRIPULANTE_ALIADO', frames: ['F0_GUARDA_BAIXA', 'F1_MARCHA_LATERAL', 'F2_PINCA_ABERTA', 'F3_GOLPE_PINCA'], hpMax: 110 },
-    { id: 'MARINHEIRO', chaveAtlas: 'MARINHEIRO_HUMANO', categoria: 'INVASOR', frames: ['F0_GUARDA_ARPAO', 'F1_PASSO_AVANCO', 'F2_MIRA_ENGATILHAR', 'F3_DISPARO_ARPAO'], hpMax: 100 },
-    { id: 'MERGULHADOR', chaveAtlas: 'MERGULHADOR_BLINDADO', categoria: 'INVASOR', frames: ['F0_POSTURA_PESADA', 'F1_MARCHA_ESCAFANDRO', 'F2_IGNICAO_MACARICO', 'F3_CORTE_TERMICO'], hpMax: 125 },
-    { id: 'PARASITA', chaveAtlas: 'PARASITA_ABISSAL', categoria: 'INVASOR', frames: ['F0_ONDULACAO_A', 'F1_ONDULACAO_B', 'F2_BOTE_MANDIBULA', 'F3_MORDIDA_SANGUESSUGA'], hpMax: 65 },
+    { id: 'MARINHEIRO', chaveAtlas: 'MARINHEIRO', categoria: 'INVASOR', frames: ['F0_GUARDA_ARPAO', 'F1_PASSO_AVANCO', 'F2_MIRA_ENGATILHAR', 'F3_DISPARO_ARPAO'], hpMax: 100 },
+    { id: 'MERGULHADOR', chaveAtlas: 'MERGULHADOR', categoria: 'INVASOR', frames: ['F0_POSTURA_PESADA', 'F1_MARCHA_ESCAFANDRO', 'F2_IGNICAO_MACARICO', 'F3_CORTE_TERMICO'], hpMax: 125 },
+    { id: 'PARASITA', chaveAtlas: 'PARASITA', categoria: 'INVASOR', frames: ['F0_ONDULACAO_A', 'F1_ONDULACAO_B', 'F2_BOTE_MANDIBULA', 'F3_MORDIDA_SANGUESSUGA'], hpMax: 65 },
     // 7 Armas Dorsais
     { id: 'EMISSOR_ACUSTICO_I', chaveAtlas: 'EMISSOR_ACUSTICO_I', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 10, soquetes: 1, energia: 1, usaMunicao: false, recuoDisparoPx: -4 },
-    { id: 'EMISSOR_RAJADA_II', chaveAtlas: 'EMISSOR_RAJADA_II', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 18, soquetes: 1, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
+    { id: 'EMISSOR_RAJADA_II', chaveAtlas: 'RAJADA_HIDROPNEUMATICA_II', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 18, soquetes: 1, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
     { id: 'CANHAO_ARPAO_CABO', chaveAtlas: 'CANHAO_ARPAO_CABO', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 15, soquetes: 2, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
     { id: 'DISPERSOR_ESTILHACOS', chaveAtlas: 'DISPERSOR_ESTILHACOS', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 22, soquetes: 1, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
-    { id: 'CORTADOR_TERMICO', chaveAtlas: 'CORTADOR_TERMICO', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 25, soquetes: 1, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
+    { id: 'CORTADOR_TERMICO', chaveAtlas: 'CORTADOR_TERMICO_PLASMA', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 25, soquetes: 1, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
     { id: 'LANCADOR_TORPEDO_ABISSAL', chaveAtlas: 'LANCADOR_TORPEDO_ABISSAL', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 28, soquetes: 2, energia: 2, usaMunicao: true, recuoDisparoPx: -4 },
     { id: 'MORTEIRO_ESPOROS', chaveAtlas: 'MORTEIRO_ESPOROS', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 12, soquetes: 2, energia: 1, usaMunicao: true, recuoDisparoPx: -4 },
     // 6 Órgãos Bio-Sintéticos
     { id: 'GLANDULA_BAIACU', chaveAtlas: 'GLANDULA_BAIACU', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
-    { id: 'ELETRO_PLACA', chaveAtlas: 'ELETRO_PLACA', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
-    { id: 'BEXIGA_PRESSAO', chaveAtlas: 'BEXIGA_PRESSAO', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
-    { id: 'BOLSA_TINTA', chaveAtlas: 'BOLSA_TINTA', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
-    { id: 'DENTE_LEVIATA', chaveAtlas: 'DENTE_LEVIATA', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    { id: 'ELETRO_PLACA', chaveAtlas: 'ELETRO_PLACA_ARRAIA', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    { id: 'BEXIGA_PRESSAO', chaveAtlas: 'BEXIGA_PRESSAO_ABISSAL', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    { id: 'BOLSA_TINTA', chaveAtlas: 'BOLSA_TINTA_CEGANTE', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    { id: 'DENTE_LEVIATA', chaveAtlas: 'DENTE_LEVIATA_SERRILHADO', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
     { id: 'GLANDULA_TERMOFILICA', chaveAtlas: 'GLANDULA_TERMOFILICA', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
     // 3 Componentes Vitais da Bio-Nave
     { id: 'CORACAO_BIO_ELETRICO', chaveAtlas: 'CORACAO_BIO_ELETRICO', categoria: 'SISTEMA_VITAL', frames: ['F0_DIASTOLE', 'F1_PULSO_INICIAL', 'F2_SISTOLE_MAXIMA', 'F3_RELAXAMENTO'] },
-    { id: 'VALVULA_ESFINCTERICA', chaveAtlas: 'VALVULA_ESFINCTERICA', categoria: 'SISTEMA_VITAL', frames: ['F0_FECHADA_ESTANQUE', 'F1_ABRINDO_33', 'F2_ABRINDO_66', 'F3_ABERTA_FLUXO_100'] },
+    { id: 'VALVULA_ESFINCTERICA', chaveAtlas: 'VALVULA_ESFINCTER', categoria: 'SISTEMA_VITAL', frames: ['F0_FECHADA_ESTANQUE', 'F1_ABRINDO_33', 'F2_ABRINDO_66', 'F3_ABERTA_FLUXO_100'] },
     { id: 'BULBO_NEURAL', chaveAtlas: 'BULBO_NEURAL', categoria: 'SISTEMA_VITAL', frames: ['F0_INATIVO_CINZA', 'F1_SINAPSE_ATIVA', 'F2_PULSO_NEURAL_MAXIMO', 'F3_CURTO_CIRCUITO_DANO'] },
   ];
 
@@ -3140,9 +3846,14 @@ export function renderizarQuadroAnimadoCenaBiofoil(estadoJogo, opcoes = {}) {
   const quadroTick = Number.isInteger(opcoes.quadroTick) && opcoes.quadroTick >= 0 ? opcoes.quadroTick : 0;
   const escalaInteira = opcoes.escalaInteira === 2 ? 2 : 1;
   const f4 = Math.floor(quadroTick / 6) % 4;
+  const subT = quadroTick % 48;
+  const disparando = subT >= 32 && subT <= 42;
+  const progCarga = disparando ? 1.0 : Math.min(1.0, subT / 32);
   const vm = projetarViewModelWireframe(estadoJogo);
   const pngBuffer = renderizarCenaCanvasParaPngBuffer(vm, {
     escalaInteira,
+    cicloSpriteF4: f4,
+    disparandoDorsal: disparando,
     exibirGhostPreview: Boolean(opcoes.exibirGhostPreview ?? true),
   });
 
@@ -3157,9 +3868,6 @@ export function renderizarQuadroAnimadoCenaBiofoil(estadoJogo, opcoes = {}) {
     calcularEncaixeCamaraBioNave(8, ['GLANDULA_BAIACU'], f4),
   ];
 
-  const subT = quadroTick % 48;
-  const disparando = subT >= 32 && subT <= 42;
-  const progCarga = disparando ? 1.0 : Math.min(1.0, subT / 32);
   const encaixesDorsais = [
     calcularEncaixeDorsalArma(0, quadroTick < 48 ? 'EMISSOR_ACUSTICO_I' : 'EMISSOR_RAJADA_II', progCarga, disparando),
     calcularEncaixeDorsalArma(1, quadroTick < 48 ? 'CANHAO_ARPAO_CABO' : 'CORTADOR_TERMICO', progCarga, disparando),
@@ -3408,7 +4116,7 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
             const dtSeg = Math.max(0.05, Math.min(5.0, body.dtSeg ?? 0.25));
             const pausaAtiva = body.pausaTaticaAtiva !== undefined ? body.pausaTaticaAtiva : contextoUiServidor.pausaTaticaAtiva;
             if (pausaAtiva !== true) {
-              estadoAtual = avancarTickCombateCompleto(estadoAtual, dtSeg);
+              estadoAtual = avancarTickPartidaEmTempoReal(estadoAtual, dtSeg);
             }
           } else if (body.eventoInput && typeof body.eventoInput === 'object') {
             const ctxEntrada = {

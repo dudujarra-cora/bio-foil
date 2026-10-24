@@ -58,7 +58,11 @@ import {
   avancarTickChefeDraga,
   transicionarFaseChefeDraga,
 } from '../src/onda5-catalogo-chefe/chefe-draga.mjs';
-import { ESQUEMA_15_COMANDOS_85A, despacharComandoUi } from '../src/onda6-ui/despacho-comandos.mjs';
+import {
+  ESQUEMA_15_COMANDOS_85A,
+  despacharComandoUi,
+  avancarTickPartidaEmTempoReal,
+} from '../src/onda6-ui/despacho-comandos.mjs';
 import {
   criarPerfilInicial,
   atualizarPerfilComMetricasRun,
@@ -643,14 +647,8 @@ export function simularPassoAgenteMcp(params = {}) {
 
   for (let i = 0; i < passosTick; i += 1) {
     if (estadoAtual.meta.faseJogo === 'COMBATE') {
-      estadoAtual = avancarTickCombateCompleto(estadoAtual, dtSeg);
-      if (estadoAtual.alvoCombate?.ativo) {
-        if (estadoAtual.alvoCombate.faseChefe) {
-          estadoAtual = avancarTickChefeDraga(estadoAtual, dtSeg);
-        } else {
-          estadoAtual = avancarTickIaInimiga(estadoAtual, dtSeg);
-        }
-      }
+      estadoAtual = avancarTickPartidaEmTempoReal(estadoAtual, dtSeg);
+      if (avaliarCondicaoDeVitoria(estadoAtual).encerrado) break;
     }
   }
 
@@ -1371,48 +1369,10 @@ export function executarAcaoJogoMcp(params = {}, opcoesDebug = {}) {
   for (let i = 0; i < passosTick; i += 1) {
     if (estadoAtual.meta.faseJogo !== 'COMBATE') break;
     ticksExecutados += 1;
-    estadoAtual = avancarTickCombateCompleto(estadoAtual, dtSeg);
-    estadoAtual = avancarTickBiomaEColmeiaViva(estadoAtual, dtSeg);
-
-    // Dispara armas dorsais carregadas que tenham salaAlvoId definida
-    for (let idxSlot = 0; idxSlot < (estadoAtual.naveJogador.armasAtivas ?? []).length; idxSlot += 1) {
-      const slot = estadoAtual.naveJogador.armasAtivas[idxSlot];
-      const arma = slot?.arma !== undefined ? slot.arma : slot;
-      if (
-        arma &&
-        arma.salaAlvoId !== null &&
-        arma.salaAlvoId !== undefined &&
-        Number(arma.progressoRecargaSeg ?? 0) >= Number(arma.tempoRecargaBaseSeg ?? 9)
-      ) {
-        const chassiDisparo = arma.chassiId ?? arma.id;
-        const danoCascoPadrao =
-          chassiDisparo === 'EMISSOR_ACUSTICO_I' || chassiDisparo === 'MORTEIRO_ESPOROS' ? 0 : 1;
-        estadoAtual = resolverImpactoNoAlvo(estadoAtual, {
-          tipo: 'DISPARO_ARMA',
-          salaAlvoId: arma.salaAlvoId,
-          chassiId: chassiDisparo,
-          danoCasco: arma.danoCasco ?? danoCascoPadrao,
-          danoSistema: arma.danoSistema ?? 1,
-          abreRombo: Number(arma.chanceFuroPct ?? 0) > 0,
-          municaoCusto: arma.municaoCusto ?? arma.municao ?? 0,
-          orgaosEnxertados: arma.orgaosEnxertados ?? [],
-        });
-        const cloneRec = structuredClone(estadoAtual);
-        const sClone = cloneRec.naveJogador.armasAtivas[idxSlot];
-        (sClone?.arma ?? sClone).progressoRecargaSeg = 0.0;
-        estadoAtual = congelarProfundo(cloneRec);
-      }
-    }
-
-    if (estadoAtual.alvoCombate?.ativo) {
-      if (estadoAtual.alvoCombate.faseChefe) {
-        estadoAtual = avancarTickChefeDraga(estadoAtual, dtSeg);
-      } else {
-        estadoAtual = avancarTickIaInimiga(estadoAtual, dtSeg);
-      }
-    }
-
+    estadoAtual = avancarTickPartidaEmTempoReal(estadoAtual, dtSeg);
     if (avaliarCondicaoDeVitoria(estadoAtual).encerrado) break;
+    const vivos = (estadoAtual.naveJogador.tripulacao ?? []).filter((t) => t.hpAtual > 0).length;
+    if (estadoAtual.naveJogador.hpCascoAtual <= 0 || vivos === 0) break;
   }
 
   // 4. Verifica derrota do jogador ou condição de vitória em combate

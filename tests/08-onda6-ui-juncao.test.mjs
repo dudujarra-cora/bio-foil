@@ -11,6 +11,8 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 
 import {
   criarEstadoInicialPartida,
@@ -37,6 +39,7 @@ import {
   FOLGA_PRAZO_SOS_HORAS,
   VELOCIDADE_PADRAO_ALFA_MN_H,
   MULTIPLICADORES_CORRENTE,
+  gerarMapaSetorial,
 } from '../src/onda4-mapa/gerador-poisson.mjs';
 import {
   VELOCIDADE_BASE_MAPA_MN_H,
@@ -55,6 +58,7 @@ import {
 import {
   DURACAO_FERVURA_OCEANICA_SEG,
   INTERVALO_AUTO_REPARO_IA_BACKUP_SEG,
+  criarEstadoChefeDraga,
 } from '../src/onda5-catalogo-chefe/chefe-draga.mjs';
 import {
   CADEIA_CANONICA_GDD,
@@ -97,6 +101,7 @@ import {
   obterMapaHitboxesNativo,
   calcularGhostPreviewTermometro,
   traduzirInputDomParaComandoUi,
+  avancarTickPartidaEmTempoReal,
 } from '../src/onda6-ui/despacho-comandos.mjs';
 import {
   CARCACAS_PERFIL_85B,
@@ -1648,5 +1653,286 @@ test('[PORTÃO 08.5 | Animação 4-Frames + Encaixes Câmara/Dorso + Cobertura 1
   assert.equal(MCP_SERVER_INFO.name, 'agent-testing-mcp-server');
   assert.equal(LIMITE_CARACTERES_RESPOSTA, 25000);
 });
+
+function decodificarPngRgbaParaTeste(pngBuf) {
+  assert.equal(pngBuf.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  let offset = 8;
+  let largura = 0;
+  let altura = 0;
+  const idats = [];
+  while (offset < pngBuf.length) {
+    const len = pngBuf.readUInt32BE(offset);
+    const tipo = pngBuf.subarray(offset + 4, offset + 8).toString('ascii');
+    const dados = pngBuf.subarray(offset + 8, offset + 8 + len);
+    if (tipo === 'IHDR') {
+      largura = dados.readUInt32BE(0);
+      altura = dados.readUInt32BE(4);
+    } else if (tipo === 'IDAT') {
+      idats.push(dados);
+    } else if (tipo === 'IEND') {
+      break;
+    }
+    offset += 12 + len;
+  }
+  const descompactado = zlib.inflateSync(Buffer.concat(idats));
+  const rgba = Buffer.alloc(largura * altura * 4);
+  const stride = largura * 4;
+  for (let y = 0; y < altura; y += 1) {
+    const srcRow = y * (stride + 1);
+    const filtro = descompactado[srcRow];
+    for (let i = 0; i < stride; i += 1) {
+      const rawByte = descompactado[srcRow + 1 + i];
+      const esq = i >= 4 ? rgba[y * stride + i - 4] : 0;
+      const cima = y > 0 ? rgba[(y - 1) * stride + i] : 0;
+      const supEsq = y > 0 && i >= 4 ? rgba[(y - 1) * stride + i - 4] : 0;
+      let val = rawByte;
+      if (filtro === 1) val = (rawByte + esq) & 0xff;
+      else if (filtro === 2) val = (rawByte + cima) & 0xff;
+      else if (filtro === 3) val = (rawByte + ((esq + cima) >> 1)) & 0xff;
+      else if (filtro === 4) {
+        const p = esq + cima - supEsq;
+        const pa = Math.abs(p - esq);
+        const pb = Math.abs(p - cima);
+        const pc = Math.abs(p - supEsq);
+        const pr = pa <= pb && pa <= pc ? esq : pb <= pc ? cima : supEsq;
+        val = (rawByte + pr) & 0xff;
+      }
+      rgba[y * stride + i] = val;
+    }
+  }
+  return { largura, altura, rgba };
+}
+
+test('[PORTÃO 08.6 | Auditoria Visual Pixel-a-Pixel + Hitboxes 0 Colisão + Combate Vivo | L1 + L2 + L4 + N4 + MUT-O6-10..12] Zero sobreposição em 7 layouts, barra 24/24 da Draga contida em X<=956, 5 carcaças distintas, 23 sprites reais >=8 linhas e combate em tempo real com fogo inimigo e cliques 1080p', () => {
+  // 1. Auditoria geométrica 960x540 (0 fora da tela e 0 colisão AABB par-a-par) nos 7 cenários visuais + MUT-O6-10
+  const estFoilBarco = congelarProfundo({
+    ...criarEstadoInicialPartida('seed-p086-f1', 'CARCACA_ALFA'),
+    alvoCombate: criarAlvoSetor1Canonico('BARCO_HUMANO'),
+  });
+  const estTdBarco = despacharComandoUi(estFoilBarco, {
+    tipo: 'MERGULHO_TATICO',
+    payload: { recolherFoil: true },
+  }).estado;
+  const estFoilMonstro = congelarProfundo({
+    ...criarEstadoInicialPartida('seed-p086-f3', 'CARCACA_ALFA'),
+    alvoCombate: criarAlvoSetor1Canonico('MONSTRO_MARINHO'),
+  });
+  const estTdMonstro = despacharComandoUi(estFoilMonstro, {
+    tipo: 'MERGULHO_TATICO',
+    payload: { recolherFoil: true },
+  }).estado;
+  const estDragaF3 = congelarProfundo({
+    ...criarEstadoInicialPartida('seed-p086-draga', 'COURACA_LIMIAR'),
+    alvoCombate: criarEstadoChefeDraga(3),
+  });
+  const estEstresse6Trip = congelarProfundo({
+    ...estFoilBarco,
+    naveJogador: {
+      ...estFoilBarco.naveJogador,
+      reator: { barrasTotais: 18, barrasDisponiveis: 6 },
+      tripulacao: [
+        ...estFoilBarco.naveJogador.tripulacao,
+        { id: 'trip-crab-4', especie: 'CARANGUEJO', nome: 'Garra-4', hpAtual: 110, hpMax: 110, camaraAtualId: 1, localizacao: 'NAVE_JOGADOR', vivo: true, inflado: false },
+        { id: 'trip-ray-5', especie: 'ARRAIA', nome: 'Volt-5', hpAtual: 70, hpMax: 70, camaraAtualId: 3, localizacao: 'NAVE_JOGADOR', vivo: true, inflado: false },
+        { id: 'trip-oct-6', especie: 'POLVO', nome: 'Sonda-6', hpAtual: 80, hpMax: 80, camaraAtualId: 7, localizacao: 'NAVE_JOGADOR', vivo: true, inflado: false },
+      ],
+    },
+  });
+  const mapaSetor1 = gerarMapaSetorial('seed-p086-mapa', 1);
+  const idEntradaMapa = mapaSetor1.nos.find((n) => n.tipoNo === 'ENTRADA')?.id ?? mapaSetor1.nos[0].id;
+  const estMapa = congelarProfundo({
+    ...criarEstadoInicialPartida('seed-p086-mapa', 'MANTA_VOLT'),
+    meta: { tickAtual: 0, tempoCombateSeg: 0, faseJogo: 'MAPA', setorAtual: 1, seedPartida: 'seed-p086-mapa' },
+    mapaSetorial: { ...mapaSetor1, setorNumero: 1, noAtualId: idEntradaMapa, frenteCorporativaX: -18 },
+  });
+
+  const cenarios7 = [
+    ['F1_FOIL_BARCO', estFoilBarco],
+    ['F2_TOUCHDOWN_BARCO', estTdBarco],
+    ['F3_FOIL_MONSTRO', estFoilMonstro],
+    ['F3_TOUCHDOWN_MONSTRO', estTdMonstro],
+    ['ESTRESSE_6_TRIP_18_REATOR', estEstresse6Trip],
+    ['DRAGA_FASE_3', estDragaF3],
+    ['MAPA_SETORIAL', estMapa],
+  ];
+
+  let totalHitboxesAuditadas = 0;
+  for (const [nomeCenario, estadoCen] of cenarios7) {
+    const vm = projetarViewModelWireframe(estadoCen);
+    const hbs = obterMapaHitboxesNativo(vm);
+    assert.equal(Object.isFrozen(hbs), true);
+    totalHitboxesAuditadas += hbs.length;
+
+    let foraLimites = 0;
+    let colisoes = 0;
+    for (let i = 0; i < hbs.length; i += 1) {
+      const a = hbs[i];
+      if (a.x < 0 || a.y < 0 || a.x + a.largura > 960 || a.y + a.altura > 540) {
+        foraLimites += 1;
+      }
+      for (let j = i + 1; j < hbs.length; j += 1) {
+        const b = hbs[j];
+        const interX = a.x < b.x + b.largura && a.x + a.largura > b.x;
+        const interY = a.y < b.y + b.altura && a.y + a.altura > b.y;
+        if (interX && interY) {
+          colisoes += 1;
+        }
+      }
+    }
+    assert.equal(
+      foraLimites,
+      0,
+      `[MUT-O6-10] Cenário ${nomeCenario} não pode ter nenhuma hitbox fora da grade nativa 960x540`
+    );
+    assert.equal(colisoes, 0, `Cenário ${nomeCenario} não pode ter sobreposição entre quadrados de ação`);
+  }
+
+  // Coordenadas exatas L4 cravadas nas placas de arte Hi-Bit (F1 / F2 / F3) e divisória de linha d'água do barco
+  const hbsF1 = obterMapaHitboxesNativo(projetarViewModelWireframe(estFoilBarco));
+  const hbsF2 = obterMapaHitboxesNativo(projetarViewModelWireframe(estTdBarco));
+  const hbsF3 = obterMapaHitboxesNativo(projetarViewModelWireframe(estFoilMonstro));
+  assert.equal(
+    hbsF1.find((h) => h.idHitbox === 'CAMARA_1').x,
+    364,
+    '[MUT-O6-10] CAMARA_1 na placa F1 deve iniciar exatamente em X=364 (sem desvio de hitbox)'
+  );
+  assert.equal(hbsF1.find((h) => h.idHitbox === 'CAMARA_7').x, 462);
+  assert.equal(hbsF2.find((h) => h.idHitbox === 'CAMARA_1').x, 338);
+  assert.equal(hbsF2.find((h) => h.idHitbox === 'CAMARA_7').x, 438);
+  assert.equal(hbsF3.find((h) => h.idHitbox === 'CAMARA_1').x, 378);
+  assert.equal(hbsF3.find((h) => h.idHitbox === 'SALA_ALVO_1').y, 220);
+  assert.equal(hbsF3.find((h) => h.idHitbox === 'SALA_ALVO_4').y, 384);
+  const hbBarcoSup = hbsF1.find((h) => h.idHitbox === 'SALA_ALVO_1');
+  const hbBarcoSub = hbsF1.find((h) => h.idHitbox === 'SALA_ALVO_3');
+  assert.equal(hbBarcoSup.y + hbBarcoSup.altura <= 356, true, 'Salas aéreas do barco ficam 100% acima da linha d’água Y=356');
+  assert.equal(hbBarcoSub.y >= 360, true, 'Salas submersas do barco ficam 100% abaixo da linha d’água Y=356');
+  assert.equal(obterMapaHitboxesNativo(null).length, 0);
+
+  // 2. Decodificação real de pixels PNG: contenção da barra 24/24 da Draga (MUT-O6-12), 5 carcaças únicas e Baiacu inflado
+  const pngDraga = renderizarCenaCanvasParaPngBuffer(projetarViewModelWireframe(estDragaF3), { escalaInteira: 1 });
+  const imgDraga = decodificarPngRgbaParaTeste(pngDraga);
+  assert.equal(imgDraga.largura, 960);
+  assert.equal(imgDraga.altura, 540);
+  let pixelsBarraVazandoBorda956 = 0;
+  for (let py = 64; py <= 71; py += 1) {
+    for (let px = 957; px <= 959; px += 1) {
+      const idx = (py * imgDraga.largura + px) * 4;
+      if (imgDraga.rgba[idx] === 255 && imgDraga.rgba[idx + 1] === 42 && imgDraga.rgba[idx + 2] === 56) {
+        pixelsBarraVazandoBorda956 += 1;
+      }
+    }
+  }
+  assert.equal(
+    pixelsBarraVazandoBorda956,
+    0,
+    '[MUT-O6-12] A barra de 24/24 HP da CHEFE_DRAGA jamais pode vazar para fora da moldura X=956'
+  );
+
+  // As 5 bio-naves jogáveis produzem 5 silhuetas PNG distintas em combate
+  const hashesCarcacas = new Set();
+  for (const idCarcaca of ['CARCACA_ALFA', 'MANTA_VOLT', 'COURACA_LIMIAR', 'SOMBRA_ABISSAL', 'COLMEIA_VIVA']) {
+    const estHull = congelarProfundo({
+      ...criarEstadoInicialPartida('seed-hull-png', idCarcaca),
+      alvoCombate: criarAlvoSetor1Canonico('BARCO_HUMANO'),
+    });
+    const bufHull = renderizarCenaCanvasParaPngBuffer(projetarViewModelWireframe(estHull), { escalaInteira: 1 });
+    hashesCarcacas.add(crypto.createHash('sha1').update(bufHull).digest('hex'));
+  }
+  assert.equal(hashesCarcacas.size, 5, '[N4] Examinadas: 5 silhuetas orgânicas distintas das 5 bio-naves no PNG de combate');
+
+  // Todas as 23 entidades do Atlas 4-Frames possuem matriz artesanal real >= 7 linhas (zero fallback placeholder 3x5)
+  let entidadesSemFallback = 0;
+  for (const idEnt of Object.keys(ATLAS_ANIMACAO_4FRAMES_BIOFOIL)) {
+    const linhasMatriz = ATLAS_ANIMACAO_4FRAMES_BIOFOIL[idEnt].quadros[0].matrizPixels.length;
+    assert.equal(linhasMatriz >= 7, true, `Entidade animada ${idEnt} não pode cair em fallback placeholder 3x5`);
+    entidadesSemFallback += 1;
+  }
+  assert.equal(entidadesSemFallback, 23);
+
+  // 3. Cliques humanos 1920x1080 (botão direito W3C button=2 no Baiacu + viagem em NO_MAPA_*) e mudança real de pixels na câmara 5
+  const hbCardBaiacu = hbsF1.find((h) => h.idHitbox === 'TRIPULANTE_CARD_trip-baiacu-1');
+  const tradInflar = traduzirInputDomParaComandoUi(
+    {
+      tipoEvento: 'CLICK',
+      clientX: (hbCardBaiacu.x + 12) * 2,
+      clientY: (hbCardBaiacu.y + 20) * 2,
+      button: 2,
+      retanguloCanvas: { left: 0, top: 0, width: 1920, height: 1080 },
+    },
+    estFoilBarco,
+    projetarViewModelWireframe(estFoilBarco),
+    {}
+  );
+  assert.equal(tradInflar.resultadoMotor?.aceito, true);
+  assert.equal(
+    tradInflar.resultadoMotor.estado.naveJogador.tripulacao.find((t) => t.id === 'trip-baiacu-1').inflado,
+    true
+  );
+  const pngAntesInflar = renderizarCenaCanvasParaPngBuffer(projetarViewModelWireframe(estFoilBarco), { escalaInteira: 1 });
+  const pngDepoisInflar = renderizarCenaCanvasParaPngBuffer(
+    projetarViewModelWireframe(tradInflar.resultadoMotor.estado),
+    { escalaInteira: 1 }
+  );
+  assert.notEqual(
+    crypto.createHash('sha1').update(pngAntesInflar).digest('hex'),
+    crypto.createHash('sha1').update(pngDepoisInflar).digest('hex'),
+    'Inflar o Baiacu em 1_NO_FOIL deve atualizar visualmente o sprite dentro da câmara 5 no PNG'
+  );
+
+  const vmMapa = projetarViewModelWireframe(estMapa);
+  const hbsMapa = obterMapaHitboxesNativo(vmMapa);
+  const noEntrada = vmMapa.mapaSetorialResumo.nos.find((n) => n.id === idEntradaMapa);
+  const idNoConectado = noEntrada.rotasSaida[0];
+  const hbNoConectado = hbsMapa.find((h) => h.idHitbox === `NO_MAPA_${idNoConectado}`);
+  const tradViagem = traduzirInputDomParaComandoUi(
+    {
+      tipoEvento: 'CLICK',
+      clientX: (hbNoConectado.x + 10) * 2,
+      clientY: (hbNoConectado.y + 10) * 2,
+      button: 0,
+      retanguloCanvas: { left: 0, top: 0, width: 1920, height: 1080 },
+    },
+    estMapa,
+    vmMapa,
+    {}
+  );
+  assert.equal(tradViagem.resultadoMotor?.aceito, true);
+  assert.equal(tradViagem.resultadoMotor.estado.mapaSetorial.noAtualId, idNoConectado);
+
+  // 4. Combate em tempo real (`avancarTickPartidaEmTempoReal`): Lei L2, armas do jogador, ablação de Blindagem Térmica e fogo inimigo (MUT-O6-11)
+  assert.throws(
+    () => avancarTickPartidaEmTempoReal({ naoCongelado: true }, 0.25),
+    /Lei L2/,
+    'avancarTickPartidaEmTempoReal deve exigir estado congelado (Object.freeze)'
+  );
+  assert.equal(avancarTickPartidaEmTempoReal(estMapa, 0.25), estMapa);
+
+  // Duelo em Touchdown (esquiva 0%): jogador fere casco inimigo com Arpão + Emissor Acústico I E inimigo fere a bio-nave!
+  let estDuelo = despacharComandoUi(estTdBarco, {
+    tipo: 'MIRAR_ARMA',
+    payload: { slotIndex: 0, salaAlvoId: 3 },
+  }).estado;
+  estDuelo = despacharComandoUi(estDuelo, {
+    tipo: 'MIRAR_ARMA',
+    payload: { slotIndex: 1, salaAlvoId: 3 },
+  }).estado;
+  const hpAlvoAntes = estDuelo.alvoCombate.hpCascoAtual;
+  const defesaJogadorAntes = estDuelo.naveJogador.hpCascoAtual + estDuelo.naveJogador.camadasBarreiraAtivas;
+  for (let t = 0; t < 64; t += 1) {
+    estDuelo = avancarTickPartidaEmTempoReal(estDuelo, 0.25);
+  }
+  assert.equal(estDuelo.alvoCombate.hpCascoAtual < hpAlvoAntes, true, 'Armas dorsais do jogador devem causar dano real ao alvo');
+  const defesaJogadorDepois = estDuelo.naveJogador.hpCascoAtual + estDuelo.naveJogador.camadasBarreiraAtivas;
+  assert.equal(
+    defesaJogadorDepois < defesaJogadorAntes,
+    true,
+    '[MUT-O6-11] O fogo de retorno determinístico do inimigo deve atingir a Barreira/Casco da bio-nave'
+  );
+
+  console.log(
+    `[N4] Auditoria visual e combate vivo examinados: ${cenarios7.length} cenários de tela, ${totalHitboxesAuditadas} hitboxes com 0 colisão, 5 carcaças PNG e ${entidadesSemFallback} entidades animadas`
+  );
+});
+
 
 
