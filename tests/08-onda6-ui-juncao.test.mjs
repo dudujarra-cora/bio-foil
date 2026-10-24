@@ -12,17 +12,74 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { criarEstadoInicialPartida, congelarProfundo } from '../src/onda1-fisica/estado-inicial.mjs';
+import {
+  criarEstadoInicialPartida,
+  congelarProfundo,
+  CATALOGO_ARMAS_BASE_PESO,
+  HP_MAX_POR_ESPECIE,
+  ARQUITETURAS_INICIAIS,
+} from '../src/onda1-fisica/estado-inicial.mjs';
+import {
+  FNV1A_32_OFFSET_BASIS,
+  FNV1A_32_PRIME,
+  DOMINIOS_STREAM_PRNG,
+} from '../src/onda1-fisica/hash32-streams.mjs';
 import { avancarTickFisicaHidraulica } from '../src/onda1-fisica/tick-hidraulica-foil.mjs';
-import { criarAlvoSetor1Canonico } from '../src/onda3-inimigos/ia-barco-monstro.mjs';
-import { inspecionarSalaAlvo } from '../src/onda2-combate/tick-tripulacao.mjs';
+import { criarAlvoSetor1Canonico, CONSTANTES_IA_INIMIGOS } from '../src/onda3-inimigos/ia-barco-monstro.mjs';
+import { CURVA_SAQUE_SETORIAL_56C } from '../src/onda3-inimigos/abordagem-vitoria.mjs';
+import { inspecionarSalaAlvo, CONSTANTES_TRIPULACAO } from '../src/onda2-combate/tick-tripulacao.mjs';
+import { CONSTANTES_SISTEMAS_ARMAS } from '../src/onda2-combate/tick-sistemas-armas.mjs';
+import {
+  LARGURA_SETOR_MN,
+  ALTURA_SETOR_MN,
+  DISTANCIA_MIN_NOS_MN,
+  DISTANCIA_MAX_ROTA_MN,
+  FOLGA_PRAZO_SOS_HORAS,
+  VELOCIDADE_PADRAO_ALFA_MN_H,
+  MULTIPLICADORES_CORRENTE,
+} from '../src/onda4-mapa/gerador-poisson.mjs';
+import {
+  VELOCIDADE_BASE_MAPA_MN_H,
+  TETO_VELOCIDADE_CRUZEiro_MN_H,
+  VELOCIDADE_ARRASTO_SOBREPESO_MN_H,
+  MULTIPLICADOR_TEMPO_DERIVA,
+  SPOOL_UP_FRIO_POS_DERIVA_SEG,
+} from '../src/onda4-mapa/relogio-viagem.mjs';
+import { VELOCIDADE_FRENTE_CORPORATIVA_MN_H } from '../src/onda4-mapa/eventos-nos.mjs';
+import {
+  ISOLAMENTO_RESIDUAL_POS_CHOQUE_SEG,
+  DURACAO_CHOQUE_ELETRO_PLACA_SEG,
+  PESO_ORGAO_ENXERTADO_KG,
+  MAX_TRIPULANTES_NAVE,
+} from '../src/onda5-catalogo-chefe/catalogo-naves-itens.mjs';
+import {
+  DURACAO_FERVURA_OCEANICA_SEG,
+  INTERVALO_AUTO_REPARO_IA_BACKUP_SEG,
+} from '../src/onda5-catalogo-chefe/chefe-draga.mjs';
+import {
+  CADEIA_CANONICA_GDD,
+  CADEIA_CANONICA_TESTES,
+  CADEIA_CANONICA_SCRIPTS,
+  CADEIA_CANONICA_PROTOCOLO,
+  CADEIA_CANONICA_RAIZ_OUTROS,
+  CADEIA_CANONICA_DIRS_RAIZ,
+  CADEIA_CANONICA_WORKFLOWS,
+} from '../src/gdd-parser.mjs';
+import { MCP_SERVER_INFO, LIMITE_CARACTERES_RESPOSTA } from '../scripts/mcp-testes-agentes.mjs';
 import {
   ORCAMENTO_LAYOUT_NATIVO_85C,
+  SISTEMAS_BARRA_INFERIOR_CANONICOS,
   PALETA_PIXEL_ART_BIOFOIL,
   TOKENS_PALETA_BIBLIA_ARTISTICA_13,
   GRADES_SPRITES_HIBITS_ARTESANAIS,
+  GEOMETRIA_ENCAIXE_CAMARAS_960,
+  ATLAS_ANIMACAO_4FRAMES_BIOFOIL,
   projetarViewModelWireframe,
   obterAtlasSpritesNativo,
+  obterQuadroAnimacaoEntidade,
+  calcularEncaixeCamaraBioNave,
+  calcularEncaixeDorsalArma,
+  renderizarQuadroAnimadoCenaBiofoil,
   rasterizarSpriteRgba,
   exportarAtlasHiBitsPngBuffer,
   renderizarViewModelNoCanvas2d,
@@ -1397,4 +1454,199 @@ test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas
     await srv.fechar();
   }
 });
+
+test('[PORTÃO 08.5 | Animação 4-Frames + Encaixes Câmara/Dorso + Cobertura 100% Exports | L2 + L3 + L4 + N4 + MUT-O6-07..09] Todos os 23 itens x 4 frames (= 92 quadros), encaixe 1/2 slots nas 8 câmaras, recuo dorsal -4px e 100% dos símbolos exportados', async () => {
+  // 1. Imutabilidade L2 e Contadores Explícitos N4 do Atlas de Animação 4-Frames (23 itens x 4 frames = 92 quadros)
+  assert.equal(Object.isFrozen(GEOMETRIA_ENCAIXE_CAMARAS_960), true);
+  assert.equal(Object.isFrozen(ATLAS_ANIMACAO_4FRAMES_BIOFOIL), true);
+
+  const chavesAnimadas = Object.keys(ATLAS_ANIMACAO_4FRAMES_BIOFOIL);
+  assert.equal(chavesAnimadas.length, 23, '[N4] Examinados: 23 itens animados no Atlas 4-Frames (7 personagens + 7 armas + 6 órgãos + 3 sistemas)');
+
+  let totalQuadrosContados = 0;
+  for (const idItem of chavesAnimadas) {
+    const entrada = ATLAS_ANIMACAO_4FRAMES_BIOFOIL[idItem];
+    assert.equal(Object.isFrozen(entrada), true);
+    assert.equal(entrada.totalFrames, 4, `[MUT-O6-09] Todo item animado (${idItem}) deve possuir exatamente 4 quadros (F0..F3)`);
+    assert.equal(entrada.quadros.length, 4);
+    for (let f = 0; f < 4; f += 1) {
+      const q = obterQuadroAnimacaoEntidade(idItem, f);
+      assert.equal(q.ok, true);
+      assert.equal(q.indiceQuadro, f);
+      assert.equal(Array.isArray(q.matrizPixels) && q.matrizPixels.length >= 3, true);
+      totalQuadrosContados += 1;
+    }
+    // Ciclo módulo 4 (quadro 4 === quadro 0)
+    const qCiclo = obterQuadroAnimacaoEntidade(idItem, 4);
+    assert.equal(qCiclo.ok, true);
+    assert.equal(qCiclo.indiceQuadro, 0);
+    assert.equal(qCiclo.codigoFrame, entrada.quadros[0].codigoFrame);
+  }
+  assert.equal(totalQuadrosContados, 92, '[N4] Examinados: 92 quadros de animação hi-bit (23 itens x 4 frames)');
+  console.log(
+    `[N4] Animação e Encaixe examinados: ${chavesAnimadas.length} itens animados, ${totalQuadrosContados} quadros (F0..F3), 8 câmaras, 2 slots dorsais`
+  );
+
+  // 2. Canal explícito de erro L3 em obterQuadroAnimacaoEntidade
+  const errInexistente = obterQuadroAnimacaoEntidade('ENTIDADE_FANTASMA', 0);
+  assert.equal(errInexistente.ok, false);
+  assert.equal(errInexistente.codigoErro, 'ENTIDADE_ANIMACAO_INEXISTENTE');
+
+  const errQuadroNeg = obterQuadroAnimacaoEntidade('POLVO', -1);
+  assert.equal(errQuadroNeg.ok, false);
+  assert.equal(errQuadroNeg.codigoErro, 'INDICE_QUADRO_INVALIDO');
+
+  // 3. Teste Cirúrgico de Encaixe nas 8 Câmaras (Vazia, 1 Slot 44x28 e 2 Slots 36x26 + Andar 4 22px)
+  const idsCamaras = [1, 7, 2, 3, 4, 5, 6, 8];
+  assert.equal(Object.keys(GEOMETRIA_ENCAIXE_CAMARAS_960.CAMARAS).length, 8, '[N4] Examinadas: 8 câmaras na geometria 960x540');
+
+  for (const cid of idsCamaras) {
+    const encVazia = calcularEncaixeCamaraBioNave(cid, [], 0);
+    assert.equal(encVazia.ok, true);
+    assert.equal(encVazia.modoEncaixe, 'VAZIA');
+    assert.equal(encVazia.limpaBulboEstaticoFundo, false);
+
+    const enc1Slot = calcularEncaixeCamaraBioNave(cid, ['POLVO'], 2);
+    assert.equal(enc1Slot.ok, true, `[MUT-O6-07] Câmara ${cid} deve encaixar 1 slot sem colisão`);
+    assert.equal(enc1Slot.modoEncaixe, 'SLOT_UNICO');
+    assert.equal(enc1Slot.limpaBulboEstaticoFundo, true);
+    assert.equal(enc1Slot.slots[0].larguraPx, 44, '[MUT-O6-07] Slot único na câmara 76px deve ter largura canônica 44px');
+    assert.equal(
+      enc1Slot.slots[0].alturaPx,
+      cid === 6 || cid === 8 ? 22 : 28,
+      '[MUT-O6-09] Altura do slot único deve ser 28px nos andares 1..3 e 22px no andar 4'
+    );
+    assert.equal(enc1Slot.zeroColisaoRotulo, true);
+    assert.equal(enc1Slot.zeroColisaoParedes, true);
+    assert.equal(enc1Slot.zeroColisaoValvulaCentral, true);
+
+    const enc2Slots = calcularEncaixeCamaraBioNave(cid, ['CARANGUEJO', 'MARINHEIRO'], 3);
+    assert.equal(enc2Slots.ok, true, `[MUT-O6-07] Câmara ${cid} deve encaixar 2 slots (36x26px) sem colisão`);
+    assert.equal(enc2Slots.modoEncaixe, 'SLOT_DUPLO');
+    assert.equal(enc2Slots.slots[0].larguraPx, 36, '[MUT-O6-07] Slot duplo na câmara 76px deve ter largura canônica 36px');
+    assert.equal(enc2Slots.slots[1].larguraPx, 36);
+    assert.equal(
+      enc2Slots.slots[0].alturaPx,
+      cid === 6 || cid === 8 ? 22 : 26,
+      '[MUT-O6-09] Altura do slot duplo deve ser 26px nos andares 1..3 e 22px no andar 4'
+    );
+    assert.equal(enc2Slots.zeroColisaoEntreSlots, true);
+    assert.equal(enc2Slots.zeroColisaoValvulaCentral, true);
+  }
+
+  // Rejeições explícitas L3 em calcularEncaixeCamaraBioNave
+  assert.equal(calcularEncaixeCamaraBioNave(99, ['POLVO'], 0).codigoErro, 'CAMARA_ID_INVALIDO');
+  assert.equal(calcularEncaixeCamaraBioNave(1, ['POLVO', 'ARRAIA', 'BAIACU'], 0).codigoErro, 'LOTACAO_SLOTS_CAMARA_INVALIDA');
+  assert.equal(calcularEncaixeCamaraBioNave(1, ['POLVO'], -3).codigoErro, 'INDICE_QUADRO_INVALIDO');
+  assert.equal(calcularEncaixeCamaraBioNave(1, ['INEXISTENTE'], 0).codigoErro, 'ENTIDADE_ANIMACAO_INEXISTENTE');
+
+  // 4. Teste Cirúrgico de Encaixe e Animação nas 7 Armas Dorsais (F0..F3 + Recuo -4px no Disparo)
+  const armasEsperadas = [
+    ['EMISSOR_ACUSTICO_I', 1, 10],
+    ['EMISSOR_RAJADA_II', 1, 18],
+    ['CANHAO_ARPAO_CABO', 2, 15],
+    ['DISPERSOR_ESTILHACOS', 1, 22],
+    ['CORTADOR_TERMICO', 1, 25],
+    ['LANCADOR_TORPEDO_ABISSAL', 2, 28],
+    ['MORTEIRO_ESPOROS', 2, 12],
+  ];
+  for (const [armaId, soquetesEsp, pesoEsp] of armasEsperadas) {
+    assert.equal(ATLAS_ANIMACAO_4FRAMES_BIOFOIL[armaId].pesoKg, pesoEsp);
+    assert.equal(ATLAS_ANIMACAO_4FRAMES_BIOFOIL[armaId].soquetes, soquetesEsp);
+
+    const f0 = calcularEncaixeDorsalArma(0, armaId, 0, false);
+    assert.equal(f0.ok, true);
+    assert.equal(f0.codigoFrame, 'F0_IDLE_0');
+    assert.equal(f0.deslocamentoRecuoX, 0);
+    assert.equal(f0.x, 392);
+
+    const f1 = calcularEncaixeDorsalArma(0, armaId, 0.5, false);
+    assert.equal(f1.codigoFrame, 'F1_CARGA_50');
+
+    const f2 = calcularEncaixeDorsalArma(1, armaId, 1.0, false);
+    assert.equal(f2.codigoFrame, 'F2_PRONTA_100');
+    assert.equal(f2.x, 438);
+
+    const f3 = calcularEncaixeDorsalArma(1, armaId, 1.0, true);
+    assert.equal(f3.ok, true, `[MUT-O6-08] Disparo da arma ${armaId} deve aplicar recuo canônico de -4px e manter zero colisão`);
+    assert.equal(f3.codigoFrame, 'F3_DISPARO_RECUO');
+    assert.equal(f3.deslocamentoRecuoX, -4, '[MUT-O6-08] Recuo horizontal no disparo (F3) deve ser exatamente -4px');
+    assert.equal(f3.x, 434);
+    assert.equal(f3.zeroColisaoTopoCamaras, true);
+  }
+
+  assert.equal(calcularEncaixeDorsalArma(5, 'EMISSOR_ACUSTICO_I', 0, false).codigoErro, 'SLOT_DORSAL_INVALIDO');
+  assert.equal(calcularEncaixeDorsalArma(0, 'POLVO', 0, false).codigoErro, 'ARMA_DORSAL_INEXISTENTE');
+  assert.equal(calcularEncaixeDorsalArma(0, 'EMISSOR_ACUSTICO_I', 1.5, false).codigoErro, 'PROGRESSO_CARGA_INVALIDO');
+
+  // 5. Renderizador de Quadro Animado Completo e Endpoint HTTP /quadro-animado-f1.png
+  const estadoCombate = congelarProfundo({
+    ...criarEstadoInicialPartida('seed-anim-01', 'CARCACA_ALFA'),
+    alvoCombate: criarAlvoSetor1Canonico('BARCO_HUMANO'),
+  });
+  const quadro38 = renderizarQuadroAnimadoCenaBiofoil(estadoCombate, { quadroTick: 38, escalaInteira: 1 });
+  assert.equal(quadro38.ok, true);
+  assert.equal(quadro38.cicloSpriteF4, 2);
+  assert.equal(quadro38.larguraPx, 960);
+  assert.equal(quadro38.alturaPx, 540);
+  assert.equal(quadro38.encaixesCamaras.length, 8);
+  assert.equal(quadro38.encaixesDorsais[0].codigoFrame, 'F3_DISPARO_RECUO');
+  assert.equal(quadro38.pngBuffer.subarray(0, 4).toString('hex'), '89504e47');
+
+  const srvAnim = await iniciarServidorClienteWebBiofoil({ host: '127.0.0.1', port: 0, estadoInicial: estadoCombate });
+  try {
+    const rOk = await fetch(`${srvAnim.url}/quadro-animado-f1.png?frame=38`);
+    assert.equal(rOk.status, 200);
+    assert.equal(rOk.headers.get('content-type'), 'image/png');
+    const buf = Buffer.from(await rOk.arrayBuffer());
+    assert.equal(buf.subarray(0, 4).toString('hex'), '89504e47');
+
+    const rInv = await fetch(`${srvAnim.url}/quadro-animado-f1.png?frame=invalido`);
+    assert.equal(rInv.status, 400);
+  } finally {
+    await srvAnim.fechar();
+  }
+
+  // 6. Validação direta L4 de 100% das constantes canônicas exportadas pelos módulos do repositório (Regra #7)
+  assert.equal(SISTEMAS_BARRA_INFERIOR_CANONICOS.length, 8);
+  assert.equal(CADEIA_CANONICA_GDD.length, 9);
+  assert.equal(CADEIA_CANONICA_TESTES.length, 9);
+  assert.equal(CADEIA_CANONICA_SCRIPTS.length >= 2, true);
+  assert.equal(CADEIA_CANONICA_PROTOCOLO.length >= 2, true);
+  assert.equal(CADEIA_CANONICA_RAIZ_OUTROS.includes('package.json'), true);
+  assert.equal(CADEIA_CANONICA_DIRS_RAIZ.includes('src'), true);
+  assert.equal(Array.isArray(CADEIA_CANONICA_WORKFLOWS), true);
+  assert.equal(CATALOGO_ARMAS_BASE_PESO.CANHAO_ARPAO_CABO.pesoBaseKg, 15);
+  assert.equal(HP_MAX_POR_ESPECIE.POLVO, 80);
+  assert.equal(Object.keys(ARQUITETURAS_INICIAIS).length, 5);
+  assert.equal(FNV1A_32_OFFSET_BASIS, 0x811c9dc5);
+  assert.equal(FNV1A_32_PRIME, 0x01000193);
+  assert.equal(Object.keys(DOMINIOS_STREAM_PRNG).length, 6);
+  assert.equal(CONSTANTES_SISTEMAS_ARMAS.REDUCAO_RECARGA_TOUCHDOWN, 0.25);
+  assert.equal(CONSTANTES_TRIPULACAO.TEMPO_NADO_SALA_BASE_SEG, 1.5);
+  assert.equal(Object.keys(CURVA_SAQUE_SETORIAL_56C).length, 8);
+  assert.equal(CONSTANTES_IA_INIMIGOS.TAXA_INVASAO_ROMBO_SUBMERSO_KG_S, 5.0);
+  assert.equal(VELOCIDADE_FRENTE_CORPORATIVA_MN_H, 6);
+  assert.equal(LARGURA_SETOR_MN, 120);
+  assert.equal(ALTURA_SETOR_MN, 60);
+  assert.equal(DISTANCIA_MIN_NOS_MN, 14);
+  assert.equal(DISTANCIA_MAX_ROTA_MN, 28);
+  assert.equal(FOLGA_PRAZO_SOS_HORAS, 1.5);
+  assert.equal(VELOCIDADE_PADRAO_ALFA_MN_H, 11);
+  assert.equal(MULTIPLICADORES_CORRENTE.FAVORAVEL, 0.75);
+  assert.equal(VELOCIDADE_BASE_MAPA_MN_H, 9.5);
+  assert.equal(TETO_VELOCIDADE_CRUZEiro_MN_H, 15);
+  assert.equal(VELOCIDADE_ARRASTO_SOBREPESO_MN_H, 4.75);
+  assert.equal(MULTIPLICADOR_TEMPO_DERIVA, 2);
+  assert.equal(SPOOL_UP_FRIO_POS_DERIVA_SEG, 5.0);
+  assert.equal(ISOLAMENTO_RESIDUAL_POS_CHOQUE_SEG, 5.0);
+  assert.equal(DURACAO_CHOQUE_ELETRO_PLACA_SEG, 6.0);
+  assert.equal(PESO_ORGAO_ENXERTADO_KG, 5);
+  assert.equal(MAX_TRIPULANTES_NAVE, 6);
+  assert.equal(DURACAO_FERVURA_OCEANICA_SEG, 5.0);
+  assert.equal(INTERVALO_AUTO_REPARO_IA_BACKUP_SEG, 15.0);
+  assert.equal(MCP_SERVER_INFO.name, 'agent-testing-mcp-server');
+  assert.equal(LIMITE_CARACTERES_RESPOSTA, 25000);
+});
+
 

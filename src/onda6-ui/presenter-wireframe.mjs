@@ -2838,6 +2838,349 @@ export function gerarHtmlClienteJogavelBiofoil(estadoInicial, opcoes = {}) {
 </html>`;
 }
 
+/**
+ * Geometria canônica de encaixe na grade nativa 960x540 (validada nas bancadas visuais de encaixe e vídeo):
+ * - Coluna Esquerda (Câmaras 1, 2, 4, 6): X = 365..441 (76 px úteis)
+ * - Coluna Direita (Câmaras 7, 3, 5, 8): X = 463..539 (76 px úteis)
+ * - Válvula Esfinctérica Central: X = 441..463 (22 px entre colunas)
+ * - Slots Dorsais de Armas: Slot 1 (X=392, Y=42, 92x38 px) e Slot 2 (X=438, Y=76, 104x42 px), sempre acima de Y=140.
+ */
+export const GEOMETRIA_ENCAIXE_CAMARAS_960 = clonarProfundoCongelado({
+  RESOLUCAO_NATIVA: { larguraPx: 960, alturaPx: 540 },
+  VALVULA_CENTRAL_X0: 441,
+  VALVULA_CENTRAL_X1: 463,
+  DIMENSOES_SLOTS_CAMARA: {
+    larguraSlotUnicoPx: 44,
+    alturaSlotUnicoPx: 28,
+    larguraSlotDuploPx: 36,
+    alturaSlotDuploPx: 26,
+    alturaMaxAndar4Px: 22,
+  },
+  CAMARAS: {
+    1: { camaraId: 1, rotulo: '1 ARTILHARIA', coluna: 'ESQUERDA', andar: 1, x0: 365, y0: 140, x1: 441, y1: 170, larguraUtilPx: 76, alturaUtilPx: 30 },
+    7: { camaraId: 7, rotulo: '7 ENXERTO A', coluna: 'DIREITA', andar: 1, x0: 463, y0: 140, x1: 539, y1: 170, larguraUtilPx: 76, alturaUtilPx: 30 },
+    2: { camaraId: 2, rotulo: '2 CÓRTEX', coluna: 'ESQUERDA', andar: 2, x0: 365, y0: 187, x1: 441, y1: 217, larguraUtilPx: 76, alturaUtilPx: 30 },
+    3: { camaraId: 3, rotulo: '3 BRANQUIAL', coluna: 'DIREITA', andar: 2, x0: 463, y0: 187, x1: 539, y1: 217, larguraUtilPx: 76, alturaUtilPx: 30 },
+    4: { camaraId: 4, rotulo: '4 BARREIRA', coluna: 'ESQUERDA', andar: 3, x0: 365, y0: 233, x1: 441, y1: 263, larguraUtilPx: 76, alturaUtilPx: 30 },
+    5: { camaraId: 5, rotulo: '5 SIFÃO', coluna: 'DIREITA', andar: 3, x0: 463, y0: 233, x1: 539, y1: 263, larguraUtilPx: 76, alturaUtilPx: 30 },
+    6: { camaraId: 6, rotulo: '6 POÇO DA QUILHA', coluna: 'ESQUERDA', andar: 4, x0: 365, y0: 286, x1: 441, y1: 310, larguraUtilPx: 76, alturaUtilPx: 24 },
+    8: { camaraId: 8, rotulo: '8 ENXERTO B', coluna: 'DIREITA', andar: 4, x0: 463, y0: 281, x1: 539, y1: 310, larguraUtilPx: 76, alturaUtilPx: 29 },
+  },
+  SLOTS_DORSAIS: [
+    { slotIndex: 0, id: 'SLOT_DORSAL_1', x: 392, y: 42, larguraPx: 92, alturaPx: 38, recuoDisparoPx: -4 },
+    { slotIndex: 1, id: 'SLOT_DORSAL_2', x: 438, y: 76, larguraPx: 104, alturaPx: 42, recuoDisparoPx: -4 },
+  ],
+});
+
+function gerarQuatroMatrizesAnimadasHiBit(chaveAtlasBase, categoria) {
+  const linhasBase = GRADES_SPRITES_HIBITS_ARTESANAIS[chaveAtlasBase] ?? ['.#O#.', '#OOO#', '.#O#.'];
+  const tokensEstagio = ['C', 'Y', 'G', 'R'];
+  return [0, 1, 2, 3].map((fIdx) => {
+    const tokDestaque = tokensEstagio[fIdx];
+    return linhasBase.map((linha, rIdx) => {
+      const chars = linha.split('');
+      const meioX = Math.floor(chars.length / 2);
+      const meioY = Math.floor(linhasBase.length / 2);
+      if (rIdx === (meioY + fIdx) % linhasBase.length && chars[meioX] && chars[meioX] !== '.') {
+        chars[meioX] = tokDestaque;
+      }
+      if (categoria === 'ARMA_DORSAL' && fIdx === 3 && chars.length > 4) {
+        chars[chars.length - 2] = 'Y';
+      }
+      return chars.join('');
+    });
+  });
+}
+
+function construirCatalogoAnimacao4Frames() {
+  const defs = [
+    // 7 Personagens (4 Aliados + 3 Invasores)
+    { id: 'POLVO', chaveAtlas: 'POLVO', categoria: 'TRIPULANTE_ALIADO', frames: ['F0_IDLE_BULBO', 'F1_NADO', 'F2_SOLDA_REPARO_2X', 'F3_ATAQUE_TENTACULAR'], hpMax: 80 },
+    { id: 'ARRAIA', chaveAtlas: 'ARRAIA', categoria: 'TRIPULANTE_ALIADO', frames: ['F0_IDLE_PLANANDO', 'F1_NADO_ASA_ACIMA', 'F2_NADO_ASA_ABAIXO', 'F3_DESCARGA_ELETRICA'], hpMax: 70 },
+    { id: 'BAIACU', chaveAtlas: 'BAIACU_COMPACTO', categoria: 'TRIPULANTE_ALIADO', frames: ['F0_NORMAL_COMPACTO', 'F1_NADO_PROPULSAO', 'F2_INFLANDO_TRANSICAO', 'F3_INFLADO_SELA_BRECHA'], hpMax: 150 },
+    { id: 'CARANGUEJO', chaveAtlas: 'CARANGUEJO', categoria: 'TRIPULANTE_ALIADO', frames: ['F0_GUARDA_BAIXA', 'F1_MARCHA_LATERAL', 'F2_PINCA_ABERTA', 'F3_GOLPE_PINCA'], hpMax: 110 },
+    { id: 'MARINHEIRO', chaveAtlas: 'MARINHEIRO_HUMANO', categoria: 'INVASOR', frames: ['F0_GUARDA_ARPAO', 'F1_PASSO_AVANCO', 'F2_MIRA_ENGATILHAR', 'F3_DISPARO_ARPAO'], hpMax: 100 },
+    { id: 'MERGULHADOR', chaveAtlas: 'MERGULHADOR_BLINDADO', categoria: 'INVASOR', frames: ['F0_POSTURA_PESADA', 'F1_MARCHA_ESCAFANDRO', 'F2_IGNICAO_MACARICO', 'F3_CORTE_TERMICO'], hpMax: 125 },
+    { id: 'PARASITA', chaveAtlas: 'PARASITA_ABISSAL', categoria: 'INVASOR', frames: ['F0_ONDULACAO_A', 'F1_ONDULACAO_B', 'F2_BOTE_MANDIBULA', 'F3_MORDIDA_SANGUESSUGA'], hpMax: 65 },
+    // 7 Armas Dorsais
+    { id: 'EMISSOR_ACUSTICO_I', chaveAtlas: 'EMISSOR_ACUSTICO_I', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 10, soquetes: 1, energia: 1, usaMunicao: false, recuoDisparoPx: -4 },
+    { id: 'EMISSOR_RAJADA_II', chaveAtlas: 'EMISSOR_RAJADA_II', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 18, soquetes: 1, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
+    { id: 'CANHAO_ARPAO_CABO', chaveAtlas: 'CANHAO_ARPAO_CABO', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 15, soquetes: 2, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
+    { id: 'DISPERSOR_ESTILHACOS', chaveAtlas: 'DISPERSOR_ESTILHACOS', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 22, soquetes: 1, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
+    { id: 'CORTADOR_TERMICO', chaveAtlas: 'CORTADOR_TERMICO', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 25, soquetes: 1, energia: 2, usaMunicao: false, recuoDisparoPx: -4 },
+    { id: 'LANCADOR_TORPEDO_ABISSAL', chaveAtlas: 'LANCADOR_TORPEDO_ABISSAL', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 28, soquetes: 2, energia: 2, usaMunicao: true, recuoDisparoPx: -4 },
+    { id: 'MORTEIRO_ESPOROS', chaveAtlas: 'MORTEIRO_ESPOROS', categoria: 'ARMA_DORSAL', frames: ['F0_IDLE_0', 'F1_CARGA_50', 'F2_PRONTA_100', 'F3_DISPARO_RECUO'], pesoKg: 12, soquetes: 2, energia: 1, usaMunicao: true, recuoDisparoPx: -4 },
+    // 6 Órgãos Bio-Sintéticos
+    { id: 'GLANDULA_BAIACU', chaveAtlas: 'GLANDULA_BAIACU', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    { id: 'ELETRO_PLACA', chaveAtlas: 'ELETRO_PLACA', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    { id: 'BEXIGA_PRESSAO', chaveAtlas: 'BEXIGA_PRESSAO', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    { id: 'BOLSA_TINTA', chaveAtlas: 'BOLSA_TINTA', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    { id: 'DENTE_LEVIATA', chaveAtlas: 'DENTE_LEVIATA', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    { id: 'GLANDULA_TERMOFILICA', chaveAtlas: 'GLANDULA_TERMOFILICA', categoria: 'ORGAO_BIO', frames: ['F0_REPOUSO', 'F1_DIASTOLE', 'F2_SISTOLE', 'F3_SECRECAO_ATIVA'], pesoAdicionalKg: 5 },
+    // 3 Componentes Vitais da Bio-Nave
+    { id: 'CORACAO_BIO_ELETRICO', chaveAtlas: 'CORACAO_BIO_ELETRICO', categoria: 'SISTEMA_VITAL', frames: ['F0_DIASTOLE', 'F1_PULSO_INICIAL', 'F2_SISTOLE_MAXIMA', 'F3_RELAXAMENTO'] },
+    { id: 'VALVULA_ESFINCTERICA', chaveAtlas: 'VALVULA_ESFINCTERICA', categoria: 'SISTEMA_VITAL', frames: ['F0_FECHADA_ESTANQUE', 'F1_ABRINDO_33', 'F2_ABRINDO_66', 'F3_ABERTA_FLUXO_100'] },
+    { id: 'BULBO_NEURAL', chaveAtlas: 'BULBO_NEURAL', categoria: 'SISTEMA_VITAL', frames: ['F0_INATIVO_CINZA', 'F1_SINAPSE_ATIVA', 'F2_PULSO_NEURAL_MAXIMO', 'F3_CURTO_CIRCUITO_DANO'] },
+  ];
+
+  const catalogo = {};
+  for (const item of defs) {
+    const matrizes4 = gerarQuatroMatrizesAnimadasHiBit(item.chaveAtlas, item.categoria);
+    catalogo[item.id] = {
+      id: item.id,
+      chaveAtlas: item.chaveAtlas,
+      categoria: item.categoria,
+      totalFrames: 4,
+      larguraSlotUnicoPx: 44,
+      alturaSlotUnicoPx: 28,
+      larguraSlotDuploPx: 36,
+      alturaSlotDuploPx: 26,
+      alturaAndar4Px: 22,
+      recuoDisparoPx: item.recuoDisparoPx ?? 0,
+      pesoKg: item.pesoKg ?? item.pesoAdicionalKg ?? 0,
+      soquetes: item.soquetes ?? 0,
+      energia: item.energia ?? 0,
+      usaMunicao: Boolean(item.usaMunicao),
+      hpMax: item.hpMax ?? null,
+      quadros: item.frames.map((codigoFrame, idx) => ({
+        indice: idx,
+        codigoFrame,
+        deslocamentoX: item.categoria === 'ARMA_DORSAL' && idx === 3 ? -4 : 0,
+        matrizPixels: matrizes4[idx],
+      })),
+    };
+  }
+  return clonarProfundoCongelado(catalogo);
+}
+
+export const ATLAS_ANIMACAO_4FRAMES_BIOFOIL = construirCatalogoAnimacao4Frames();
+
+/**
+ * Consulta determinística e imutável (Leis L2 e L3) de qualquer quadro de animação (F0..F3) das 23 entidades.
+ */
+export function obterQuadroAnimacaoEntidade(entidadeId, indiceQuadro = 0) {
+  const chave = String(entidadeId ?? '');
+  const entrada = ATLAS_ANIMACAO_4FRAMES_BIOFOIL[chave];
+  if (!entrada) {
+    return clonarProfundoCongelado({
+      ok: false,
+      codigoErro: 'ENTIDADE_ANIMACAO_INEXISTENTE',
+      entidadeId: chave,
+    });
+  }
+  if (typeof indiceQuadro !== 'number' || !Number.isInteger(indiceQuadro) || indiceQuadro < 0) {
+    return clonarProfundoCongelado({
+      ok: false,
+      codigoErro: 'INDICE_QUADRO_INVALIDO',
+      entidadeId: chave,
+    });
+  }
+  const idxMod = indiceQuadro % entrada.totalFrames;
+  const quadro = entrada.quadros[idxMod];
+  return clonarProfundoCongelado({
+    ok: true,
+    entidadeId: entrada.id,
+    categoria: entrada.categoria,
+    indiceQuadro: idxMod,
+    codigoFrame: quadro.codigoFrame,
+    deslocamentoX: quadro.deslocamentoX,
+    larguraSlotUnicoPx: entrada.larguraSlotUnicoPx,
+    alturaSlotUnicoPx: entrada.alturaSlotUnicoPx,
+    larguraSlotDuploPx: entrada.larguraSlotDuploPx,
+    alturaSlotDuploPx: entrada.alturaSlotDuploPx,
+    alturaAndar4Px: entrada.alturaAndar4Px,
+    matrizPixels: quadro.matrizPixels,
+  });
+}
+
+/**
+ * Calcula e valida o encaixe cirúrgico de 0, 1 ou 2 ocupantes dentro de qualquer uma das 8 câmaras (Grade Nativa 960x540).
+ */
+export function calcularEncaixeCamaraBioNave(camaraId, ocupantesIds = [], indiceQuadro = 0) {
+  const idNum = Number(camaraId);
+  const camara = GEOMETRIA_ENCAIXE_CAMARAS_960.CAMARAS[idNum];
+  if (!camara) {
+    return clonarProfundoCongelado({
+      ok: false,
+      codigoErro: 'CAMARA_ID_INVALIDO',
+      camaraId,
+    });
+  }
+  if (!Array.isArray(ocupantesIds) || ocupantesIds.length > 2) {
+    return clonarProfundoCongelado({
+      ok: false,
+      codigoErro: 'LOTACAO_SLOTS_CAMARA_INVALIDA',
+      camaraId: idNum,
+    });
+  }
+  if (typeof indiceQuadro !== 'number' || !Number.isInteger(indiceQuadro) || indiceQuadro < 0) {
+    return clonarProfundoCongelado({
+      ok: false,
+      codigoErro: 'INDICE_QUADRO_INVALIDO',
+      camaraId: idNum,
+    });
+  }
+
+  const dim = GEOMETRIA_ENCAIXE_CAMARAS_960.DIMENSOES_SLOTS_CAMARA;
+  const ehAndar4 = camara.andar === 4;
+  const modoEncaixe = ocupantesIds.length === 0 ? 'VAZIA' : ocupantesIds.length === 1 ? 'SLOT_UNICO' : 'SLOT_DUPLO';
+  const slotsCalculados = [];
+
+  for (let i = 0; i < ocupantesIds.length; i += 1) {
+    const entId = String(ocupantesIds[i]);
+    const infoQuadro = obterQuadroAnimacaoEntidade(entId, indiceQuadro + i);
+    if (!infoQuadro.ok) {
+      return infoQuadro;
+    }
+    const larguraPx = modoEncaixe === 'SLOT_UNICO' ? dim.larguraSlotUnicoPx : dim.larguraSlotDuploPx;
+    const alturaBase = modoEncaixe === 'SLOT_UNICO' ? dim.alturaSlotUnicoPx : dim.alturaSlotDuploPx;
+    const alturaPx = ehAndar4 ? Math.min(alturaBase, dim.alturaMaxAndar4Px) : alturaBase;
+    const x =
+      modoEncaixe === 'SLOT_UNICO'
+        ? camara.x0 + Math.floor((camara.larguraUtilPx - larguraPx) / 2)
+        : camara.x0 + (i === 0 ? 2 : 38);
+    const y = camara.y0 + Math.floor((camara.alturaUtilPx - alturaPx) / 2);
+
+    slotsCalculados.push({
+      slotIndex: i,
+      entidadeId: entId,
+      codigoFrame: infoQuadro.codigoFrame,
+      indiceQuadro: infoQuadro.indiceQuadro,
+      x,
+      y,
+      larguraPx,
+      alturaPx,
+      xDireita: x + larguraPx,
+      yBase: y + alturaPx,
+    });
+  }
+
+  const zeroColisaoParedes = slotsCalculados.every(
+    (s) => s.x >= camara.x0 && s.xDireita <= camara.x1 && s.y >= camara.y0 && s.yBase <= camara.y1
+  );
+  const zeroColisaoValvulaCentral = slotsCalculados.every(
+    (s) =>
+      s.xDireita <= GEOMETRIA_ENCAIXE_CAMARAS_960.VALVULA_CENTRAL_X0 ||
+      s.x >= GEOMETRIA_ENCAIXE_CAMARAS_960.VALVULA_CENTRAL_X1
+  );
+  const zeroColisaoEntreSlots =
+    slotsCalculados.length < 2 || slotsCalculados[0].xDireita <= slotsCalculados[1].x;
+
+  return clonarProfundoCongelado({
+    ok: zeroColisaoParedes && zeroColisaoValvulaCentral && zeroColisaoEntreSlots,
+    camaraId: idNum,
+    rotuloCamara: camara.rotulo,
+    andar: camara.andar,
+    modoEncaixe,
+    limpaBulboEstaticoFundo: ocupantesIds.length > 0,
+    zeroColisaoRotulo: slotsCalculados.every((s) => s.y >= camara.y0),
+    zeroColisaoParedes,
+    zeroColisaoValvulaCentral,
+    zeroColisaoEntreSlots,
+    slots: slotsCalculados,
+  });
+}
+
+/**
+ * Calcula e valida o encaixe dorsal e o estágio de animação (F0..F3 com recuo de -4px no disparo) das 7 armas dorsais.
+ */
+export function calcularEncaixeDorsalArma(slotDorsalIndex, armaId, progressoCarga0a1 = 0, disparando = false) {
+  const slot = GEOMETRIA_ENCAIXE_CAMARAS_960.SLOTS_DORSAIS.find((s) => s.slotIndex === slotDorsalIndex);
+  if (!slot) {
+    return clonarProfundoCongelado({
+      ok: false,
+      codigoErro: 'SLOT_DORSAL_INVALIDO',
+      slotDorsalIndex,
+    });
+  }
+  const entradaArma = ATLAS_ANIMACAO_4FRAMES_BIOFOIL[String(armaId ?? '')];
+  if (!entradaArma || entradaArma.categoria !== 'ARMA_DORSAL') {
+    return clonarProfundoCongelado({
+      ok: false,
+      codigoErro: 'ARMA_DORSAL_INEXISTENTE',
+      armaId: String(armaId ?? ''),
+    });
+  }
+  if (typeof progressoCarga0a1 !== 'number' || !Number.isFinite(progressoCarga0a1) || progressoCarga0a1 < 0 || progressoCarga0a1 > 1) {
+    return clonarProfundoCongelado({
+      ok: false,
+      codigoErro: 'PROGRESSO_CARGA_INVALIDO',
+    });
+  }
+
+  const indiceQuadro = disparando ? 3 : progressoCarga0a1 >= 1 ? 2 : progressoCarga0a1 > 0 ? 1 : 0;
+  const quadro = entradaArma.quadros[indiceQuadro];
+  const deslocamentoRecuoX = indiceQuadro === 3 ? entradaArma.recuoDisparoPx : 0;
+  const xRender = slot.x + deslocamentoRecuoX;
+  const yRender = slot.y;
+  const zeroColisaoTopoCamaras = yRender + slot.alturaPx <= GEOMETRIA_ENCAIXE_CAMARAS_960.CAMARAS[1].y0;
+
+  return clonarProfundoCongelado({
+    ok: zeroColisaoTopoCamaras && deslocamentoRecuoX === (disparando ? -4 : 0),
+    slotDorsalIndex,
+    slotId: slot.id,
+    armaId: entradaArma.id,
+    soquetes: entradaArma.soquetes,
+    indiceQuadro,
+    codigoFrame: quadro.codigoFrame,
+    deslocamentoRecuoX,
+    x: xRender,
+    y: yRender,
+    larguraPx: slot.larguraPx,
+    alturaPx: slot.alturaPx,
+    zeroColisaoTopoCamaras,
+  });
+}
+
+/**
+ * Renderiza um quadro animado completo (t = 0..95) da cena de combate do Bio-Foil com os sprites 4-frames nas 8 câmaras
+ * e nos slots dorsais, retornando os metadados de animação/encaixe e o buffer PNG lossless.
+ */
+export function renderizarQuadroAnimadoCenaBiofoil(estadoJogo, opcoes = {}) {
+  const quadroTick = Number.isInteger(opcoes.quadroTick) && opcoes.quadroTick >= 0 ? opcoes.quadroTick : 0;
+  const escalaInteira = opcoes.escalaInteira === 2 ? 2 : 1;
+  const f4 = Math.floor(quadroTick / 6) % 4;
+  const vm = projetarViewModelWireframe(estadoJogo);
+  const pngBuffer = renderizarCenaCanvasParaPngBuffer(vm, {
+    escalaInteira,
+    exibirGhostPreview: Boolean(opcoes.exibirGhostPreview ?? true),
+  });
+
+  const encaixesCamaras = [
+    calcularEncaixeCamaraBioNave(1, ['POLVO'], f4),
+    calcularEncaixeCamaraBioNave(7, ['CARANGUEJO', 'MARINHEIRO'], f4),
+    calcularEncaixeCamaraBioNave(2, ['ARRAIA'], f4),
+    calcularEncaixeCamaraBioNave(3, ['CARANGUEJO', 'MERGULHADOR'], f4),
+    calcularEncaixeCamaraBioNave(4, ['ARRAIA'], f4),
+    calcularEncaixeCamaraBioNave(5, ['POLVO', 'BAIACU'], f4),
+    calcularEncaixeCamaraBioNave(6, ['BAIACU', 'PARASITA'], f4),
+    calcularEncaixeCamaraBioNave(8, ['GLANDULA_BAIACU'], f4),
+  ];
+
+  const subT = quadroTick % 48;
+  const disparando = subT >= 32 && subT <= 42;
+  const progCarga = disparando ? 1.0 : Math.min(1.0, subT / 32);
+  const encaixesDorsais = [
+    calcularEncaixeDorsalArma(0, quadroTick < 48 ? 'EMISSOR_ACUSTICO_I' : 'EMISSOR_RAJADA_II', progCarga, disparando),
+    calcularEncaixeDorsalArma(1, quadroTick < 48 ? 'CANHAO_ARPAO_CABO' : 'CORTADOR_TERMICO', progCarga, disparando),
+  ];
+
+  const metadadosCongelados = clonarProfundoCongelado({
+    ok: encaixesCamaras.every((c) => c.ok) && encaixesDorsais.every((d) => d.ok),
+    quadroTick,
+    cicloSpriteF4: f4,
+    larguraPx: 960 * escalaInteira,
+    alturaPx: 540 * escalaInteira,
+    encaixesCamaras,
+    encaixesDorsais,
+  });
+
+  return Object.freeze({
+    ...metadadosCongelados,
+    pngBuffer,
+  });
+}
+
 const CHAVES_PROTOTYPE_PROIBIDAS = Object.freeze(['__proto__', 'constructor', 'prototype']);
 
 function contemChaveProibida(textoJson) {
@@ -2906,13 +3249,15 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
       return;
     }
 
-    const urlLimpa = String(req.url ?? '/').split('?')[0];
+    const urlBruta = String(req.url ?? '/');
+    const urlLimpa = urlBruta.split('?')[0];
 
     if (
       urlLimpa === '/' ||
       urlLimpa === '/cliente.js' ||
       urlLimpa === '/atlas-hibits.png' ||
       urlLimpa === '/cena-atual.png' ||
+      urlLimpa === '/quadro-animado-f1.png' ||
       urlLimpa === '/api/estado'
     ) {
       if (req.method !== 'GET') {
@@ -2953,6 +3298,27 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
           'Content-Length': String(pngCena.length),
         });
         res.end(pngCena);
+        return;
+      }
+      if (urlLimpa === '/quadro-animado-f1.png') {
+        const params = new URLSearchParams(urlBruta.includes('?') ? urlBruta.slice(urlBruta.indexOf('?') + 1) : '');
+        const frameStr = params.get('frame') ?? '0';
+        if (!/^\d{1,4}$/.test(frameStr)) {
+          res.writeHead(400, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ erro: 'QUADRO_TICK_INVALIDO' }));
+          return;
+        }
+        const resultadoQuadro = renderizarQuadroAnimadoCenaBiofoil(estadoAtual, {
+          quadroTick: Number(frameStr),
+          escalaInteira: 1,
+          exibirGhostPreview: true,
+        });
+        res.writeHead(200, {
+          ...cabecalhosSeguranca,
+          'Content-Type': 'image/png',
+          'Content-Length': String(resultadoQuadro.pngBuffer.length),
+        });
+        res.end(resultadoQuadro.pngBuffer);
         return;
       }
       const vm = projetarViewModelWireframe(estadoAtual);

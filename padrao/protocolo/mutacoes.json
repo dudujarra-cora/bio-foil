@@ -1460,6 +1460,54 @@
         "tests/08-onda6-ui-juncao.test.mjs"
       ],
       "falhaEsperada": "[MUT-O6-06 / Atlas Sprites] A asa submersa da COURACA_LIMIAR no Atlas deve ter o dobro da largura padrão (88 px = 2x 44 px)"
+    },
+    {
+      "id": "MUT-92",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "N1 / L4 (MUT-O6-07)",
+      "descricao": "Geometria de encaixe aumenta larguraSlotDuploPx de 36 px para 42 px dentro da câmara de 76 px, causando colisão entre os 2 slots e invasão da parede/válvula",
+      "trocas": [
+        {
+          "buscar": "    alturaSlotUnicoPx: 28,\n    larguraSlotDuploPx: 36,",
+          "substituir": "    alturaSlotUnicoPx: 28,\n    larguraSlotDuploPx: 42,"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-07] Câmara 1 deve encaixar 2 slots (36x26px) sem colisão"
+    },
+    {
+      "id": "MUT-93",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "L4 / L6 (MUT-O6-08)",
+      "descricao": "calcularEncaixeDorsalArma suprime o recuo horizontal de -4 px dos tendões no quadro F3_DISPARO_RECUO",
+      "trocas": [
+        {
+          "buscar": "  const deslocamentoRecuoX = indiceQuadro === 3 ? entradaArma.recuoDisparoPx : 0;",
+          "substituir": "  const deslocamentoRecuoX = 0;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-08] Disparo da arma EMISSOR_ACUSTICO_I deve aplicar recuo canônico de -4px e manter zero colisão"
+    },
+    {
+      "id": "MUT-94",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "N1 / L4 (MUT-O6-09)",
+      "descricao": "Geometria do Andar 4 (6 POÇO DA QUILHA, altura útil 24 px) eleva alturaMaxAndar4Px de 22 px para 28 px, invadindo o rótulo duplo da câmara",
+      "trocas": [
+        {
+          "buscar": "    alturaMaxAndar4Px: 22,",
+          "substituir": "    alturaMaxAndar4Px: 28,"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-07] Câmara 6 deve encaixar 1 slot sem colisão"
     }
   ]
 }
