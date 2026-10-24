@@ -872,12 +872,14 @@ test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas
     if (idCarc === 'SOMBRA_ABISSAL') {
       assert.ok(frameCarc.comandosDesenho.some((c) => c.camada === 'NEVOA_TINTA_SOMBRA_ABISSAL'));
       assert.equal(frameCarc.inimigoAssentadoNaLinhaDagua.idSprite, 'TEUTHIS_COURACADA');
+      const pngF3 = renderizarCenaCanvasParaPngBuffer(vmCarc, { escalaInteira: 1 });
+      assert.equal(pngF3.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
     }
     if (idCarc === 'COLMEIA_VIVA') {
       assert.ok(frameCarc.comandosDesenho.some((c) => c.camada === 'POLIPOS_BIOLUMINESCENTES_COLMEIA'));
     }
   }
-  const pngCenaBuffer = renderizarCenaCanvasParaPngBuffer(vmNoFoil);
+  const pngCenaBuffer = renderizarCenaCanvasParaPngBuffer(vmNoFoil, { exibirGhostPreview: true });
   assert.equal(Buffer.isBuffer(pngCenaBuffer), true);
   assert.equal(pngCenaBuffer.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   assert.ok(pngCenaBuffer.length > 5000);
@@ -916,6 +918,8 @@ test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas
   });
   const vmTouchdown = projetarViewModelWireframe(passoMergulho.estado);
   const frameTouchdown = renderizarViewModelNoCanvas2d(vmTouchdown, null);
+  const pngTouchdown = renderizarCenaCanvasParaPngBuffer(vmTouchdown, { escalaInteira: 1 });
+  assert.equal(pngTouchdown.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   assert.equal(
     frameTouchdown.paredeEntre2e3AndarY,
     330,
@@ -1207,6 +1211,12 @@ test('[PORTÃO 08.4 | Itens 1, 2 e 3 | N1 + N4 + MUT-O6-04..06] Front-End Canvas
     assert.equal(rPngAtlas.headers.get('content-type'), 'image/png');
     const bufPngHttp = Buffer.from(await rPngAtlas.arrayBuffer());
     assert.equal(bufPngHttp.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+
+    const rPngCena = await fetch(`${srv.url}/cena-atual.png`);
+    assert.equal(rPngCena.status, 200);
+    assert.equal(rPngCena.headers.get('content-type'), 'image/png');
+    const bufCenaHttp = Buffer.from(await rPngCena.arrayBuffer());
+    assert.equal(bufCenaHttp.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
 
     const rEstado = await fetch(`${srv.url}/api/estado`);
     assert.equal(rEstado.status, 200);
