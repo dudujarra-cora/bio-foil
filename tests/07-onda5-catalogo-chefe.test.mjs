@@ -39,6 +39,9 @@ import {
 } from '../src/onda5-catalogo-chefe/chefe-draga.mjs';
 
 test('[PORTÃO 07.1 | L5 + N4 + MUT-O5-01] Catálogo completo: 7 armas, 6 órgãos (+5 kg e Isolamento Residual 5s), 8 biomas, 5 naves, 10 upgrades (= 2330) e 20 itens de loja', () => {
+  console.log(
+    `[N4] Onda 5 examinada: ${CATALOGO_ARMAS_51.length} armas, ${CATALOGO_ORGAOS_52.length} órgãos, ${CATALOGO_BIOMAS_53.length} biomas, ${CATALOGO_NAVES_54.length} naves, ${ARVORES_UPGRADE_56A.length} upgrades, ${CATALOGO_LOJA_56B.length} itens loja, ${BESTIARIO_ARQUETIPOS_57A.length} arquétipos`
+  );
   assert.equal(CATALOGO_ARMAS_51.length, 7, '[N4] Examinados: 7 armas no catálogo 5.1');
   assert.equal(CATALOGO_ORGAOS_52.length, 6, '[N4] Examinados: 6 órgãos no catálogo 5.2');
   assert.equal(CATALOGO_BIOMAS_53.length, 8, '[N4] Examinados: 8 biomas no catálogo 5.3');

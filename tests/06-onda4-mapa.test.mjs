@@ -71,6 +71,7 @@ test('[PORTÃO 06.1 | N4 + MUT-O4-03] Lote de 100 seeds procedurais: 18..22 nós
     seedsAuditadas += 1;
   }
 
+  console.log(`[N4] Onda 4 examinada: ${seedsAuditadas} seeds procedurais, ${CATALOGO_TEMPLATES_EVENTOS_45A.length} eventos, ${TRANSICOES_CICLO_92.length} transições`);
   assert.equal(seedsAuditadas, 100, `[N4] Examinados: ${seedsAuditadas}/100 seeds procedurais`);
   assert.ok(totaisVistos.size >= 4, 'O lote de 100 seeds deve exercitar variações reais entre 18 e 22 nós');
   assert.equal(calcularDistanciaEuclidianaMn({ xMn: 0, yMn: 0 }, { xMn: 3, yMn: 4 }), 5.0);

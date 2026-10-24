@@ -77,6 +77,9 @@ test('[PORTÃO 08.1 | N1 + N4 + MUT-O6-01..02] Junção Ponta a Ponta UI <-> Mot
   assert.deepEqual(vmInicial.geometria.violacoes, []);
 
   // Contadores obrigatórios N4: 8 câmaras (50x35 nativas), 8 sistemas/subsistemas, 4 slots de armas
+  console.log(
+    `[N4] Onda 6 examinada: ${vmInicial.camaras.length} câmaras, ${vmInicial.caixaSistemas.length} sistemas, ${vmInicial.caixaArmas.length} slots de armas, ${Object.keys(GRADES_SPRITES_HIBITS_ARTESANAIS).length} sprites hi-bit`
+  );
   assert.equal(vmInicial.camaras.length, 8, '[N4] Examinados: 8 câmaras renderizadas');
   for (const cam of vmInicial.camaras) {
     assert.equal(cam.larguraNativaPx, 50);
