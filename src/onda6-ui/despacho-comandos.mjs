@@ -21,7 +21,10 @@ import {
   validarTrincaBeam,
   calcularEsquivaEfetivaNave,
 } from '../onda2-combate/tick-sistemas-armas.mjs';
-import { avancarTickCombateCompleto } from '../onda2-combate/tick-tripulacao.mjs';
+import {
+  avancarTickCombateCompleto,
+  calcularRotaTaticaSobrevivencia,
+} from '../onda2-combate/tick-tripulacao.mjs';
 import { avancarTickIaInimiga } from '../onda3-inimigos/ia-barco-monstro.mjs';
 import { resolverImpactoNoAlvo } from '../onda3-inimigos/abordagem-vitoria.mjs';
 import { iniciarTravessiaMapa } from '../onda4-mapa/relogio-viagem.mjs';
@@ -372,6 +375,12 @@ export function despacharComandoUi(estado, comando) {
       const novoAcoplado = jaNaCamaraDestino
         ? (p.acopladoBulbo !== undefined ? Boolean(p.acopladoBulbo) : !trip.acopladoBulbo)
         : false;
+      const planoRota = jaNaCamaraDestino
+        ? null
+        : calcularRotaTaticaSobrevivencia(nave, trip.camaraAtualId, p.camaraDestinoId, trip.especie);
+      const novaRotaAtiva = !jaNaCamaraDestino && planoRota?.ok ? [...planoRota.rota] : [];
+      const novaProximaCamaraId = novaRotaAtiva.length >= 2 ? novaRotaAtiva[1] : (jaNaCamaraDestino ? null : p.camaraDestinoId);
+      const mudandoDestino = trip.camaraDestinoId !== p.camaraDestinoId;
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
@@ -385,7 +394,11 @@ export function despacharComandoUi(estado, comando) {
                 ? {
                     ...t,
                     camaraDestinoId: jaNaCamaraDestino ? null : p.camaraDestinoId,
-                    progressoNadoSeg: jaNaCamaraDestino ? 0.0 : Number(t.progressoNadoSeg ?? 0),
+                    proximaCamaraId: jaNaCamaraDestino ? null : novaProximaCamaraId,
+                    rotaAtiva: novaRotaAtiva,
+                    progressoNadoSeg: jaNaCamaraDestino || mudandoDestino ? 0.0 : Number(t.progressoNadoSeg ?? 0),
+                    progressoSalto0a1: jaNaCamaraDestino || mudandoDestino ? 0.0 : Number(t.progressoSalto0a1 ?? 0),
+                    interceptadoPorInvasor: false,
                     acopladoBulbo: novoAcoplado,
                   }
                 : t

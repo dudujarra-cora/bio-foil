@@ -12,6 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import vm from 'node:vm';
 import zlib from 'node:zlib';
 
 import {
@@ -96,6 +97,7 @@ import {
   gerarCodigoJsClienteBiofoil,
   gerarHtmlClienteJogavelBiofoil,
   iniciarServidorClienteWebBiofoil,
+  exportarSpreadAnimacaoSteamPngBuffer,
 } from '../src/onda6-ui/presenter-wireframe.mjs';
 import {
   ESQUEMA_15_COMANDOS_85A,
@@ -1951,6 +1953,9 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   try {
     const respAssets = await fetch(`${srv60.url}/api/assets-60fps`);
     assert.equal(respAssets.status, 200);
+    assert.equal(String(respAssets.headers.get('content-security-policy') ?? '').includes("script-src 'self'"), true);
+    assert.equal(respAssets.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(respAssets.headers.get('x-frame-options'), 'DENY');
     const jsonAssets = await respAssets.json();
     assert.equal(jsonAssets.versao, 'STEAM_60FPS_V3');
     assert.equal(typeof jsonAssets.placas?.f1Play, 'string');
@@ -1966,11 +1971,15 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   const decodificarDataUri = (uri) => {
     const buf = Buffer.from(String(uri).split(',')[1], 'base64');
     const dec = decodificarPngRgbaParaTeste(buf);
-    return { largura: dec.largura, altura: dec.altura, rgba: new Uint8ClampedArray(dec.rgba) };
+    return Object.freeze({ largura: dec.largura, altura: dec.altura, rgba: new Uint8ClampedArray(dec.rgba) });
   };
   const iconesDecodificadosCli = {};
   for (const [kIcone, uriIcone] of Object.entries(pacote60.iconesHiBit)) {
     iconesDecodificadosCli[kIcone] = decodificarDataUri(uriIcone);
+  }
+  const poses4FDecodificadosCli = {};
+  for (const [kPose, arrUrisPose] of Object.entries(pacote60.poses4Frames ?? {})) {
+    poses4FDecodificadosCli[kPose] = Object.freeze(arrUrisPose.map((u) => decodificarDataUri(u)));
   }
   const assetsDecodificadosCli = Object.freeze({
     f1Play: decodificarDataUri(pacote60.placas.f1Play),
@@ -1986,8 +1995,11 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
       BAIACU: decodificarDataUri(pacote60.retratos.BAIACU),
       CARANGUEJO: decodificarDataUri(pacote60.retratos.CARANGUEJO),
     }),
+    poses4Frames: Object.freeze(poses4FDecodificadosCli),
     iconesHiBit: Object.freeze(iconesDecodificadosCli),
   });
+  assert.equal(Object.isFrozen(assetsDecodificadosCli.f1Play), true, 'Lei L2: wrappers de placa Hi-Bit permanecem imutáveis via WeakMap');
+  assert.equal(Object.isFrozen(assetsDecodificadosCli.f4Ships), true, 'Lei L2: wrapper f4Ships permanece imutável via WeakMap');
   const tabelasCli = Object.freeze({
     glifos8px: pacote60.glifos8px,
     glifos5x7: pacote60.glifos5x7,
@@ -2015,14 +2027,17 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   assert.equal(codigoClienteJs.includes('function interpolarEstadoVisual60Fps'), true);
   assert.equal(codigoClienteJs.includes('ctx.putImageData'), true);
   assert.equal(codigoClienteJs.includes('seqRequisicao'), true);
+  assert.equal(codigoClienteJs.includes('new Function'), false, 'CSP estrito: /cliente.js não usa new Function');
+  assert.equal(codigoClienteJs.includes('eval('), false, 'CSP estrito: /cliente.js não usa eval');
 
-  // Executa a exata função rasterizarQuadroRgba960x540 extraída de /cliente.js num sandbox isolado
+  // Executa a exata função rasterizarQuadroRgba960x540 extraída de /cliente.js num contexto VM isolado
   const iniFnRaster = codigoClienteJs.indexOf('function rasterizarQuadroRgba960x540');
   const fimFnRaster = codigoClienteJs.indexOf('let estadoCliente = JSON.parse');
   assert.equal(iniFnRaster > 0 && fimFnRaster > iniFnRaster, true);
-  const fnRasterExtraidaCliente = new Function(
-    `"use strict";\n${codigoClienteJs.slice(iniFnRaster, fimFnRaster)}\nreturn rasterizarQuadroRgba960x540;`
-  )();
+  const fnRasterExtraidaCliente = vm.runInNewContext(
+    `(function() {\n"use strict";\n${codigoClienteJs.slice(iniFnRaster, fimFnRaster)}\nreturn rasterizarQuadroRgba960x540;\n})()`,
+    { Math, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Uint8Array, Uint8ClampedArray, Int32Array, Float64Array }
+  );
 
   const estF1 = criarEstadoInicialPartida({
     seedPartida: 'paridade-f1',
@@ -2132,6 +2147,80 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   assert.equal(contarCoresUnicasRegiao(imgEvCo, 162, 102, 945, 216) >= 80, true, 'EVENTO deve renderizar cena marítima Hi-Bit rica (>= 80 tons)');
   assert.equal(contarCoresUnicasRegiao(imgMapaCo, 152, 96, 955, 425) >= 24, true, 'MAPA deve renderizar relevo batimétrico Hi-Bit (>= 24 tons)');
   assert.equal(contarCoresUnicasRegiao(imgDragaCo, 6, 456, 48, 502) >= 28, true, 'CORAÇÃO BIO-ELÉTRICO deve renderizar sprite orgânico Hi-Bit (>= 28 tons)');
+
+  // 2C. Prova L4 de Integridade Anatômica das 5 Carcaças em EVENTO e LOJA (0 fenda de céu na silhueta e haste da quilha centrada |xQuilha - xCentroCorpo| <= 4 px)
+  const cincoCarcacasMini = ['CARCACA_ALFA', 'MANTA_VOLT', 'COURACA_LIMIAR', 'SOMBRA_ABISSAL', 'COLMEIA_VIVA'];
+  let carcacasMiniAuditadas = 0;
+  const placaEvRef = assetsDecodificadosCli.eventoPlay;
+  for (const idArqMini of cincoCarcacasMini) {
+    const estEvMini = criarEstadoInicialPartida({ seedPartida: `mini-ev-${idArqMini}`, idArquitetura: idArqMini, faseJogo: 'EVENTO' });
+    const vmEvMini = projetarViewModelWireframe(estEvMini);
+    const hbsEvMini = obterMapaHitboxesNativo(vmEvMini);
+    const rgbaEvMini = rasterizarQuadroRgba960x540(vmEvMini, { tempoSeg: 0.5 }, assetsDecodificadosCli, hbsEvMini, tabelasCli);
+    const colunasOpacasCasco = [];
+    for (let xM = 206; xM <= 352; xM += 1) {
+      let colTemCasco = false;
+      for (let yM = 58; yM <= 114; yM += 1) {
+        const iM = (yM * 960 + xM) * 4;
+        const iRef = ((yM - 46) * placaEvRef.largura + (xM - 168)) * 4;
+        const ehChuvaFina =
+          rgbaEvMini[iM] >= 55 &&
+          rgbaEvMini[iM] <= 75 &&
+          rgbaEvMini[iM + 1] >= 80 &&
+          rgbaEvMini[iM + 1] <= 105 &&
+          rgbaEvMini[iM + 2] >= 100 &&
+          rgbaEvMini[iM + 2] <= 125;
+        const diff =
+          Math.abs(rgbaEvMini[iM] - placaEvRef.rgba[iRef]) +
+          Math.abs(rgbaEvMini[iM + 1] - placaEvRef.rgba[iRef + 1]) +
+          Math.abs(rgbaEvMini[iM + 2] - placaEvRef.rgba[iRef + 2]);
+        if (diff > 24 && !ehChuvaFina) {
+          colTemCasco = true;
+          break;
+        }
+      }
+      if (colTemCasco) colunasOpacasCasco.push(xM);
+    }
+    assert.equal(colunasOpacasCasco.length >= 70, true, `${idArqMini} em EVENTO deve ter envergadura íntegra >= 70 px (atual=${colunasOpacasCasco.length})`);
+    // Zero fenda vertical aberta entre o início e o fim da silhueta da bio-nave!
+    for (let kC = 1; kC < colunasOpacasCasco.length; kC += 1) {
+      assert.equal(
+        colunasOpacasCasco[kC] - colunasOpacasCasco[kC - 1],
+        1,
+        `${idArqMini} em EVENTO não pode ter fenda vertical de céu na silhueta (salto em x=${colunasOpacasCasco[kC - 1]}..${colunasOpacasCasco[kC]})`
+      );
+    }
+    // Verifica que a haste submersa da quilha (y=136) está alinhada ao núcleo central do casco e conectada sem buraco de céu acima da linha d'água (y=104..126)
+    let somaXQuilha = 0;
+    let contXQuilha = 0;
+    for (let xQ = 225; xQ <= 325; xQ += 1) {
+      const iQ = (136 * 960 + xQ) * 4;
+      if (rgbaEvMini[iQ + 1] >= 80 && rgbaEvMini[iQ + 2] >= 98 && rgbaEvMini[iQ] <= 60) {
+        somaXQuilha += xQ;
+        contXQuilha += 1;
+      }
+    }
+    assert.equal(contXQuilha >= 1, true, `${idArqMini} deve exibir haste submersa refratada em y=136`);
+    const xQuilhaDetectado = Math.round(somaXQuilha / contXQuilha);
+    for (let yHaste = 104; yHaste <= 126; yHaste += 1) {
+      const iH = (yHaste * 960 + xQuilhaDetectado) * 4;
+      const iRefH = ((yHaste - 46) * placaEvRef.largura + (xQuilhaDetectado - 168)) * 4;
+      const diffH =
+        Math.abs(rgbaEvMini[iH] - placaEvRef.rgba[iRefH]) +
+        Math.abs(rgbaEvMini[iH + 1] - placaEvRef.rgba[iRefH + 1]) +
+        Math.abs(rgbaEvMini[iH + 2] - placaEvRef.rgba[iRefH + 2]);
+      assert.equal(diffH > 12, true, `${idArqMini}: haste da quilha deve emergir continuamente do corpo em x=${xQuilhaDetectado}, y=${yHaste}`);
+    }
+    // Verifica também LOJA com as 5 carcaças (inclusive fallback da miniatura 68x36 e 0 bytes diff Server <-> Browser)
+    const estLojaMini = criarEstadoInicialPartida({ seedPartida: `mini-lj-${idArqMini}`, idArquitetura: idArqMini, faseJogo: 'LOJA' });
+    const vmLojaMini = projetarViewModelWireframe(estLojaMini);
+    const hbsLojaMini = obterMapaHitboxesNativo(vmLojaMini);
+    const rgbaLojaSrv = rasterizarQuadroRgba960x540(vmLojaMini, { tempoSeg: 0.5 }, assetsDecodificadosCli, hbsLojaMini, tabelasCli);
+    const rgbaLojaCli = fnRasterExtraidaCliente(vmLojaMini, { tempoSeg: 0.5 }, assetsDecodificadosCli, hbsLojaMini, tabelasCli);
+    assert.equal(Buffer.compare(Buffer.from(rgbaLojaSrv), Buffer.from(rgbaLojaCli)), 0, `LOJA 0-byte diff em ${idArqMini}`);
+    carcacasMiniAuditadas += 1;
+  }
+  assert.equal(carcacasMiniAuditadas, 5, '[N4] 5 carcaças auditadas em EVENTO e LOJA sem fendas e com quilha centrada');
 
   // 3. Interpolação Sub-Tick 60 FPS (casco, nado contínuo entre câmaras, shake, warm tooltip <16ms) — [MUT-O6-13]
   const vmFoilInterp = projetarViewModelWireframe(estF1);
@@ -2382,6 +2471,176 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
     `[N4] Portão 08.7 examinado: ${telas7.length} telas com 0 bytes diff (${bytesComparados} bytes RGBA), ${totalHitboxesZeroColisao9} hitboxes 0 colisão, GD-1/GD-2/GD-3 e 60 FPS validados`
   );
 });
+
+test('[PORTÃO 08.8 | Vitrine Steam 4-Frames + Travessia de Portais 60 FPS | L1 + L2 + L3 + L4 + L6 + N4 + MUT-105] As 28 poses Hi-Bit (7x4), as 3 pranchas 1920x1080 de animação/estratégia e o sifão curvo J do Duto Ventral 5<->6', () => {
+  // 1. Pacote 60 FPS entrega as 28 poses 4-frames de estúdio (7 espécies x 4 quadros)
+  const pacote60 = exportarPacoteAssets60Fps();
+  const especiesEsperadas = ['POLVO', 'ARRAIA', 'BAIACU', 'CARANGUEJO', 'MARINHEIRO', 'MERGULHADOR', 'PARASITA'];
+  let totalPosesContadas = 0;
+  for (const esp of especiesEsperadas) {
+    const arr = pacote60.poses4Frames?.[esp];
+    assert.equal(Array.isArray(arr), true, `poses4Frames.${esp} deve ser array`);
+    assert.equal(arr.length, 4, `poses4Frames.${esp} deve conter exatamente 4 poses`);
+    for (const uri of arr) {
+      assert.equal(String(uri).startsWith('data:image/png;base64,'), true);
+      totalPosesContadas += 1;
+    }
+  }
+  assert.equal(totalPosesContadas, 28, '[N4] Examinadas: 28 poses Hi-Bit 4-frames no pacote 60 FPS');
+
+  // 2. Canal explícito de erro L3 e imutabilidade L2 em exportarSpreadAnimacaoSteamPngBuffer
+  const erroSpread = exportarSpreadAnimacaoSteamPngBuffer('SPREAD_INEXISTENTE');
+  assert.equal(Object.isFrozen(erroSpread), true);
+  assert.equal(erroSpread.ok, false);
+  assert.equal(erroSpread.codigoErro, 'TIPO_SPREAD_INVALIDO');
+
+  const tiposSpreads = [
+    'TRIPULACAO_INVASORES_4FRAMES',
+    'ARMAS_ORGAOS_SISTEMAS_4FRAMES',
+    'TRAVESSIA_PORTAIS_60FPS',
+  ];
+  const hashesSpreads = new Set();
+  for (const tipo of tiposSpreads) {
+    const res = exportarSpreadAnimacaoSteamPngBuffer(tipo, { escalaInteira: 2 });
+    assert.equal(Object.isFrozen(res), true);
+    assert.equal(res.ok, true);
+    assert.equal(res.tipoSpread, tipo);
+    assert.equal(res.larguraPx, 1920);
+    assert.equal(res.alturaPx, 1080);
+    assert.equal(Buffer.isBuffer(res.pngBuffer), true);
+    assert.equal(res.pngBuffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])), true);
+    hashesSpreads.add(crypto.createHash('sha256').update(res.pngBuffer).digest('hex'));
+  }
+  assert.equal(hashesSpreads.size, 3, '[N4] Examinadas: 3 pranchas Steam 1920x1080 distintas e lossless');
+
+  // 3. Travessia sub-tick 60 FPS pelo Duto Hidráulico Ventral curvo 5 <-> 6 (sifão em J sob Piso 4 sem cortar câmara 8!)
+  const baseDuto = structuredClone(
+    criarEstadoInicialPartida({
+      seedPartida: 'teste-duto-ventral-60fps',
+      idArquitetura: 'CARCACA_ALFA',
+      faseJogo: 'COMBATE',
+      classeAlvoInicial: 'BARCO_HUMANO',
+    })
+  );
+  baseDuto.naveJogador.tripulacao = [
+    {
+      id: 'polvo-duto-56',
+      especie: 'POLVO',
+      hpAtual: 100,
+      hpMax: 100,
+      camaraAtualId: 6,
+      camaraDestinoId: 5,
+      proximaCamaraId: 5,
+      progressoSalto0a1: 0.28,
+      localizacao: 'NAVE_JOGADOR',
+    },
+  ];
+  const vmDuto = projetarViewModelWireframe(congelarProfundo(baseDuto));
+  const hbDuto = obterMapaHitboxesNativo(vmDuto);
+  const hb6 = hbDuto.find((h) => h.idHitbox === 'CAMARA_6');
+  const hb8 = hbDuto.find((h) => h.idHitbox === 'CAMARA_8');
+  const centroY6 = hb6.y + 11 + Math.floor((hb6.altura - 13) / 2);
+
+  let evDuto = null;
+  for (let s = 0; s < 12; s += 1) {
+    evDuto = interpolarEstadoVisual60Fps(evDuto, vmDuto, 1 / 60, { hitboxes: hbDuto });
+  }
+  const posPolvoDuto = evDuto.posicoesTripulantes['polvo-duto-56'];
+  assert.equal(
+    posPolvoDuto.y > centroY6 && Number(evDuto.portaisDilatados['5-6'] ?? 0) > 0.5,
+    true,
+    '[MUT-O6-17] Travessia 6->5 a 60 FPS deve mergulhar pelo Duto Hidráulico Ventral curvo (y > centroY6) e dilatar o portal 5-6'
+  );
+
+  // Também garante que na subida (t = 0.65) o Polvo passa pela coluna vertebral central (x < hb8.x), jamais invadindo o interior da Câmara 8!
+  const baseSubida = structuredClone(baseDuto);
+  baseSubida.naveJogador.tripulacao[0].progressoSalto0a1 = 0.65;
+  const vmSubida = projetarViewModelWireframe(congelarProfundo(baseSubida));
+  let evSubida = null;
+  for (let s = 0; s < 12; s += 1) {
+    evSubida = interpolarEstadoVisual60Fps(evSubida, vmSubida, 1 / 60, { hitboxes: hbDuto });
+  }
+  assert.equal(
+    evSubida.posicoesTripulantes['polvo-duto-56'].x < hb8.x,
+    true,
+    'Sifão em J do Duto Ventral sobe pela coluna vertebral central sem invadir o interior da Câmara 8'
+  );
+
+  // Prova explícita em memória da mutação semântica desativarWaypointsPortal60FpsMutacao
+  let evMutado = null;
+  for (let s = 0; s < 12; s += 1) {
+    evMutado = interpolarEstadoVisual60Fps(evMutado, vmDuto, 1 / 60, {
+      hitboxes: hbDuto,
+      desativarWaypointsPortal60FpsMutacao: true,
+    });
+  }
+  assert.equal(evMutado.posicoesTripulantes['polvo-duto-56'].y < centroY6, true);
+
+  // 4. Validação SSOT e Paleta 100% Válida nas 92 matrizes de ATLAS_ANIMACAO_4FRAMES_BIOFOIL
+  const chavesPaletaValidas = new Set(Object.keys(PALETA_PIXEL_ART_BIOFOIL));
+  let matrizes4FVerificadas = 0;
+  for (const entrada4F of Object.values(ATLAS_ANIMACAO_4FRAMES_BIOFOIL)) {
+    for (const q of entrada4F.quadros) {
+      matrizes4FVerificadas += 1;
+      for (const lin of q.matrizPixels) {
+        for (const ch of lin) {
+          assert.equal(
+            chavesPaletaValidas.has(ch),
+            true,
+            `Token '${ch}' inválido em ATLAS_ANIMACAO_4FRAMES_BIOFOIL.${entrada4F.id} frame ${q.indice}`
+          );
+        }
+      }
+    }
+  }
+  assert.equal(matrizes4FVerificadas, 92, '[N4] Examinadas: 92 matrizes de quadros (23 entidades x 4 frames) com 100% de tokens válidos');
+  assert.equal(ATLAS_ANIMACAO_4FRAMES_BIOFOIL.MERGULHADOR.hpMax, 100);
+  assert.equal(ATLAS_ANIMACAO_4FRAMES_BIOFOIL.PARASITA.hpMax, 60);
+  assert.equal(ATLAS_ANIMACAO_4FRAMES_BIOFOIL.MARINHEIRO.hpMax, 100);
+  assert.equal(ATLAS_ANIMACAO_4FRAMES_BIOFOIL.CORTADOR_TERMICO.energia, 2);
+  assert.equal(ATLAS_ANIMACAO_4FRAMES_BIOFOIL.CORTADOR_TERMICO.recargaSeg, 14);
+
+  // 5. Continuidade suave no handoff de câmara (zero snap/teleporte ao mudar camaraAtualId 2->3) e cadência por espécie (Polvo 1.2x > Baiacu 0.75x)
+  const baseCadencia = structuredClone(baseDuto);
+  baseCadencia.naveJogador.tripulacao = [
+    { id: 'polvo-veloz', especie: 'POLVO', hpAtual: 80, hpMax: 80, camaraAtualId: 2, camaraDestinoId: 5, proximaCamaraId: 3, progressoSalto0a1: 0.10, localizacao: 'NAVE_JOGADOR' },
+    { id: 'baiacu-lento', especie: 'BAIACU', hpAtual: 150, hpMax: 150, camaraAtualId: 2, camaraDestinoId: 5, proximaCamaraId: 3, progressoSalto0a1: 0.10, localizacao: 'NAVE_JOGADOR' },
+  ];
+  const vmCad = projetarViewModelWireframe(congelarProfundo(baseCadencia));
+  const evCad0 = interpolarEstadoVisual60Fps(null, vmCad, 1 / 60, { hitboxes: hbDuto });
+  const evCad1 = interpolarEstadoVisual60Fps(evCad0, vmCad, 1 / 60, { hitboxes: hbDuto });
+  const avancoPolvo = evCad1.posicoesTripulantes['polvo-veloz'].progNado01 - evCad0.posicoesTripulantes['polvo-veloz'].progNado01;
+  const avancoBaiacu = evCad1.posicoesTripulantes['baiacu-lento'].progNado01 - evCad0.posicoesTripulantes['baiacu-lento'].progNado01;
+  assert.equal(avancoBaiacu > 0 && avancoPolvo > avancoBaiacu, true, 'Polvo (1.2x) avança mais rápido sub-tick que Baiacu (0.75x)');
+
+  const baseHandoff = structuredClone(baseDuto);
+  baseHandoff.naveJogador.tripulacao = [
+    { id: 'polvo-veloz', especie: 'POLVO', hpAtual: 80, hpMax: 80, camaraAtualId: 2, camaraDestinoId: 5, proximaCamaraId: 3, progressoSalto0a1: 0.96, localizacao: 'NAVE_JOGADOR' },
+  ];
+  const vmH1 = projetarViewModelWireframe(congelarProfundo(baseHandoff));
+  let evH = null;
+  for (let s = 0; s < 14; s += 1) {
+    evH = interpolarEstadoVisual60Fps(evH, vmH1, 1 / 60, { hitboxes: hbDuto });
+  }
+  const posAntesHandoff = { ...evH.posicoesTripulantes['polvo-veloz'] };
+  // Agora o tick autoritativo promove camaraAtualId: 2 -> 3 e proximaCamaraId: 3 -> 5 (progressoSalto0a1 = 0.02)
+  const baseHandoff2 = structuredClone(baseHandoff);
+  baseHandoff2.naveJogador.tripulacao[0].camaraAtualId = 3;
+  baseHandoff2.naveJogador.tripulacao[0].proximaCamaraId = 5;
+  baseHandoff2.naveJogador.tripulacao[0].progressoSalto0a1 = 0.02;
+  const vmH2 = projetarViewModelWireframe(congelarProfundo(baseHandoff2));
+  const evAposHandoff = interpolarEstadoVisual60Fps(evH, vmH2, 1 / 60, { hitboxes: hbDuto });
+  const posDepoisHandoff = evAposHandoff.posicoesTripulantes['polvo-veloz'];
+  const saltoPixelsHandoff = Math.hypot(posDepoisHandoff.x - posAntesHandoff.x, posDepoisHandoff.y - posAntesHandoff.y);
+  assert.equal(
+    saltoPixelsHandoff < 12,
+    true,
+    `Transição de câmara 2->3 deve ser contínua no espaço de tela sem teletransporte (moveu ${saltoPixelsHandoff.toFixed(2)} px em 16.6ms)`
+  );
+
+  console.log('[N4] Portão 08.8 examinado: 28 poses 4-frames, 92 matrizes Hi-Bit, 3 pranchas Steam 1080p, continuidade de handoff e sifão J do Duto Ventral 5<->6 validados');
+});
+
 
 
 

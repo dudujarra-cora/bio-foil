@@ -1624,6 +1624,86 @@
         "tests/08-onda6-ui-juncao.test.mjs"
       ],
       "falhaEsperada": "[MUT-O6-16] Barco Humano <= 50% HP deve acionar Protocolo Corta-Fogo e lançar Mina Magnética de 4.0s"
+    },
+    {
+      "id": "MUT-102",
+      "arquivo": "src/onda2-combate/tick-tripulacao.mjs",
+      "lei": "L1 / L6 (MUT-O2-06)",
+      "descricao": "avancarTickTripulacao ativa teletransporte legado direto origem->destino sem atravessar cada câmara e portal intermediário nem aplicar o ambiente real de cada sala",
+      "trocas": [
+        {
+          "buscar": "      } else if (opcoesDebug.usarTeletransporteLegadoMutacao === true) {",
+          "substituir": "      } else if (true || opcoesDebug.usarTeletransporteLegadoMutacao === true) {"
+        }
+      ],
+      "testes": [
+        "tests/04-onda2-combate.test.mjs"
+      ],
+      "falhaEsperada": "Em t=1.25s o Polvo acabou de entrar na Câmara 4 intermediária"
+    },
+    {
+      "id": "MUT-103",
+      "arquivo": "src/onda2-combate/tick-tripulacao.mjs",
+      "lei": "L1 / L4 (MUT-O2-07)",
+      "descricao": "calcularRotaTaticaSobrevivencia ignora salas secas (0 kg H2O) e hostis no grafo topológico, enviando tripulantes aquáticos direto para asfixia",
+      "trocas": [
+        {
+          "buscar": "  const ignorarRiscoMutacao = opcoes.ignorarRiscoAmbientalRotaMutacao === true;",
+          "substituir": "  const ignorarRiscoMutacao = true;"
+        }
+      ],
+      "testes": [
+        "tests/04-onda2-combate.test.mjs"
+      ],
+      "falhaEsperada": "Polvo deve desviar automaticamente da Câmara 4 seca (0 kg) passando pela Bomba Branquial [2, 3, 5]"
+    },
+    {
+      "id": "MUT-104",
+      "arquivo": "src/onda2-combate/tick-tripulacao.mjs",
+      "lei": "L1 / L6 (MUT-O2-08)",
+      "descricao": "avancarTickTripulacao ignora interceptação por invasor não-pinado em câmara intermediária, permitindo passar por inimigos sem escolta aliada",
+      "trocas": [
+        {
+          "buscar": "            if (opcoesDebug.ignorarInterceptacaoHostilMutacao !== true) {",
+          "substituir": "            if (false && opcoesDebug.ignorarInterceptacaoHostilMutacao !== true) {"
+        }
+      ],
+      "testes": [
+        "tests/04-onda2-combate.test.mjs"
+      ],
+      "falhaEsperada": "Invasor livre na Câmara 4 intercepta o Polvo e cancela a travessia"
+    },
+    {
+      "id": "MUT-105",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "L1 / L6 (MUT-O6-17)",
+      "descricao": "interpolarEstadoVisual60Fps desativa os waypoints anatômicos dos portais e do Duto Hidráulico Ventral curvo 5<->6, cortando paredes em linha reta",
+      "trocas": [
+        {
+          "buscar": "  const desativarWaypointsMutacao = opcoes.desativarWaypointsPortal60FpsMutacao === true;",
+          "substituir": "  const desativarWaypointsMutacao = true;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-17] Travessia 6->5 a 60 FPS deve mergulhar pelo Duto Hidráulico Ventral curvo (y > centroY6) e dilatar o portal 5-6"
+    },
+    {
+      "id": "MUT-106",
+      "arquivo": "src/onda2-combate/tick-tripulacao.mjs",
+      "lei": "L1 / L6 (MUT-O2-09)",
+      "descricao": "avancarTickTripulacao desativa o afogamento simétrico (-8.0 HP/s) de Marinheiros humanos sem escafandro dentro de câmaras inundadas (> 0 kg H2O) da bio-nave",
+      "trocas": [
+        {
+          "buscar": "    if (!opcoesDebug.desativarAfogamentoInvasorHumanoMutacao) {",
+          "substituir": "    if (false && !opcoesDebug.desativarAfogamentoInvasorHumanoMutacao) {"
+        }
+      ],
+      "testes": [
+        "tests/04-onda2-combate.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-106] Marinheiro humano sem escafandro deve afogar a -8.0 HP/s dentro de câmara inundada (> 0 kg H2O) da bio-nave"
     }
   ]
 }

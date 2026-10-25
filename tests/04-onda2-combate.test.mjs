@@ -17,7 +17,10 @@ import {
 import {
   FICHAS_ESPECIES_TRIPULACAO,
   TOPOLOGIA_CAMARAS_BIONAVE,
+  PORTAIS_TOPOLOGICOS_BIONAVE,
+  obterPortalTopologicoEntreCamaras,
   calcularRotaCamarasBionave,
+  calcularRotaTaticaSobrevivencia,
   inspecionarSalaAlvo,
   calcularCuraTripulanteHpPorSeg,
   calcularMultiplicadorReparoEfetivo,
@@ -339,4 +342,205 @@ test('Onda 2 (Lei L3 + Junção N1 Simulação Passo 3): Canal L3 de visão do a
   cam2Brecha.brechaAtiva = true;
   const aposBrechaNorm = avancarTickTripulacao(congelarProfundo(copiaBrechaSemRombo), 0.25);
   assert.equal(aposBrechaNorm.naveJogador.camaras.find((c) => c.id === 2).rombosCasco, 1);
+});
+
+test('Onda 2 (Travessia Orgânica Passo-a-Passo + Sobrevivência + Estratégia Tática): 11 portais, desvio de câmara seca/hostil, asfixia intermediária, escolta de pinagem e marcha de invasor', () => {
+  // 1) 11 Portais Topológicos Canônicos (6 esfíncteres verticais + 4 túneis branquiais + 1 Duto Hidráulico Ventral 5<->6)
+  assert.equal(PORTAIS_TOPOLOGICOS_BIONAVE.length, 11);
+  const verticais = PORTAIS_TOPOLOGICOS_BIONAVE.filter((p) => p.tipoPortal === 'ESFINCTER_VERTICAL');
+  const centrais = PORTAIS_TOPOLOGICOS_BIONAVE.filter((p) => p.tipoPortal === 'TUNEL_BRANQUIAL_CENTRAL');
+  const ventrais = PORTAIS_TOPOLOGICOS_BIONAVE.filter((p) => p.tipoPortal === 'DUTO_HIDRAULICO_VENTRAL');
+  assert.equal(verticais.length, 6);
+  assert.equal(centrais.length, 4);
+  assert.equal(ventrais.length, 1);
+
+  const portalDuto = obterPortalTopologicoEntreCamaras(6, 5);
+  assert.equal(portalDuto.ok, true);
+  assert.equal(portalDuto.chave, '5-6');
+  assert.equal(portalDuto.tipoPortal, 'DUTO_HIDRAULICO_VENTRAL');
+  assert.equal(portalDuto.dutoVentral, true);
+
+  const portalInvalido = obterPortalTopologicoEntreCamaras(1, 8);
+  assert.deepEqual(portalInvalido, {
+    ok: false,
+    codigoErro: 'PORTAL_NAO_ADJACENTE',
+    idOrigem: 1,
+    idDestino: 8,
+  });
+
+  // 2) Roteamento Tático de Sobrevivência: desvia de câmara seca (0 kg) para aquáticos, mantém rota direta para Caranguejo Anfíbio e usa Duto Ventral 5<->6
+  const base = criarEstadoInicialPartida('seed-travessia-organica', 'CARCACA_ALFA');
+  const rotaSegura = calcularRotaTaticaSobrevivencia(base.naveJogador, 2, 5, 'POLVO');
+  assert.equal(rotaSegura.ok, true);
+  assert.deepEqual(rotaSegura.rota, [2, 4, 5]);
+
+  const erroRota = calcularRotaTaticaSobrevivencia(base.naveJogador, 2, 99, 'POLVO');
+  assert.equal(erroRota.ok, false);
+  assert.equal(erroRota.codigoErro, 'CAMARA_ROTA_INVALIDA');
+
+  const naveCam4Seca = structuredClone(base.naveJogador);
+  naveCam4Seca.camaras.find((c) => c.id === 4).aguaKg = 0.0;
+  const rotaPolvoDesvio = calcularRotaTaticaSobrevivencia(naveCam4Seca, 2, 5, 'POLVO');
+  assert.deepEqual(
+    rotaPolvoDesvio.rota,
+    [2, 3, 5],
+    'Polvo deve desviar automaticamente da Câmara 4 seca (0 kg) passando pela Bomba Branquial [2, 3, 5]'
+  );
+  const rotaCaranguejoDireta = calcularRotaTaticaSobrevivencia(naveCam4Seca, 2, 5, 'CARANGUEJO');
+  assert.deepEqual(
+    rotaCaranguejoDireta.rota,
+    [2, 4, 5],
+    'Caranguejo anfíbio imune à seca mantém o caminho vertical canônico [2, 4, 5]'
+  );
+
+  const naveCam4Hostil = structuredClone(base.naveJogador);
+  naveCam4Hostil.invasores = [{ id: 'inv-bloqueio', especie: 'MARINHEIRO', camaraAtualId: 4, hpAtual: 100 }];
+  naveCam4Hostil.tripulacao = naveCam4Hostil.tripulacao.filter((t) => t.camaraAtualId !== 4);
+  const rotaPeloDutoVentral = calcularRotaTaticaSobrevivencia(naveCam4Hostil, 3, 6, 'POLVO');
+  assert.deepEqual(
+    rotaPeloDutoVentral.rota,
+    [3, 5, 6],
+    'Deve usar o Duto Hidráulico Ventral (5<->6) para ir de 3 a 6 sem cair na emboscada da Câmara 4'
+  );
+
+  // 3) Travessia física passo-a-passo: forçar Polvo por câmara seca intermediária (2 -> 4 seca -> 5) leva 3.75s (1.25s + 2.50s) e causa -20 HP reais de asfixia (-8 HP/s * 2.5s), enquanto rota tática [2, 3, 5] chega em 2.50s com 80 HP intactos!
+  const cenarioSecoForcado = structuredClone(base);
+  cenarioSecoForcado.naveJogador.camaras.find((c) => c.id === 4).aguaKg = 0.0;
+  cenarioSecoForcado.naveJogador.camaras.find((c) => c.id === 3).barrasEnergiaAlocada = 0; // sem cura branquial para isolar dano exato
+  cenarioSecoForcado.naveJogador.tripulacao = [
+    {
+      id: 'polvo-teste',
+      especie: 'POLVO',
+      localizacao: 'NAVE_JOGADOR',
+      camaraAtualId: 2,
+      camaraDestinoId: 5,
+      progressoNadoSeg: 0.0,
+      hpAtual: 80,
+      hpMax: 80,
+      vivo: true,
+      inflado: false,
+      acopladoBulbo: false,
+    },
+  ];
+  let estForcado = congelarProfundo(cenarioSecoForcado);
+  estForcado = avancarTickTripulacao(estForcado, 1.25, { forcarRotaCanonicaCega: true });
+  const pPasso1 = estForcado.naveJogador.tripulacao[0];
+  assert.equal(pPasso1.camaraAtualId, 4, 'Em t=1.25s o Polvo acabou de entrar na Câmara 4 intermediária');
+  assert.equal(pPasso1.ultimoPortalAtravessado, '2-4');
+  assert.equal(pPasso1.hpAtual, 80);
+
+  estForcado = avancarTickTripulacao(estForcado, 1.25, { forcarRotaCanonicaCega: true });
+  const pPasso2 = estForcado.naveJogador.tripulacao[0];
+  assert.equal(
+    pPasso2.camaraAtualId,
+    4,
+    'Em t=2.50s o Polvo ainda rasteja a -50% de velocidade na Câmara 4 seca (progresso 0.5) em vez de teletransportar para a 5'
+  );
+  assert.equal(pPasso2.progressoSalto0a1, 0.5);
+  assert.equal(pPasso2.hpAtual, 70, 'Sofreu -10 HP exatos de asfixia no seco (-8 HP/s * 1.25s)');
+
+  estForcado = avancarTickTripulacao(estForcado, 1.25, { forcarRotaCanonicaCega: true });
+  const pPasso3 = estForcado.naveJogador.tripulacao[0];
+  assert.equal(pPasso3.camaraAtualId, 5, 'Em t=3.75s (1.25s + 2.50s) conclui a travessia até a Câmara 5');
+  assert.equal(pPasso3.camaraDestinoId, null);
+  assert.equal(pPasso3.hpAtual, 60, 'Acumulou -20 HP totais de asfixia ao cruzar a Câmara 4 seca');
+
+  // Comparação direta com a rota tática inteligente na mesma nave (desvia por [2, 3, 5] inundada em 2.50s sem perder HP)
+  let estInteligente = congelarProfundo(cenarioSecoForcado);
+  estInteligente = avancarTickTripulacao(estInteligente, 1.25);
+  assert.equal(estInteligente.naveJogador.tripulacao[0].camaraAtualId, 3);
+  estInteligente = avancarTickTripulacao(estInteligente, 1.25);
+  assert.equal(estInteligente.naveJogador.tripulacao[0].camaraAtualId, 5);
+  assert.equal(estInteligente.naveJogador.tripulacao[0].hpAtual, 80);
+
+  // 4) Interceptação Tática por Invasor vs Escolta de Pinagem Aliada + Marcha de Invasor pelo Duto Ventral 6->5
+  const cenarioEmboscada = structuredClone(base);
+  cenarioEmboscada.naveJogador.camaras.find((c) => c.id === 3).barrasEnergiaAlocada = 0;
+  cenarioEmboscada.naveJogador.invasores = [
+    { id: 'inv-emboscada', especie: 'MARINHEIRO', camaraAtualId: 4, hpAtual: 100, hpMax: 100 },
+  ];
+  cenarioEmboscada.naveJogador.tripulacao = [
+    {
+      id: 'polvo-sem-escolta',
+      especie: 'POLVO',
+      localizacao: 'NAVE_JOGADOR',
+      camaraAtualId: 2,
+      camaraDestinoId: 6,
+      progressoNadoSeg: 0.0,
+      hpAtual: 80,
+      hpMax: 80,
+      vivo: true,
+      inflado: false,
+      acopladoBulbo: false,
+    },
+  ];
+  const aposEmboscada = avancarTickTripulacao(congelarProfundo(cenarioEmboscada), 1.25, { forcarRotaCanonicaCega: true });
+  const polvoInterceptado = aposEmboscada.naveJogador.tripulacao[0];
+  assert.equal(polvoInterceptado.camaraAtualId, 4);
+  assert.equal(polvoInterceptado.camaraDestinoId, null, 'Invasor livre na Câmara 4 intercepta o Polvo e cancela a travessia');
+  assert.equal(polvoInterceptado.interceptadoPorInvasor, true);
+
+  // Com um Caranguejo aliado já pinando o invasor na Câmara 4, o Polvo consegue atravessar sob escolta até a Câmara 6!
+  const cenarioEscolta = structuredClone(cenarioEmboscada);
+  cenarioEscolta.naveJogador.tripulacao.push({
+    id: 'caranguejo-escolta',
+    especie: 'CARANGUEJO',
+    localizacao: 'NAVE_JOGADOR',
+    camaraAtualId: 4,
+    camaraDestinoId: null,
+    progressoNadoSeg: 0.0,
+    hpAtual: 110,
+    hpMax: 110,
+    vivo: true,
+    inflado: false,
+    acopladoBulbo: false,
+  });
+  let estEscolta = congelarProfundo(cenarioEscolta);
+  estEscolta = avancarTickTripulacao(estEscolta, 1.25, { forcarRotaCanonicaCega: true });
+  assert.equal(estEscolta.naveJogador.tripulacao[0].camaraAtualId, 4);
+  assert.equal(estEscolta.naveJogador.tripulacao[0].interceptadoPorInvasor, false, 'Caranguejo pinando 1x1 libera a passagem do Polvo');
+  estEscolta = avancarTickTripulacao(estEscolta, 1.25, { forcarRotaCanonicaCega: true });
+  assert.equal(estEscolta.naveJogador.tripulacao[0].camaraAtualId, 6, 'Polvo completa a travessia até a Câmara 6 sob escolta');
+
+  // Invasor em câmara com sistema já zerado (Câmaras 4 e 6 = 0 barras) avança pelo Duto Hidráulico Ventral (6 -> 5) em 1.5s para sabotar o Sifão!
+  const cenarioMarchaInvasor = structuredClone(base);
+  cenarioMarchaInvasor.naveJogador.tripulacao = [];
+  cenarioMarchaInvasor.naveJogador.camaras.find((c) => c.id === 4).barrasIntegridade = 0;
+  cenarioMarchaInvasor.naveJogador.camaras.find((c) => c.id === 6).barrasIntegridade = 0;
+  cenarioMarchaInvasor.naveJogador.invasores = [
+    { id: 'inv-marcha', especie: 'MERGULHADOR', camaraAtualId: 6, hpAtual: 120, hpMax: 120 },
+  ];
+  let estMarcha = congelarProfundo(cenarioMarchaInvasor);
+  estMarcha = avancarTickTripulacao(estMarcha, 0.75);
+  assert.equal(estMarcha.naveJogador.invasores[0].camaraAtualId, 6);
+  assert.equal(estMarcha.naveJogador.invasores[0].proximaCamaraId, 5);
+  assert.equal(estMarcha.naveJogador.invasores[0].progressoSalto0a1, 0.5);
+  estMarcha = avancarTickTripulacao(estMarcha, 0.75);
+  assert.equal(estMarcha.naveJogador.invasores[0].camaraAtualId, 5, 'Mergulhador atravessou o Duto Ventral 6->5 em 1.5s para atacar o Sifão');
+
+  // 5) Afogamento Simétrico de Marinheiro Invasor Humano sem Escafandro em Câmara Inundada (> 0 kg H2O) vs Câmara Seca (0 kg) e Mergulhador SCUBA [MUT-106]
+  const cenarioAfogamentoInvasor = structuredClone(base);
+  cenarioAfogamentoInvasor.naveJogador.tripulacao = [];
+  const cam2Inundada = cenarioAfogamentoInvasor.naveJogador.camaras.find((c) => c.id === 2);
+  const cam4Drenada = cenarioAfogamentoInvasor.naveJogador.camaras.find((c) => c.id === 4);
+  cam2Inundada.aguaKg = 12.5;
+  cam4Drenada.aguaKg = 0.0;
+  cenarioAfogamentoInvasor.naveJogador.invasores = [
+    { id: 'mar-afogando', especie: 'MARINHEIRO', camaraAtualId: 2, hpAtual: 100, hpMax: 100 },
+    { id: 'mar-seco', especie: 'MARINHEIRO', camaraAtualId: 4, hpAtual: 100, hpMax: 100 },
+    { id: 'merg-scuba', especie: 'MERGULHADOR', camaraAtualId: 2, hpAtual: 100, hpMax: 100 },
+  ];
+  const aposAfogamento = avancarTickTripulacao(congelarProfundo(cenarioAfogamentoInvasor), 1.0);
+  const marAfogado = aposAfogamento.naveJogador.invasores.find((i) => i.id === 'mar-afogando');
+  const marSeco = aposAfogamento.naveJogador.invasores.find((i) => i.id === 'mar-seco');
+  const mergScuba = aposAfogamento.naveJogador.invasores.find((i) => i.id === 'merg-scuba');
+  assert.equal(
+    marAfogado.hpAtual,
+    92,
+    '[MUT-106] Marinheiro humano sem escafandro deve afogar a -8.0 HP/s dentro de câmara inundada (> 0 kg H2O) da bio-nave'
+  );
+  assert.equal(marSeco.hpAtual, 100, 'Marinheiro humano em câmara drenada (0 kg H2O) respira ar e não afoga');
+  assert.equal(mergScuba.hpAtual, 100, 'Mergulhador de assalto (SCUBA) é imune ao afogamento em câmara inundada');
+
+  console.log('[N4] Portais topológicos e cenários de sobrevivência/interceptação examinados: 11 portais, 7 cenários táticos');
 });
