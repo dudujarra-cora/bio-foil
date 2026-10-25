@@ -1532,8 +1532,8 @@
       "descricao": "avancarTickPartidaEmTempoReal suprime o fogo de retorno determinístico das armas e órgãos inimigos contra a bio-nave",
       "trocas": [
         {
-          "buscar": "  if (\n    !opcoesDebug.suprimirAtaqueInimigoMutacao &&\n    estadoAtual.alvoCombate?.ativo &&\n    estadoAtual.alvoCombate.hpCascoAtual > 0\n  ) {",
-          "substituir": "  if (\n    false &&\n    !opcoesDebug.suprimirAtaqueInimigoMutacao &&\n    estadoAtual.alvoCombate?.ativo &&\n    estadoAtual.alvoCombate.hpCascoAtual > 0\n  ) {"
+          "buscar": "  if (\n    !opcoesDebug.suprimirAtaqueInimigoMutacao &&\n    estadoAtual.alvoCombate &&\n    estadoAtual.alvoCombate.ativo !== false &&\n    estadoAtual.alvoCombate.hpCascoAtual > 0\n  ) {",
+          "substituir": "  if (\n    false &&\n    !opcoesDebug.suprimirAtaqueInimigoMutacao &&\n    estadoAtual.alvoCombate &&\n    estadoAtual.alvoCombate.ativo !== false &&\n    estadoAtual.alvoCombate.hpCascoAtual > 0\n  ) {"
         }
       ],
       "testes": [
@@ -1556,6 +1556,74 @@
         "tests/08-onda6-ui-juncao.test.mjs"
       ],
       "falhaEsperada": "[MUT-O6-12] A barra de 24/24 HP da CHEFE_DRAGA jamais pode vazar para fora da moldura X=956"
+    },
+    {
+      "id": "MUT-98",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "L4 / L6 (MUT-O6-13)",
+      "descricao": "interpolarEstadoVisual60Fps zera fatorCasco na transição sub-tick 60 FPS, congelando o deslizamento vertical do casco entre 1_NO_FOIL e 2_TOUCHDOWN",
+      "trocas": [
+        {
+          "buscar": "  const fatorCasco = reduzirMovimento ? 1 : 1 - Math.exp(-11 * dt);",
+          "substituir": "  const fatorCasco = 0;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-13] A interpolação sub-tick a 60 FPS deve deslizar suavemente o casco entre 0 px e 100 px no primeiro quadro (16.6ms)"
+    },
+    {
+      "id": "MUT-99",
+      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "lei": "L1 / L4 (MUT-O6-14)",
+      "descricao": "avancarTickPartidaEmTempoReal desativa o limiar de 35% O2 do Reflexo Branquial Simbiótico (GD-1), deixando a tripulação morrer asfixiada silenciosamente aos 38s",
+      "trocas": [
+        {
+          "buscar": "          Number(c.oxigenioPct ?? 100) <= 35 &&",
+          "substituir": "          Number(c.oxigenioPct ?? 100) <= -1 &&"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-14] O Reflexo Branquial Simbiótico deve disparar automaticamente em O2 <= 35%"
+    },
+    {
+      "id": "MUT-100",
+      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "lei": "L1 / L4 (MUT-O6-15)",
+      "descricao": "DRENAR_TUDO em modoSeguro ([D] DRENO SEGURO, GD-2) remove o corte automático em 62.5 kg de lastro, drenando até 0 kg e disparando cavitação punitiva",
+      "trocas": [
+        {
+          "buscar": "        let margemParaDrenarKg = Math.max(0, aguaTotalAtual - 62.5);",
+          "substituir": "        let margemParaDrenarKg = Math.max(0, aguaTotalAtual - 0);"
+        },
+        {
+          "buscar": "      if (!algumaAberta || aguaTotal <= 64.0) {",
+          "substituir": "      if (!algumaAberta || aguaTotal <= 0.0) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-15] O Dreno Seguro [D] deve cortar automaticamente as válvulas em >= 62.5 kg sem entrar em cavitação"
+    },
+    {
+      "id": "MUT-101",
+      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "lei": "L1 / L6 (MUT-O6-16)",
+      "descricao": "avancarTickPartidaEmTempoReal suprime o Protocolo Corta-Fogo + Mina Magnética de superfície do Barco Humano <= 50% HP (GD-3)",
+      "trocas": [
+        {
+          "buscar": "        if (!alvo.protocoloCortaFogoUsado && alvo.hpCascoAtual <= Math.floor(alvo.hpCascoMax * 0.5)) {",
+          "substituir": "        if (false && !alvo.protocoloCortaFogoUsado && alvo.hpCascoAtual <= Math.floor(alvo.hpCascoMax * 0.5)) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-16] Barco Humano <= 50% HP deve acionar Protocolo Corta-Fogo e lançar Mina Magnética de 4.0s"
     }
   ]
 }

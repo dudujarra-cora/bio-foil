@@ -224,12 +224,78 @@ export function despacharComandoUi(estado, comando) {
       if (estadoFisicoAtual !== '1_NO_FOIL') {
         return rejeitarComando(estado, comando, 'BLOQUEADO_TRAVA_HIDROSTATICA', 'CUE_TRAVA_HIDROSTATICA');
       }
+      if (p.modoSeguro === true) {
+        const aguaTotalAtual = (nave.camaras ?? []).reduce((acc, c) => acc + Number(c.aguaKg ?? 0), 0);
+        if (aguaTotalAtual <= 62.5) {
+          const estadoFechado = drenarTodasValvulas(estado, false);
+          return clonarProfundoCongelado({
+            aceito: true,
+            marcadorRejeicao: null,
+            cueEmitido: null,
+            estado: {
+              ...estadoFechado,
+              naveJogador: {
+                ...estadoFechado.naveJogador,
+                drenoSeguroAtivo: false,
+              },
+            },
+          });
+        }
+        const idsComAquaticos = new Set(
+          (nave.tripulacao ?? [])
+            .filter(
+              (t) =>
+                t.localizacao === 'NAVE_JOGADOR' &&
+                t.hpAtual > 0 &&
+                t.especie !== 'CARANGUEJO'
+            )
+            .map((t) => t.camaraAtualId)
+        );
+        const candidatasOrdenadas = [...(nave.camaras ?? [])]
+          .filter((c) => Number(c.aguaKg ?? 0) > 0.5)
+          .sort((a, b) => {
+            const penA = idsComAquaticos.has(a.id) ? 1 : 0;
+            const penB = idsComAquaticos.has(b.id) ? 1 : 0;
+            if (penA !== penB) return penA - penB;
+            return Number(b.aguaKg ?? 0) - Number(a.aguaKg ?? 0);
+          });
+        let margemParaDrenarKg = Math.max(0, aguaTotalAtual - 62.5);
+        const idsAbrirSeguro = new Set();
+        for (const camCand of candidatasOrdenadas) {
+          if (margemParaDrenarKg <= 0.01) break;
+          idsAbrirSeguro.add(camCand.id);
+          margemParaDrenarKg -= Number(camCand.aguaKg ?? 0);
+        }
+        const novasCamarasSeguras = (nave.camaras ?? []).map((c) => ({
+          ...c,
+          valvulaExternaAberta: idsAbrirSeguro.has(c.id),
+        }));
+        return clonarProfundoCongelado({
+          aceito: true,
+          marcadorRejeicao: null,
+          cueEmitido: null,
+          estado: {
+            ...estado,
+            naveJogador: {
+              ...nave,
+              drenoSeguroAtivo: idsAbrirSeguro.size > 0,
+              camaras: novasCamarasSeguras,
+            },
+          },
+        });
+      }
       const novoEstado = drenarTodasValvulas(estado, p.abrirTodas ?? true);
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
         cueEmitido: null,
-        estado: novoEstado,
+        estado: {
+          ...novoEstado,
+          naveJogador: {
+            ...novoEstado.naveJogador,
+            drenoSeguroAtivo: false,
+          },
+        },
       });
     }
 
@@ -302,6 +368,10 @@ export function despacharComandoUi(estado, comando) {
       if (aliadosNoDestino.length >= 2) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
+      const jaNaCamaraDestino = trip.camaraAtualId === p.camaraDestinoId && !trip.camaraDestinoId;
+      const novoAcoplado = jaNaCamaraDestino
+        ? (p.acopladoBulbo !== undefined ? Boolean(p.acopladoBulbo) : !trip.acopladoBulbo)
+        : false;
       return clonarProfundoCongelado({
         aceito: true,
         marcadorRejeicao: null,
@@ -311,7 +381,14 @@ export function despacharComandoUi(estado, comando) {
           naveJogador: {
             ...nave,
             tripulacao: nave.tripulacao.map((t) =>
-              t.id === trip.id ? { ...t, camaraDestinoId: p.camaraDestinoId, acopladoBulbo: false } : t
+              t.id === trip.id
+                ? {
+                    ...t,
+                    camaraDestinoId: jaNaCamaraDestino ? null : p.camaraDestinoId,
+                    progressoNadoSeg: jaNaCamaraDestino ? 0.0 : Number(t.progressoNadoSeg ?? 0),
+                    acopladoBulbo: novoAcoplado,
+                  }
+                : t
             ),
           },
         },
@@ -491,7 +568,9 @@ export function despacharComandoUi(estado, comando) {
     }
 
     case 'MERGULHO_TATICO': {
-      const novoEstado = alternarMergulhoTatico(estado, Boolean(p.recolherFoil));
+      const recolherAlvo =
+        p.recolherFoil !== undefined ? Boolean(p.recolherFoil) : nave.estadoFisico === '1_NO_FOIL';
+      const novoEstado = alternarMergulhoTatico(estado, recolherAlvo);
       const estRes = novoEstado.naveJogador.estadoFisico;
       const cueMergulho =
         estRes === '2_TOUCHDOWN'
@@ -600,13 +679,47 @@ export function despacharComandoUi(estado, comando) {
     }
 
     case 'COMPRAR_OU_VENDER_LOJA': {
+      const acao = p.operacao ?? p.acao ?? 'COMPRAR';
+      if (acao === 'SAIR_DA_LOJA' || p.itemOuSistemaId === 'SAIR_DA_LOJA') {
+        return clonarProfundoCongelado({
+          aceito: true,
+          marcadorRejeicao: null,
+          cueEmitido: null,
+          estado: {
+            ...estado,
+            meta: { ...estado.meta, faseJogo: 'MAPA' },
+          },
+        });
+      }
+      if (acao === 'DIGESTAO_ENZIMATICA' || p.itemOuSistemaId === 'DIGESTAO_ENZIMATICA') {
+        const baseCartDig = extrairCarteiraSincronizada(estado);
+        const origemDig = p.moedaOrigem === 'BIOMASSA' ? 'biomassa' : 'sucata';
+        const destinoDig = origemDig === 'sucata' ? 'biomassa' : 'sucata';
+        if (baseCartDig[origemDig] < 2) {
+          return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+        }
+        const novaCartDig = {
+          ...baseCartDig,
+          [origemDig]: baseCartDig[origemDig] - 2,
+          [destinoDig]: baseCartDig[destinoDig] + 1,
+        };
+        return clonarProfundoCongelado({
+          aceito: true,
+          marcadorRejeicao: null,
+          cueEmitido: null,
+          estado: {
+            ...estado,
+            economia: novaCartDig,
+            recursos: novaCartDig,
+          },
+        });
+      }
       const aliasItem = {
         CELULA_COMBUSTIVEL: 'INSUMO_COMBUSTIVEL',
         MUNICAO_TORPEDO_ESPORO: 'INSUMO_MUNICAO',
       }[p.itemOuSistemaId] ?? p.itemOuSistemaId;
       const item = CATALOGO_LOJA_56B.find((i) => i.id === aliasItem);
       if (!item) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
-      const acao = p.operacao ?? p.acao ?? 'COMPRAR';
       const chaveMoeda = item.moeda === 'BIOMASSA' ? 'biomassa' : 'sucata';
       const baseCarteira = extrairCarteiraSincronizada(estado);
       let novaCarteiraLoja = { ...baseCarteira };
@@ -880,24 +993,38 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
   const dyCena = !ehTouchdown && ehMonstroAlvo ? -12 : 0;
   const hitboxes = [];
 
-  // 1. Botões da Coluna do Termômetro (painel esquerdo 0..150, y = 40..430)
+  // 1. Botões da Coluna do Termômetro (painel esquerdo 0..150, y = 40..430 — zero sobreposição AABB)
   hitboxes.push({
     idHitbox: 'BTN_MERGULHO_TATICO',
     tipo: 'BOTAO_TERMOMETRO',
     x: 6 + desalinhamentoMutacao,
-    y: 360,
+    y: 344,
     largura: 138,
-    altura: 30,
+    altura: 26,
     metadados: { acao: 'MERGULHO_TATICO', ativoAtual: Boolean(viewModel.termometroSustentacao?.botaoMergulhoTatico?.ativo) },
+  });
+
+  hitboxes.push({
+    idHitbox: 'BTN_DRENAR_SEGURO',
+    tipo: 'BOTAO_TERMOMETRO',
+    x: 6 + desalinhamentoMutacao,
+    y: 373,
+    largura: 138,
+    altura: 24,
+    metadados: {
+      acao: 'DRENAR_SEGURO',
+      travadoTouchdown: Boolean(viewModel.termometroSustentacao?.botaoDrenarTudo?.travadoTouchdown),
+      limiarCavitacaoKg: 62.5,
+    },
   });
 
   hitboxes.push({
     idHitbox: 'BTN_DRENAR_TUDO',
     tipo: 'BOTAO_TERMOMETRO',
     x: 6 + desalinhamentoMutacao,
-    y: 396,
+    y: 400,
     largura: 138,
-    altura: 28,
+    altura: 24,
     metadados: { acao: 'DRENAR_TUDO', travadoTouchdown: Boolean(viewModel.termometroSustentacao?.botaoDrenarTudo?.travadoTouchdown) },
   });
 
@@ -1044,10 +1171,10 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
     if (ehMonstroAlvo) {
       const dyMonstroTd = ehTouchdown ? -108 : 0;
       const CAIXAS_ORGAOS_MONSTRO = [
-        { x: 630, y: 220 + dyMonstroTd, w: 73, h: 48 },
-        { x: 630, y: 283 + dyMonstroTd, w: 73, h: 40 },
-        { x: 630, y: 338 + dyMonstroTd, w: 74, h: 40 },
-        { x: 627, y: 384 + dyMonstroTd, w: 77, h: 40 },
+        { x: 628, y: 220 + dyMonstroTd, w: 80, h: 48 },
+        { x: 628, y: 283 + dyMonstroTd, w: 79, h: 40 },
+        { x: 628, y: 338 + dyMonstroTd, w: 79, h: 40 },
+        { x: 627, y: 384 + dyMonstroTd, w: 80, h: 40 },
       ];
       salasAlvo.forEach((sala, idx) => {
         const cx = CAIXAS_ORGAOS_MONSTRO[idx] ?? { x: 630, y: 220 + dyMonstroTd + idx * 54, w: 73, h: 40 };
@@ -1061,6 +1188,8 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
           metadados: {
             salaId: sala.salaId,
             nomeSala: sala.nomeSala,
+            integridade: Number(sala.integridade ?? sala.barrasIntegridade ?? 1),
+            integridadeMax: Number(sala.integridadeMax ?? sala.barrasMax ?? 1),
             submersa: Boolean(sala.submersa),
             canalPermissao: sala.canalPermissao,
             marcadorExplicito: sala.marcadorExplicito,
@@ -1073,18 +1202,20 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
       for (const sala of salasAlvo) {
         const fila = sala.submersa ? submersas : secas;
         const idxFila = Math.max(0, fila.findIndex((x) => x.salaId === sala.salaId));
-        const passoFila = Math.floor(316 / Math.max(1, fila.length));
-        const larguraSala = Math.min(96, passoFila - 4);
+        const passoFila = Math.floor(296 / Math.max(1, fila.length));
+        const larguraSala = Math.min(92, passoFila - 4);
         hitboxes.push({
           idHitbox: `SALA_ALVO_${sala.salaId}`,
           tipo: 'SALA_ALVO',
-          x: 632 + idxFila * passoFila + desalinhamentoMutacao,
+          x: 656 + idxFila * passoFila + desalinhamentoMutacao,
           y: sala.submersa ? 338 : 268,
           largura: larguraSala,
           altura: 56,
           metadados: {
             salaId: sala.salaId,
             nomeSala: sala.nomeSala,
+            integridade: Number(sala.integridade ?? sala.barrasIntegridade ?? 1),
+            integridadeMax: Number(sala.integridadeMax ?? sala.barrasMax ?? 1),
             submersa: Boolean(sala.submersa),
             canalPermissao: sala.canalPermissao,
             marcadorExplicito: sala.marcadorExplicito,
@@ -1121,6 +1252,8 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
           metadados: {
             salaId: sala.salaId,
             nomeSala: sala.nomeSala,
+            integridade: Number(sala.integridade ?? sala.barrasIntegridade ?? 1),
+            integridadeMax: Number(sala.integridadeMax ?? sala.barrasMax ?? 1),
             submersa: Boolean(sala.submersa),
             canalPermissao: sala.canalPermissao,
             marcadorExplicito: sala.marcadorExplicito,
@@ -1145,33 +1278,168 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
         },
       });
     }
+  } else if (viewModel.faseJogo === 'LOJA') {
+    hitboxes.push({
+      idHitbox: 'LOJA_REPARAR_CASCO',
+      tipo: 'ACAO_LOJA',
+      x: 162 + desalinhamentoMutacao,
+      y: 94,
+      largura: 224,
+      altura: 26,
+      metadados: { itemId: 'REPARO_CASCO_1HP', operacao: 'COMPRAR' },
+    });
+    hitboxes.push({
+      idHitbox: 'LOJA_DIGESTAO_SUC_BIO',
+      tipo: 'ACAO_LOJA',
+      x: 394 + desalinhamentoMutacao,
+      y: 94,
+      largura: 244,
+      altura: 26,
+      metadados: { itemId: 'DIGESTAO_ENZIMATICA', operacao: 'DIGESTAO_ENZIMATICA', moedaOrigem: 'SUCATA' },
+    });
+    hitboxes.push({
+      idHitbox: 'BTN_SAIR_LOJA',
+      tipo: 'ACAO_LOJA',
+      x: 756 + desalinhamentoMutacao,
+      y: 94,
+      largura: 190,
+      altura: 26,
+      metadados: { itemId: 'SAIR_DA_LOJA', operacao: 'SAIR_DA_LOJA' },
+    });
+    const ofertasLoja =
+      Array.isArray(viewModel.lojaResumo?.ofertas) && viewModel.lojaResumo.ofertas.length > 0
+        ? viewModel.lojaResumo.ofertas
+        : CATALOGO_LOJA_56B.filter((i) => i.categoria !== 'REPARO').slice(0, 8);
+    ofertasLoja.slice(0, 8).forEach((item, idx) => {
+      const col = idx % 4;
+      const row = Math.floor(idx / 4);
+      hitboxes.push({
+        idHitbox: `LOJA_ITEM_${item.id}`,
+        tipo: 'ITEM_LOJA',
+        x: 162 + col * 198 + desalinhamentoMutacao,
+        y: 125 + row * 138,
+        largura: 192,
+        altura: 132,
+        metadados: {
+          itemId: item.id,
+          nomeCurto: item.nomeCurto ?? item.nome ?? item.id,
+          resumoCurto: item.resumoCurto ?? '',
+          categoria: item.categoria,
+          preco: Number(item.preco ?? item.precoCompra ?? 10),
+          valorVenda: Number(item.valorVenda ?? 0),
+          pesoKg: Number(item.pesoKg ?? 0),
+          moeda: item.moeda ?? 'SUCATA',
+        },
+      });
+    });
+  } else if (viewModel.faseJogo === 'EVENTO') {
+    const opcoesEv =
+      Array.isArray(viewModel.eventoResumo?.opcoes) && viewModel.eventoResumo.opcoes.length > 0
+        ? viewModel.eventoResumo.opcoes
+        : [
+            { codigo: 'A', rotulo: '[A] ABORDAGEM PADRÃO', detalhe: '' },
+            { codigo: 'B', rotulo: '[B] OPÇÃO SIMBIÓTICA (AZUL)', detalhe: '', azul: true },
+            { codigo: 'C', rotulo: '[C] RECUAR COM CAUTELA', detalhe: '' },
+          ];
+    opcoesEv.slice(0, 3).forEach((op, idx) => {
+      hitboxes.push({
+        idHitbox: `EVENTO_OPCAO_${op.codigo}`,
+        tipo: 'OPCAO_EVENTO',
+        x: 168 + desalinhamentoMutacao,
+        y: 242 + idx * 50,
+        largura: 774,
+        altura: 44,
+        metadados: {
+          opcao: op.codigo,
+          rotulo: op.rotulo ?? `[${op.codigo}]`,
+          detalhe: op.detalhe ?? '',
+          azul: Boolean(op.azul),
+          bloqueada: Boolean(op.bloqueada),
+          idEvento: viewModel.eventoResumo?.idEvento ?? 'SOS_01',
+          categoriaEvento: viewModel.eventoResumo?.categoria ?? 'SOS',
+        },
+      });
+    });
   }
 
   return clonarProfundoCongelado(hitboxes);
 }
 
 /**
- * Calcula a Pré-Visualização Fantasma (Ghost Preview — Seção 2.1) no Termômetro Vertical
- * ao passar o mouse sobre válvulas externas, botão Drenar Tudo ou barra de energia do Sifão.
+ * Calcula a Pré-Visualização Fantasma (Ghost Preview — Seção 2.1 + GD-2 Limiar de Cavitação 62.5 kg) no Termômetro Vertical
+ * ao passar o mouse sobre válvulas externas, botão Dreno Seguro, botão Drenar Tudo ou barra de energia do Sifão.
  */
-export function calcularGhostPreviewTermometro(estado, idHitboxHover = null) {
+export function calcularGhostPreviewTermometro(estado, idHitboxHover = null, opcoesDebug = {}) {
   const nave = estado.naveJogador;
+  const ehTouchdown = nave.estadoFisico !== '1_NO_FOIL';
   const pesoAtualKg = calcularPesoTotalNave(nave);
   const sustentacaoAtualKg = calcularSustentacaoFoil(nave);
+  const aguaAtualKg =
+    Math.round((nave.camaras ?? []).reduce((acc, c) => acc + Number(c.aguaKg ?? 0), 0) * 100) / 100;
 
+  const ehValvulaHover = typeof idHitboxHover === 'string' && idHitboxHover.startsWith('VALVULA_CAMARA_');
   const ehHitboxGhost =
     idHitboxHover === 'SISTEMA_SIF' ||
+    idHitboxHover === 'BTN_MERGULHO_TATICO' ||
     idHitboxHover === 'BTN_DRENAR_TUDO' ||
-    (typeof idHitboxHover === 'string' && idHitboxHover.startsWith('VALVULA_CAMARA_'));
+    idHitboxHover === 'BTN_DRENAR_SEGURO' ||
+    ehValvulaHover;
 
   if (!ehHitboxGhost) {
     return clonarProfundoCongelado({
       ativo: false,
       alvoHover: null,
+      aguaAtualKg,
+      aguaProjetadaKg: aguaAtualKg,
+      entrariaEmCavitacao: aguaAtualKg < 62.5,
+      perdaSustentacaoCavitacaoKg: aguaAtualKg < 62.5 ? Math.round((62.5 - aguaAtualKg) * 2 * 100) / 100 : 0,
       pesoProjetadoKg: pesoAtualKg,
       sustentacaoProjetadaKg: sustentacaoAtualKg,
       causariaQuedaNoMar: false,
+      travadoHidrostatico: false,
       rotuloFantasma: null,
+    });
+  }
+
+  // Trava Hidrostática (Lei 2C): em 2_TOUCHDOWN / 3_SPOOL_UP, escotilhas externas e botões de dreno NÃO expulsam água!
+  const travadoHidrostatico =
+    ehTouchdown &&
+    (idHitboxHover === 'BTN_DRENAR_SEGURO' || idHitboxHover === 'BTN_DRENAR_TUDO' || ehValvulaHover);
+
+  if (travadoHidrostatico) {
+    return clonarProfundoCongelado({
+      ativo: true,
+      alvoHover: idHitboxHover,
+      aguaAtualKg,
+      aguaProjetadaKg: aguaAtualKg,
+      entrariaEmCavitacao: aguaAtualKg < 62.5,
+      perdaSustentacaoCavitacaoKg: aguaAtualKg < 62.5 ? Math.round((62.5 - aguaAtualKg) * 2 * 100) / 100 : 0,
+      pesoProjetadoKg: Math.round(pesoAtualKg * 100) / 100,
+      sustentacaoProjetadaKg: Math.round(sustentacaoAtualKg * 100) / 100,
+      causariaQuedaNoMar: false,
+      travadoHidrostatico: true,
+      rotuloFantasma: '[TRAVA HIDROSTÁTICA]',
+    });
+  }
+
+  if (idHitboxHover === 'BTN_MERGULHO_TATICO') {
+    const naveFoilSim = { ...nave, estadoFisico: ehTouchdown ? '1_NO_FOIL' : '2_TOUCHDOWN' };
+    const sustProjM = calcularSustentacaoFoil(naveFoilSim);
+    const quedaM = !ehTouchdown || pesoAtualKg > sustProjM;
+    return clonarProfundoCongelado({
+      ativo: true,
+      alvoHover: idHitboxHover,
+      aguaAtualKg,
+      aguaProjetadaKg: aguaAtualKg,
+      entrariaEmCavitacao: aguaAtualKg < 62.5,
+      perdaSustentacaoCavitacaoKg: aguaAtualKg < 62.5 ? Math.round((62.5 - aguaAtualKg) * 2 * 100) / 100 : 0,
+      pesoProjetadoKg: Math.round(pesoAtualKg * 100) / 100,
+      sustentacaoProjetadaKg: Math.round(sustProjM * 100) / 100,
+      causariaQuedaNoMar: quedaM,
+      travadoHidrostatico: false,
+      rotuloFantasma: ehTouchdown
+        ? (pesoAtualKg <= sustProjM ? '[EMERGIR -> FOIL]' : '[PESADO DEMAIS!]')
+        : '[MERGULHO -> MAR]',
     });
   }
 
@@ -1186,6 +1454,33 @@ export function calcularGhostPreviewTermometro(estado, idHitboxHover = null) {
         c.id === 5 ? { ...c, barrasEnergiaAlocada: novaBarra, energiaAlocada: novaBarra } : c
       ),
     };
+  } else if (idHitboxHover === 'BTN_DRENAR_SEGURO') {
+    let excedente = Math.max(0, aguaAtualKg - 62.5);
+    const camComTripSecoVuln = new Set(
+      (nave.tripulacao ?? [])
+        .filter((t) => t.localizacao === 'NAVE_JOGADOR' && t.hpAtual > 0 && t.especie !== 'CARANGUEJO')
+        .map((t) => t.camaraAtualId)
+    );
+    const prioridadeIds = [
+      ...nave.camaras.filter((c) => !camComTripSecoVuln.has(c.id)).map((c) => c.id),
+      ...nave.camaras.filter((c) => camComTripSecoVuln.has(c.id)).map((c) => c.id),
+    ];
+    const mapaReducao = new Map();
+    for (const idC of prioridadeIds) {
+      if (excedente <= 0) break;
+      const camRef = nave.camaras.find((c) => c.id === idC);
+      const disp = Number(camRef?.aguaKg ?? 0);
+      const drena = Math.min(disp, excedente);
+      mapaReducao.set(idC, drena);
+      excedente = Math.round((excedente - drena) * 100) / 100;
+    }
+    naveSimulada = {
+      ...nave,
+      camaras: nave.camaras.map((c) => ({
+        ...c,
+        aguaKg: Math.max(0, Math.round((Number(c.aguaKg ?? 0) - (mapaReducao.get(c.id) ?? 0)) * 100) / 100),
+      })),
+    };
   } else if (idHitboxHover === 'BTN_DRENAR_TUDO') {
     naveSimulada = {
       ...nave,
@@ -1199,18 +1494,43 @@ export function calcularGhostPreviewTermometro(estado, idHitboxHover = null) {
     };
   }
 
+  const aguaProjetadaKg =
+    Math.round((naveSimulada.camaras ?? []).reduce((acc, c) => acc + Number(c.aguaKg ?? 0), 0) * 100) / 100;
+  const entrariaEmCavitacao =
+    opcoesDebug.ocultarAlertaCavitacaoGhostMutacao === true ? false : aguaProjetadaKg < 62.5;
+  const perdaSustentacaoCavitacaoKg = entrariaEmCavitacao
+    ? Math.round((62.5 - aguaProjetadaKg) * 2 * 100) / 100
+    : 0;
   const pesoProjetadoKg = calcularPesoTotalNave(naveSimulada);
   const sustentacaoProjetadaKg = calcularSustentacaoFoil(naveSimulada);
   const causariaQuedaNoMar =
-    nave.estadoFisico === '1_NO_FOIL' && pesoProjetadoKg > sustentacaoProjetadaKg;
+    !ehTouchdown && pesoProjetadoKg > sustentacaoProjetadaKg;
+
+  const rotuloFantasma =
+    ehTouchdown
+      ? '[EM TOUCHDOWN]'
+      : causariaQuedaNoMar && entrariaEmCavitacao
+        ? '[CAVITAÇÃO -> QUEDA]'
+        : entrariaEmCavitacao
+          ? `[CAVITAÇÃO -${Math.round(perdaSustentacaoCavitacaoKg)}kg]`
+          : causariaQuedaNoMar
+            ? '[QUEDA NO MAR]'
+            : idHitboxHover === 'BTN_DRENAR_SEGURO'
+              ? '[SEGURO >=63kg]'
+              : '[ESTÁVEL NO FOIL]';
 
   return clonarProfundoCongelado({
     ativo: true,
     alvoHover: idHitboxHover,
+    aguaAtualKg,
+    aguaProjetadaKg,
+    entrariaEmCavitacao,
+    perdaSustentacaoCavitacaoKg,
     pesoProjetadoKg: Math.round(pesoProjetadoKg * 100) / 100,
     sustentacaoProjetadaKg: Math.round(sustentacaoProjetadaKg * 100) / 100,
     causariaQuedaNoMar,
-    rotuloFantasma: causariaQuedaNoMar ? '[QUEDA NO MAR]' : '[ESTÁVEL NO FOIL]',
+    travadoHidrostatico: false,
+    rotuloFantasma,
   });
 }
 
@@ -1221,6 +1541,7 @@ export function calcularGhostPreviewTermometro(estado, idHitboxHover = null) {
 export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, contextoUi = {}) {
   const tipoEvento = eventoInput?.tipoEvento ?? 'CLICK';
   const todasAbertas = (estado.naveJogador?.camaras ?? []).every((c) => c.valvulaExternaAberta);
+  const faseAtual = estado.meta?.faseJogo ?? viewModel?.faseJogo ?? 'COMBATE';
 
   if (tipoEvento === 'KEYDOWN') {
     const code = String(eventoInput.code ?? '');
@@ -1231,6 +1552,73 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
         pausaTaticaAtiva: !contextoUi.pausaTaticaAtiva,
         comandoMotor: null,
         resultadoMotor: null,
+      });
+    }
+    if (faseAtual === 'EVENTO' && (code === 'KeyA' || code === 'KeyB' || code === 'KeyC')) {
+      const opcao = code.replace('Key', '');
+      const comandoMotor = {
+        tipo: 'ESCOLHER_OPCAO_EVENTO',
+        payload: {
+          opcao,
+          idEvento: viewModel?.eventoResumo?.idEvento ?? 'SOS_01',
+          categoriaEvento: viewModel?.eventoResumo?.categoria ?? 'SOS',
+        },
+      };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+    if (code === 'KeyD') {
+      const comandoMotor = { tipo: 'DRENAR_TUDO', payload: { modoSeguro: true } };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+    if (code === 'KeyB') {
+      const camBrq = (estado.naveJogador?.camaras ?? []).find((c) => c.id === 3);
+      const barrasLivres = Number(estado.naveJogador?.reator?.barrasDisponiveis ?? 0);
+      const brqAloc = Number(camBrq?.barrasEnergiaAlocada ?? camBrq?.energiaAlocada ?? 0);
+      const brqInt = Number(camBrq?.barrasIntegridade ?? camBrq?.integridade ?? 1);
+      if (eventoInput.shiftKey === true && brqAloc > 0) {
+        const comandoMotor = { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 3, deltaBarras: -1 } };
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: null,
+          comandoMotor,
+          resultadoMotor: despacharComandoUi(estado, comandoMotor),
+        });
+      }
+      if (barrasLivres === 0 && brqAloc < brqInt) {
+        const doadora = [8, 7, 4, 1, 5]
+          .map((idC) => (estado.naveJogador?.camaras ?? []).find((c) => c.id === idC))
+          .find((c) => c && Number(c.barrasEnergiaAlocada ?? c.energiaAlocada ?? 0) >= 1);
+        if (doadora) {
+          const passo1 = despacharComandoUi(estado, {
+            tipo: 'ALOCAR_ENERGIA',
+            payload: { camaraId: doadora.id, deltaBarras: -1 },
+          });
+          const comandoMotor = { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 3, deltaBarras: 1 } };
+          const passo2 = passo1.aceito ? despacharComandoUi(passo1.estado, comandoMotor) : passo1;
+          return clonarProfundoCongelado({
+            reconhecido: true,
+            acaoLocalUi: null,
+            comandoMotor,
+            resultadoMotor: passo2,
+          });
+        }
+      }
+      const comandoMotor = { tipo: 'ALOCAR_ENERGIA', payload: { camaraId: 3, deltaBarras: 1 } };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
       });
     }
     if (code === 'KeyV') {
@@ -1254,6 +1642,44 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
     }
     if (code === 'KeyF') {
       const comandoMotor = { tipo: 'SALTO_FUGA', payload: {} };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+    if (code === 'KeyP') {
+      const tripulacaoViva = (estado.naveJogador?.tripulacao ?? []).filter(
+        (t) => t.localizacao === 'NAVE_JOGADOR' && t.hpAtual > 0 && t.especie === 'BAIACU'
+      );
+      const baiacuAlvo =
+        tripulacaoViva.find((t) => t.id === contextoUi.tripulanteSelecionadoId) ?? tripulacaoViva[0] ?? null;
+      const comandoMotor = {
+        tipo: 'ATIVAR_BAIACU',
+        payload: {
+          tripulanteId: baiacuAlvo?.id ?? 'trip-baiacu-1',
+          inflado: !(baiacuAlvo?.inflado),
+        },
+      };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+    if (code === 'KeyE') {
+      const comandoMotor = { tipo: 'ATIVAR_PULSO_ENZIMAS', payload: {} };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+    if (code === 'KeyT') {
+      const comandoMotor = { tipo: 'ATIVAR_TINTA_FURTIVA', payload: {} };
       return clonarProfundoCongelado({
         reconhecido: true,
         acaoLocalUi: null,
@@ -1330,11 +1756,41 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
 
   const botaoMouse = eventoInput.botaoMouse ?? eventoInput.button ?? 0;
   let comandoMotor = null;
-  if (hb.idHitbox === 'BTN_DRENAR_TUDO') {
+  if (hb.idHitbox === 'BTN_DRENAR_SEGURO') {
+    comandoMotor = { tipo: 'DRENAR_TUDO', payload: { modoSeguro: true } };
+  } else if (hb.idHitbox === 'BTN_DRENAR_TUDO') {
     comandoMotor = { tipo: 'DRENAR_TUDO', payload: { abrirTodas: !todasAbertas } };
   } else if (hb.idHitbox === 'BTN_MERGULHO_TATICO') {
     const recolher = estado.naveJogador?.estadoFisico === '1_NO_FOIL';
     comandoMotor = { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: recolher } };
+  } else if (hb.tipo === 'ACAO_LOJA') {
+    if (hb.idHitbox === 'LOJA_DIGESTAO_SUC_BIO') {
+      const moedaOrigem = botaoMouse === 2 || eventoInput.shiftKey === true ? 'BIOMASSA' : 'SUCATA';
+      comandoMotor = {
+        tipo: 'COMPRAR_OU_VENDER_LOJA',
+        payload: { itemOuSistemaId: 'DIGESTAO_ENZIMATICA', operacao: 'DIGESTAO_ENZIMATICA', moedaOrigem },
+      };
+    } else {
+      comandoMotor = {
+        tipo: 'COMPRAR_OU_VENDER_LOJA',
+        payload: { itemOuSistemaId: hb.metadados.itemId, operacao: hb.metadados.operacao },
+      };
+    }
+  } else if (hb.tipo === 'ITEM_LOJA') {
+    const operacao = botaoMouse === 2 || eventoInput.shiftKey === true ? 'VENDER' : 'COMPRAR';
+    comandoMotor = {
+      tipo: 'COMPRAR_OU_VENDER_LOJA',
+      payload: { itemOuSistemaId: hb.metadados.itemId, operacao },
+    };
+  } else if (hb.tipo === 'OPCAO_EVENTO') {
+    comandoMotor = {
+      tipo: 'ESCOLHER_OPCAO_EVENTO',
+      payload: {
+        opcao: hb.metadados.opcao,
+        idEvento: hb.metadados.idEvento,
+        categoriaEvento: hb.metadados.categoriaEvento,
+      },
+    };
   } else if (hb.tipo === 'VALVULA_EXTERNA') {
     comandoMotor = {
       tipo: 'ALTERNAR_VALVULA',
@@ -1366,9 +1822,14 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
   } else if (hb.tipo === 'CAMARA_BIONAVE') {
     const tripulanteSelecionadoId =
       contextoUi.tripulanteSelecionadoId ?? estado.naveJogador?.tripulacao?.[0]?.id ?? 'trip-polvo-1';
+    const tripObj = (estado.naveJogador?.tripulacao ?? []).find((t) => t.id === tripulanteSelecionadoId);
     comandoMotor = {
       tipo: 'MOVER_TRIPULANTE',
-      payload: { tripulanteId: tripulanteSelecionadoId, camaraDestinoId: hb.metadados.camaraId },
+      payload: {
+        tripulanteId: tripulanteSelecionadoId,
+        camaraDestinoId: hb.metadados.camaraId,
+        ...(eventoInput.shiftKey === true ? { acopladoBulbo: !(tripObj?.acopladoBulbo) } : {}),
+      },
     };
   } else if (hb.tipo === 'SALA_ALVO') {
     const slotIndex = Number(contextoUi.slotArmaSelecionado ?? 0);
@@ -1468,10 +1929,120 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
   );
   const noIdComb = String(estadoAtual.mapaSetorial?.noAtualId ?? 'NO_COMBATE');
   const tick = Number(estadoAtual.meta?.tickAtual ?? 0);
+  const eventosVisuais = [];
+  let seqEventoVisual = 0;
+  const emitirEventoVisual = (ev) => {
+    seqEventoVisual += 1;
+    eventosVisuais.push({
+      idEvento: tick * 100 + seqEventoVisual,
+      tick,
+      ...ev,
+    });
+  };
+
+  // GD-2 (Corte Automático do Dreno Seguro >= 62.5 kg) + GD-1 (Reflexo Simbiótico Branquial Autônomo)
+  {
+    const cloneBio = structuredClone(estadoAtual);
+    const naveBio = cloneBio.naveJogador;
+    let mudouBio = false;
+
+    if (Number(naveBio.alertaReflexoBranquialSeg ?? 0) > 0) {
+      naveBio.alertaReflexoBranquialSeg = Math.max(
+        0,
+        Math.round((Number(naveBio.alertaReflexoBranquialSeg) - dtSeg) * 1000) / 1000
+      );
+      mudouBio = true;
+    }
+
+    if (naveBio.drenoSeguroAtivo === true) {
+      const aguaTotal = (naveBio.camaras ?? []).reduce((acc, c) => acc + Number(c.aguaKg ?? 0), 0);
+      const algumaAberta = (naveBio.camaras ?? []).some((c) => c.valvulaExternaAberta === true);
+      if (!algumaAberta || aguaTotal <= 64.0) {
+        if (aguaTotal < 62.5) {
+          const falta = Math.round((62.5 - aguaTotal) * 100) / 100;
+          const camAjuste =
+            (naveBio.camaras ?? []).find((c) => c.valvulaExternaAberta && Number(c.aguaKg ?? 0) + falta <= 12.5) ??
+            (naveBio.camaras ?? []).find((c) => Number(c.aguaKg ?? 0) + falta <= 12.5);
+          if (camAjuste) {
+            camAjuste.aguaKg = Math.min(12.5, Math.round((Number(camAjuste.aguaKg ?? 0) + falta) * 100) / 100);
+          }
+        }
+        for (const c of naveBio.camaras ?? []) {
+          c.valvulaExternaAberta = false;
+        }
+        naveBio.drenoSeguroAtivo = false;
+        const nRecalc = recalcularFoilEPesoNave(naveBio);
+        cloneBio.naveJogador = nRecalc;
+        emitirEventoVisual({
+          tipo: 'CORTE_DRENO_SEGURO',
+          camaraId: 5,
+          texto: 'DRENO SEGURO 62.5 kg',
+        });
+        mudouBio = true;
+      }
+    }
+
+    if (!opcoesDebug.desativarReflexoBranquialMutacao && !cloneBio.naveJogador.reflexoBranquialUsado) {
+      const nAtu = cloneBio.naveJogador;
+      const tripVivos = (nAtu.tripulacao ?? []).filter(
+        (t) => t.localizacao === 'NAVE_JOGADOR' && Number(t.hpAtual ?? 0) > 0
+      );
+      const camHipoxia = (nAtu.camaras ?? []).find(
+        (c) =>
+          Number(c.aguaKg ?? 0) > 0 &&
+          Number(c.oxigenioPct ?? 100) <= 35 &&
+          tripVivos.some((t) => t.camaraAtualId === c.id)
+      );
+      const camBrq = (nAtu.camaras ?? []).find((c) => c.id === 3);
+      if (camHipoxia && camBrq) {
+        const ionBrq = Math.max(0, Number(camBrq.barrasIonizadas ?? camBrq.danoIonizado ?? 0));
+        const intBrq = Math.max(0, Number(camBrq.barrasIntegridade ?? camBrq.integridade ?? 0) - ionBrq);
+        const eneBrq = Number(camBrq.barrasEnergiaAlocada ?? camBrq.energiaAlocada ?? 0);
+        if (intBrq >= 1 && eneBrq === 0) {
+          const dispReator = Number(nAtu.reator?.barrasDisponiveis ?? 0);
+          let origemReflexo = null;
+          if (dispReator >= 1) {
+            nAtu.reator.barrasDisponiveis = dispReator - 1;
+            camBrq.barrasEnergiaAlocada = 1;
+            camBrq.energiaAlocada = 1;
+            origemReflexo = 'REATOR';
+          } else {
+            const doadora = [8, 7, 4, 1]
+              .map((idC) => (nAtu.camaras ?? []).find((c) => c.id === idC))
+              .find((c) => c && Number(c.barrasEnergiaAlocada ?? c.energiaAlocada ?? 0) >= 1);
+            if (doadora) {
+              const novaEneDoadora = Number(doadora.barrasEnergiaAlocada ?? doadora.energiaAlocada ?? 1) - 1;
+              doadora.barrasEnergiaAlocada = novaEneDoadora;
+              doadora.energiaAlocada = novaEneDoadora;
+              camBrq.barrasEnergiaAlocada = 1;
+              camBrq.energiaAlocada = 1;
+              origemReflexo = `CAMARA_${doadora.id}`;
+            }
+          }
+          if (origemReflexo) {
+            nAtu.reflexoBranquialUsado = true;
+            nAtu.alertaReflexoBranquialSeg = 6.0;
+            nAtu.sistemaEmprestadoReflexoId = origemReflexo;
+            cloneBio.naveJogador = recalcularFoilEPesoNave(nAtu);
+            emitirEventoVisual({
+              tipo: 'REFLEXO_BRANQUIAL',
+              camaraId: 3,
+              texto: 'REFLEXO BRANQUIAL +1 BRQ!',
+            });
+            mudouBio = true;
+          }
+        }
+      }
+    }
+
+    if (mudouBio) {
+      estadoAtual = congelarProfundo(cloneBio);
+    }
+  }
 
   // 1. Disparo das armas dorsais carregadas do jogador (CATALOGO_ARMAS_51)
   for (let idxSlot = 0; idxSlot < (estadoAtual.naveJogador.armasAtivas ?? []).length; idxSlot += 1) {
-    if (!estadoAtual.alvoCombate?.ativo || estadoAtual.alvoCombate.hpCascoAtual <= 0) break;
+    if (!estadoAtual.alvoCombate || estadoAtual.alvoCombate.ativo === false || estadoAtual.alvoCombate.hpCascoAtual <= 0) break;
     const slot = estadoAtual.naveJogador.armasAtivas[idxSlot];
     const arma = slot?.arma !== undefined ? slot.arma : slot;
     if (!arma) continue;
@@ -1512,6 +2083,12 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
         Array.isArray(arma.trincaSalasBeam) && arma.trincaSalasBeam.length > 0
           ? arma.trincaSalasBeam
           : [arma.salaAlvoId];
+      emitirEventoVisual({
+        tipo: 'FEIXE_JOGADOR',
+        slotIndex: idxSlot,
+        chassiId: chassiDisparo,
+        salasFeixe,
+      });
       if ((estadoAtual.alvoCombate.camadasBarreiraAtivas ?? 0) > 0) {
         estadoAtual = resolverImpactoNoAlvo(estadoAtual, {
           tipo: 'DISPARO_ARMA',
@@ -1526,6 +2103,47 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
       } else {
         for (const [kSala, idSalaBeam] of salasFeixe.entries()) {
           if (!estadoAtual.alvoCombate?.ativo || estadoAtual.alvoCombate.hpCascoAtual <= 0) break;
+          const alvoBeam = estadoAtual.alvoCombate;
+          const classeBeam = alvoBeam.classeAlvo ?? alvoBeam.classeInimigo ?? 'BARCO_HUMANO';
+          if (
+            !opcoesDebug.desativarContragolpeInimigoMutacao &&
+            classeBeam === 'MONSTRO_MARINHO' &&
+            Number(alvoBeam.carapacaReflexaSeg ?? 0) > 0
+          ) {
+            const orgaoBeam = (alvoBeam.salasOuOrgaos ?? []).find((s) => s.id === idSalaBeam);
+            const ehGanglioB = Boolean(orgaoBeam?.ehGanglioCentral || /GANGLIO/i.test(orgaoBeam?.nome ?? ''));
+            const ehTentOuBicoB = /TENTACULO|BICO/i.test(orgaoBeam?.nome ?? '');
+            if (ehGanglioB && Number(alvoBeam.escudoQuitinaGanglioPts ?? 0) > 0) {
+              const cQuitB = structuredClone(estadoAtual);
+              cQuitB.alvoCombate.escudoQuitinaGanglioPts = Math.max(
+                0,
+                Number(cQuitB.alvoCombate.escudoQuitinaGanglioPts ?? 1) - 1
+              );
+              estadoAtual = congelarProfundo(cQuitB);
+              emitirEventoVisual({
+                tipo: 'IMPACTO_CARAPACA',
+                salaAlvoId: idSalaBeam,
+                texto: 'CARAPAÇA BLOQUEOU!',
+              });
+              continue;
+            }
+            if (ehTentOuBicoB) {
+              const cQuebraB = structuredClone(estadoAtual);
+              cQuebraB.alvoCombate.carapacaReflexaSeg = 0;
+              cQuebraB.alvoCombate.escudoQuitinaGanglioPts = 0;
+              cQuebraB.alvoCombate.apertoQuilhaSeg = 0;
+              cQuebraB.naveJogador.pesoVirtualArrastoKg = 0;
+              cQuebraB.naveJogador.pesoTotalKg = calcularPesoTotalNave(cQuebraB.naveJogador);
+              const orgTentB = (cQuebraB.alvoCombate.salasOuOrgaos ?? []).find((s) => /TENTACULO/i.test(s.nome ?? ''));
+              if (orgTentB) orgTentB.paralisiaIonSeg = Math.max(Number(orgTentB.paralisiaIonSeg ?? 0), 3.0);
+              estadoAtual = congelarProfundo(cQuebraB);
+              emitirEventoVisual({
+                tipo: 'QUEBRA_CARAPACA',
+                salaAlvoId: idSalaBeam,
+                texto: 'CARAPAÇA QUEBRADA!',
+              });
+            }
+          }
           if ((estadoAtual.alvoCombate.blindagemTermicaExternaPts ?? 0) > 0) {
             const cBlind = structuredClone(estadoAtual);
             cBlind.alvoCombate.blindagemTermicaExternaPts = Math.max(
@@ -1533,6 +2151,11 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
               cBlind.alvoCombate.blindagemTermicaExternaPts - (kSala === 0 ? danoCascoBase : 1)
             );
             estadoAtual = congelarProfundo(cBlind);
+            emitirEventoVisual({
+              tipo: 'IMPACTO_BLINDAGEM',
+              salaAlvoId: idSalaBeam,
+              texto: 'BLINDAGEM!',
+            });
           } else {
             estadoAtual = resolverImpactoNoAlvo(estadoAtual, {
               tipo: 'DISPARO_ARMA',
@@ -1543,6 +2166,12 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
               abreRombo: false,
               municaoCusto: 0,
               orgaosEnxertados: arma.orgaosEnxertados ?? [],
+            });
+            emitirEventoVisual({
+              tipo: 'IMPACTO_ALVO',
+              salaAlvoId: idSalaBeam,
+              dano: kSala === 0 ? danoCascoBase : 1,
+              texto: kSala === 0 && danoCascoBase > 0 ? `-${danoCascoBase}` : '-1 SYS',
             });
           }
         }
@@ -1563,12 +2192,57 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
           ? Math.max(0, Number(alvo.esquivaEfetivaPct ?? alvo.esquivaBasePct ?? 15))
           : 0;
         const rolagem = streamCombateDisparo(seed, setorComb, noIdComb, tick, idxSlot * 16 + p + 1) % 100;
+        emitirEventoVisual({
+          tipo: 'DISPARO_JOGADOR',
+          slotIndex: idxSlot,
+          chassiId: chassiDisparo,
+          salaAlvoId: arma.salaAlvoId,
+          acertou: Boolean(opcoesDebug.forcarAcerto100Pct || rolagem >= esquivaAlvo),
+        });
         if (!opcoesDebug.forcarAcerto100Pct && rolagem < esquivaAlvo) {
+          emitirEventoVisual({
+            tipo: 'ESQUIVA_ALVO',
+            salaAlvoId: arma.salaAlvoId,
+            texto: 'ESQUIVA!',
+          });
           continue;
         }
+        // GD-3: Carapaça Reflexa da Teuthis Couraçada (bloqueia spam no Gânglio, mas estilhaça se atingir Tentáculos/Bico!)
+        if (!opcoesDebug.desativarContragolpeInimigoMutacao && classe === 'MONSTRO_MARINHO' && Number(alvo.carapacaReflexaSeg ?? 0) > 0) {
+          const orgaoMirado = (alvo.salasOuOrgaos ?? []).find((s) => s.id === arma.salaAlvoId);
+          const ehGanglio = Boolean(orgaoMirado?.ehGanglioCentral || /GANGLIO/i.test(orgaoMirado?.nome ?? ''));
+          const ehTentaculoOuBico = /TENTACULO|BICO/i.test(orgaoMirado?.nome ?? '');
+          if (ehGanglio && Number(alvo.escudoQuitinaGanglioPts ?? 0) > 0) {
+            const cQuitina = structuredClone(estadoAtual);
+            cQuitina.alvoCombate.escudoQuitinaGanglioPts = Math.max(0, Number(cQuitina.alvoCombate.escudoQuitinaGanglioPts ?? 1) - 1);
+            estadoAtual = congelarProfundo(cQuitina);
+            emitirEventoVisual({
+              tipo: 'IMPACTO_CARAPACA',
+              salaAlvoId: arma.salaAlvoId,
+              texto: 'CARAPAÇA BLOQUEOU!',
+            });
+            continue;
+          }
+          if (ehTentaculoOuBico) {
+            const cQuebra = structuredClone(estadoAtual);
+            cQuebra.alvoCombate.carapacaReflexaSeg = 0;
+            cQuebra.alvoCombate.escudoQuitinaGanglioPts = 0;
+            cQuebra.alvoCombate.apertoQuilhaSeg = 0;
+            cQuebra.naveJogador.pesoVirtualArrastoKg = 0;
+            cQuebra.naveJogador.pesoTotalKg = calcularPesoTotalNave(cQuebra.naveJogador);
+            const orgTent = (cQuebra.alvoCombate.salasOuOrgaos ?? []).find((s) => /TENTACULO/i.test(s.nome ?? ''));
+            if (orgTent) orgTent.paralisiaIonSeg = Math.max(Number(orgTent.paralisiaIonSeg ?? 0), 3.0);
+            estadoAtual = congelarProfundo(cQuebra);
+            emitirEventoVisual({
+              tipo: 'QUEBRA_CARAPACA',
+              salaAlvoId: arma.salaAlvoId,
+              texto: 'CARAPAÇA QUEBRADA!',
+            });
+          }
+        }
         if (
-          (alvo.blindagemTermicaExternaPts ?? 0) > 0 &&
-          (ignoraBarreira || Number(alvo.camadasBarreiraAtivas ?? 0) === 0)
+          (estadoAtual.alvoCombate.blindagemTermicaExternaPts ?? 0) > 0 &&
+          (ignoraBarreira || Number(estadoAtual.alvoCombate.camadasBarreiraAtivas ?? 0) === 0)
         ) {
           const cBlind = structuredClone(estadoAtual);
           cBlind.alvoCombate.blindagemTermicaExternaPts = Math.max(
@@ -1576,6 +2250,11 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
             cBlind.alvoCombate.blindagemTermicaExternaPts - Math.max(1, danoCascoBase)
           );
           estadoAtual = congelarProfundo(cBlind);
+          emitirEventoVisual({
+            tipo: 'IMPACTO_BLINDAGEM',
+            salaAlvoId: arma.salaAlvoId,
+            texto: `-${Math.max(1, danoCascoBase)} BLIND`,
+          });
           continue;
         }
         estadoAtual = resolverImpactoNoAlvo(estadoAtual, {
@@ -1588,12 +2267,18 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
           municaoCusto: ignoraBarreira ? 1 : 0,
           orgaosEnxertados: arma.orgaosEnxertados ?? [],
         });
+        emitirEventoVisual({
+          tipo: 'IMPACTO_ALVO',
+          salaAlvoId: arma.salaAlvoId,
+          dano: Math.max(danoCascoBase, danoSistemaBase),
+          texto: danoCascoBase > 0 ? `-${danoCascoBase}` : `-${danoSistemaBase} ORG`,
+        });
       }
     }
   }
 
   // 2. Avança IA/ Hidráulica Inimiga ou Mecânicas da Draga Continental
-  if (estadoAtual.alvoCombate?.ativo) {
+  if (estadoAtual.alvoCombate && estadoAtual.alvoCombate.ativo !== false) {
     if (estadoAtual.alvoCombate.faseChefe) {
       estadoAtual = avancarTickChefeDraga(estadoAtual, dtSeg);
     } else {
@@ -1601,10 +2286,11 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
     }
   }
 
-  // 3. Fogo de Retorno Determinístico das Armas/Órgãos do Inimigo contra a Bio-Nave (MUT-O6-11)
+  // 3. Fogo de Retorno Determinístico + GD-3 Contragolpe Tático de Meio de Luta (Anti-Piloto Automático)
   if (
     !opcoesDebug.suprimirAtaqueInimigoMutacao &&
-    estadoAtual.alvoCombate?.ativo &&
+    estadoAtual.alvoCombate &&
+    estadoAtual.alvoCombate.ativo !== false &&
     estadoAtual.alvoCombate.hpCascoAtual > 0
   ) {
     const cloneAtk = structuredClone(estadoAtual);
@@ -1618,6 +2304,135 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
       classe === 'MONSTRO_MARINHO'
         ? Number(ganglio?.integridadeAtual ?? ganglio?.integridade ?? 1) > 0
         : tripAlvo.some((t) => t.hpAtual > 0) || alvo.iaBackupAtiva === true;
+
+    // GD-3: Contragolpe Tático por Classe de Inimigo
+    if (!opcoesDebug.desativarContragolpeInimigoMutacao && inimigoOperante) {
+      if (classe === 'BARCO_HUMANO') {
+        alvo.recargaMinaMagneticaSeg = Math.max(
+          0,
+          Math.round((Number(alvo.recargaMinaMagneticaSeg ?? 0) - dtSeg) * 1000) / 1000
+        );
+        alvo.tempoJogadorEmTouchdownSeg =
+          nave.estadoFisico !== '1_NO_FOIL'
+            ? Math.round((Number(alvo.tempoJogadorEmTouchdownSeg ?? 0) + dtSeg) * 1000) / 1000
+            : 0;
+
+        if (!alvo.protocoloCortaFogoUsado && alvo.hpCascoAtual <= Math.floor(alvo.hpCascoMax * 0.5)) {
+          alvo.protocoloCortaFogoUsado = true;
+          const salaCritica = (alvo.salasOuOrgaos ?? []).find(
+            (s) =>
+              /TORRETA|MOTOR|MAQUINAS/i.test(s.nome ?? '') &&
+              Number(s.integridadeAtual ?? s.integridade ?? 0) < Number(s.integridadeMax ?? s.barrasMax ?? 2)
+          );
+          if (salaCritica) {
+            const intNova = Number(salaCritica.integridadeAtual ?? salaCritica.integridade ?? 0) + 1;
+            salaCritica.integridadeAtual = intNova;
+            salaCritica.integridade = intNova;
+          }
+          alvo.minaMagneticaAtivaSeg = 4.0;
+          alvo.recargaMinaMagneticaSeg = 14.0;
+          emitirEventoVisual({
+            tipo: 'MINA_MAGNETICA_LANCADA',
+            texto: 'PROTOCOLO CORTA-FOGO + MINA 4s!',
+          });
+        } else if (
+          alvo.tempoJogadorEmTouchdownSeg >= 6.0 &&
+          Number(alvo.minaMagneticaAtivaSeg ?? 0) <= 0 &&
+          Number(alvo.recargaMinaMagneticaSeg ?? 0) <= 0
+        ) {
+          alvo.tempoJogadorEmTouchdownSeg = 0;
+          alvo.minaMagneticaAtivaSeg = 4.0;
+          alvo.recargaMinaMagneticaSeg = 14.0;
+          emitirEventoVisual({
+            tipo: 'MINA_MAGNETICA_LANCADA',
+            texto: 'MINA ANTI-TOUCHDOWN 4s!',
+          });
+        }
+
+        if (Number(alvo.minaMagneticaAtivaSeg ?? 0) > 0) {
+          alvo.minaMagneticaAtivaSeg = Math.max(
+            0,
+            Math.round((Number(alvo.minaMagneticaAtivaSeg) - dtSeg) * 1000) / 1000
+          );
+          if (alvo.minaMagneticaAtivaSeg <= 0) {
+            if (nave.estadoFisico === '1_NO_FOIL' || Number(nave.furtividadeAtivaSeg ?? 0) > 0) {
+              emitirEventoVisual({
+                tipo: 'MINA_EVADIDA',
+                texto: 'MINA EVADIDA NO FOIL!',
+              });
+            } else {
+              aplicarDanoEmCamaraJogador(nave, 6, 2, 1, true);
+              emitirEventoVisual({
+                tipo: 'IMPACTO_JOGADOR',
+                camaraId: 6,
+                dano: 2,
+                texto: '-2 MINA!',
+              });
+            }
+          }
+        }
+      } else if (classe === 'MONSTRO_MARINHO') {
+        const tinhaAperto = Number(alvo.apertoQuilhaSeg ?? 0) > 0;
+        alvo.carapacaReflexaSeg = Math.max(
+          0,
+          Math.round((Number(alvo.carapacaReflexaSeg ?? 0) - dtSeg) * 1000) / 1000
+        );
+        if (alvo.carapacaReflexaSeg <= 0) {
+          alvo.escudoQuitinaGanglioPts = 0;
+        }
+        alvo.apertoQuilhaSeg = Math.max(
+          0,
+          Math.round((Number(alvo.apertoQuilhaSeg ?? 0) - dtSeg) * 1000) / 1000
+        );
+
+        const intGanglio = Number(ganglio?.integridadeAtual ?? ganglio?.integridade ?? 3);
+        const maxGanglio = Number(ganglio?.integridadeMax ?? ganglio?.barrasMax ?? 3);
+        if (
+          !alvo.instintoAbissalUsado &&
+          ((intGanglio > 0 && intGanglio < maxGanglio) || alvo.hpCascoAtual <= Math.ceil(alvo.hpCascoMax * 0.6))
+        ) {
+          alvo.instintoAbissalUsado = true;
+          alvo.carapacaReflexaSeg = 5.5;
+          alvo.escudoQuitinaGanglioPts = 1;
+          alvo.apertoQuilhaSeg = 5.5;
+          emitirEventoVisual({
+            tipo: 'CARAPACA_REFLEXA_ATIVADA',
+            texto: 'CARAPAÇA + APERTO +40kg!',
+          });
+        }
+
+        if (alvo.apertoQuilhaSeg > 0) {
+          nave.pesoVirtualArrastoKg = 40.0;
+          nave.pesoTotalKg = calcularPesoTotalNave(nave);
+          const sustAtu = calcularSustentacaoFoil(nave);
+          if (nave.pesoTotalKg > sustAtu) {
+            nave.estadoFisico = '2_TOUCHDOWN';
+            nave.progressoSpoolUpSeg = 0.0;
+          }
+        } else if (tinhaAperto) {
+          nave.pesoVirtualArrastoKg = 0.0;
+          nave.pesoTotalKg = calcularPesoTotalNave(nave);
+          if (nave.estadoFisico === '2_TOUCHDOWN' && !nave.mergulhoTaticoAtivo) {
+            if (nave.pesoTotalKg <= calcularSustentacaoFoil(nave)) {
+              nave.estadoFisico = '3_SPOOL_UP';
+              nave.progressoSpoolUpSeg = 0.0;
+            }
+          }
+        }
+      } else if (classe === 'CHEFE_DRAGA') {
+        const faseAtu = Number(alvo.faseChefe ?? 1);
+        if (alvo.sobrecargaFaseUsada !== faseAtu && alvo.hpCascoAtual <= Math.floor(alvo.hpCascoMax * 0.5)) {
+          alvo.sobrecargaFaseUsada = faseAtu;
+          alvo.sobrecargaGeotermicaFaseUsada = true;
+          alvo.blindagemTermicaExternaPts = Number(alvo.blindagemTermicaExternaPts ?? 0) + 3;
+          alvo.alarmeFervuraAtivoSeg = Math.max(Number(alvo.alarmeFervuraAtivoSeg ?? 0), 3.5);
+          emitirEventoVisual({
+            tipo: 'SOBRECARGA_DRAGA',
+            texto: 'SOBRECARGA +3 BLINDAGEM!',
+          });
+        }
+      }
+    }
 
     if (inimigoOperante) {
       const esquivaJogador = calcularEsquivaEfetivaNave(nave);
@@ -1651,15 +2466,31 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
           const precisao = Number(salaPrim.cegoTintaSeg ?? 0) > 0 ? 60 : 100;
           const rolaPrec = streamCombateDisparo(seed, setorComb, noIdComb, tick, 901) % 100;
           const rolaEsq = streamCombateDisparo(seed, setorComb, noIdComb, tick, 902) % 100;
+          emitirEventoVisual({
+            tipo: 'DISPARO_INIMIGO',
+            subtipo: 'PRIMARIO',
+            classeAlvo: classe,
+            acertou: rolaPrec < precisao && rolaEsq >= esquivaJogador,
+          });
           if (rolaPrec < precisao && rolaEsq >= esquivaJogador) {
             const rajada = classe === 'CHEFE_DRAGA' || setor >= 5 ? 2 : 1;
             for (let r = 0; r < rajada; r += 1) {
               if (Number(nave.camadasBarreiraAtivas ?? 0) > 0) {
                 nave.camadasBarreiraAtivas -= 1;
                 nave.progressoRegenBarreiraSeg = 0.0;
+                emitirEventoVisual({
+                  tipo: 'BLOQUEIO_BARREIRA_JOGADOR',
+                  texto: 'BARREIRA!',
+                });
               } else {
                 const camAlvo = [5, 4, 1, 2][streamCombateDisparo(seed, setorComb, noIdComb, tick, 910 + r) % 4];
                 aplicarDanoEmCamaraJogador(nave, camAlvo, 1, 1, false);
+                emitirEventoVisual({
+                  tipo: 'IMPACTO_JOGADOR',
+                  camaraId: camAlvo,
+                  dano: 1,
+                  texto: '-1',
+                });
               }
             }
           }
@@ -1678,25 +2509,60 @@ export function avancarTickPartidaEmTempoReal(estado, dtSeg = 0.25, opcoesDebug 
           const precisao = Number(salaSec.cegoTintaSeg ?? 0) > 0 ? 60 : 100;
           const rolaPrec = streamCombateDisparo(seed, setorComb, noIdComb, tick, 921) % 100;
           const rolaEsq = streamCombateDisparo(seed, setorComb, noIdComb, tick, 922) % 100;
+          emitirEventoVisual({
+            tipo: 'DISPARO_INIMIGO',
+            subtipo: 'TORPEDO_OU_BICO',
+            classeAlvo: classe,
+            acertou: rolaPrec < precisao && rolaEsq >= esquivaJogador,
+          });
           if (rolaPrec < precisao && rolaEsq >= esquivaJogador) {
             if (classe === 'MONSTRO_MARINHO') {
               if (nave.estadoFisico === '1_NO_FOIL' && Number(nave.camadasBarreiraAtivas ?? 0) > 0) {
                 nave.camadasBarreiraAtivas -= 1;
                 nave.progressoRegenBarreiraSeg = 0.0;
+                emitirEventoVisual({
+                  tipo: 'BLOQUEIO_BARREIRA_JOGADOR',
+                  texto: 'BARREIRA!',
+                });
               } else {
-                aplicarDanoEmCamaraJogador(nave, 6, setor >= 3 ? 2 : 1, 1, nave.estadoFisico !== '1_NO_FOIL');
+                const dMon = setor >= 3 ? 2 : 1;
+                aplicarDanoEmCamaraJogador(nave, 6, dMon, 1, nave.estadoFisico !== '1_NO_FOIL');
+                emitirEventoVisual({
+                  tipo: 'IMPACTO_JOGADOR',
+                  camaraId: 6,
+                  dano: dMon,
+                  texto: `-${dMon} QUILHA!`,
+                });
               }
             } else {
               // Torpedo / Míssil Térmico ignora Barreira e abre brecha se acertar!
               const camAlvo = [5, 6, 4, 3][streamCombateDisparo(seed, setorComb, noIdComb, tick, 930) % 4];
               const danoTorp = classe === 'CHEFE_DRAGA' || setor >= 4 ? 2 : 1;
               aplicarDanoEmCamaraJogador(nave, camAlvo, danoTorp, 1, true);
+              emitirEventoVisual({
+                tipo: 'IMPACTO_JOGADOR',
+                camaraId: camAlvo,
+                dano: danoTorp,
+                texto: `-${danoTorp} BRECHA!`,
+              });
             }
           }
         }
       }
     }
+    if (nave.hpCascoAtual <= 0) {
+      cloneAtk.meta = { ...cloneAtk.meta, faseJogo: 'FIM_DE_RUN' };
+    }
     estadoAtual = congelarProfundo(cloneAtk);
+  }
+
+  if (eventosVisuais.length > 0 || (estadoAtual.meta?.eventosVisuaisUltimoTick?.length ?? 0) > 0) {
+    const cloneEv = structuredClone(estadoAtual);
+    cloneEv.meta = {
+      ...cloneEv.meta,
+      eventosVisuaisUltimoTick: eventosVisuais,
+    };
+    estadoAtual = congelarProfundo(cloneEv);
   }
 
   return estadoAtual;

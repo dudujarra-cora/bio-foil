@@ -59,6 +59,7 @@ import {
   DURACAO_FERVURA_OCEANICA_SEG,
   INTERVALO_AUTO_REPARO_IA_BACKUP_SEG,
   criarEstadoChefeDraga,
+  avancarTickChefeDraga,
 } from '../src/onda5-catalogo-chefe/chefe-draga.mjs';
 import {
   CADEIA_CANONICA_GDD,
@@ -86,6 +87,9 @@ import {
   renderizarQuadroAnimadoCenaBiofoil,
   rasterizarSpriteRgba,
   exportarAtlasHiBitsPngBuffer,
+  exportarPacoteAssets60Fps,
+  interpolarEstadoVisual60Fps,
+  rasterizarQuadroRgba960x540,
   renderizarViewModelNoCanvas2d,
   renderizarCenaCanvasParaPngBuffer,
   escaparHtmlSeguro,
@@ -1931,6 +1935,413 @@ test('[PORTÃO 08.6 | Auditoria Visual Pixel-a-Pixel + Hitboxes 0 Colisão + Com
 
   console.log(
     `[N4] Auditoria visual e combate vivo examinados: ${cenarios7.length} cenários de tela, ${totalHitboxesAuditadas} hitboxes com 0 colisão, 5 carcaças PNG e ${entidadesSemFallback} entidades animadas`
+  );
+});
+
+test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinterações | L1 + L2 + L4 + L6 + N4 + MUT-O6-13..16] Paridade bit-a-bit Servidor<->Cliente nas 7 telas, interpolação sub-tick 60Hz, Reflexo Branquial, Dreno Seguro 62.5kg e Contragolpes Inimigos', async () => {
+  // 1. Exportação imutável de texturas Hi-Bit para 60 FPS + endpoint HTTP GET /api/assets-60fps
+  const pacote60 = exportarPacoteAssets60Fps();
+  assert.equal(Object.isFrozen(pacote60), true);
+  assert.equal(pacote60.versao, 'STEAM_60FPS_V2');
+  assert.equal(Object.keys(pacote60.placas).length, 4, '[N4] Examinadas: 4 placas cênicas Hi-Bit base64');
+  assert.equal(Object.keys(pacote60.retratos).length, 4, '[N4] Examinados: 4 retratos orgânicos Hi-Bit base64');
+
+  const srv60 = await iniciarServidorClienteWebBiofoil({ porta: 0, seedInicial: 'seed-60fps-http' });
+  try {
+    const respAssets = await fetch(`${srv60.url}/api/assets-60fps`);
+    assert.equal(respAssets.status, 200);
+    const jsonAssets = await respAssets.json();
+    assert.equal(jsonAssets.versao, 'STEAM_60FPS_V2');
+    assert.equal(typeof jsonAssets.placas?.f1Play, 'string');
+  } finally {
+    await srv60.fechar();
+  }
+
+  // 2. Paridade 100% Bit-a-Bit (0 bytes diff em 14.515.200 bytes RGBA) entre Servidor e funções embutidas no /cliente.js nas 7 telas!
+  const decodificarDataUri = (uri) => {
+    const buf = Buffer.from(String(uri).split(',')[1], 'base64');
+    const dec = decodificarPngRgbaParaTeste(buf);
+    return { largura: dec.largura, altura: dec.altura, rgba: new Uint8ClampedArray(dec.rgba) };
+  };
+  const assetsDecodificadosCli = Object.freeze({
+    f1Play: decodificarDataUri(pacote60.placas.f1Play),
+    f2Play: decodificarDataUri(pacote60.placas.f2Play),
+    f3Play: decodificarDataUri(pacote60.placas.f3Play),
+    f4Ships: decodificarDataUri(pacote60.placas.f4Ships),
+    retratos: Object.freeze({
+      POLVO: decodificarDataUri(pacote60.retratos.POLVO),
+      ARRAIA: decodificarDataUri(pacote60.retratos.ARRAIA),
+      BAIACU: decodificarDataUri(pacote60.retratos.BAIACU),
+      CARANGUEJO: decodificarDataUri(pacote60.retratos.CARANGUEJO),
+    }),
+  });
+  const tabelasCli = Object.freeze({
+    glifos8px: pacote60.glifos8px,
+    mapaAcentos: pacote60.mapaAcentos,
+    mascaraSoquete: pacote60.mascaraSoquete,
+    mascaraBolha: pacote60.mascaraBolha,
+    mascaraCadeado: pacote60.mascaraCadeado,
+    mascaraCoracao: pacote60.mascaraCoracao,
+    recortesF4: pacote60.recortesF4,
+    nomesCarcacas: pacote60.nomesCarcacas,
+    nomesSalasAlvo: pacote60.nomesSalasAlvo,
+    nomesArmasHud: pacote60.nomesArmasHud,
+    siglasEspecieHud: pacote60.siglasEspecieHud,
+    spritesHiBit: pacote60.spritesHiBit,
+    spritesInsumosLoja: pacote60.spritesInsumosLoja,
+    atlasAnimacao4Frames: pacote60.atlasAnimacao4Frames,
+    paletaRgba: pacote60.paletaRgba,
+  });
+
+  const codigoClienteJs = gerarCodigoJsClienteBiofoil();
+  assert.equal(codigoClienteJs.includes('function rasterizarQuadroRgba960x540'), true);
+  assert.equal(codigoClienteJs.includes('function interpolarEstadoVisual60Fps'), true);
+  assert.equal(codigoClienteJs.includes('ctx.putImageData'), true);
+  assert.equal(codigoClienteJs.includes('seqRequisicao'), true);
+
+  // Executa a exata função rasterizarQuadroRgba960x540 extraída de /cliente.js num sandbox isolado
+  const iniFnRaster = codigoClienteJs.indexOf('function rasterizarQuadroRgba960x540');
+  const fimFnRaster = codigoClienteJs.indexOf('let estadoCliente = JSON.parse');
+  assert.equal(iniFnRaster > 0 && fimFnRaster > iniFnRaster, true);
+  const fnRasterExtraidaCliente = new Function(
+    `"use strict";\n${codigoClienteJs.slice(iniFnRaster, fimFnRaster)}\nreturn rasterizarQuadroRgba960x540;`
+  )();
+
+  const estF1 = criarEstadoInicialPartida({
+    seedPartida: 'paridade-f1',
+    idArquitetura: 'CARCACA_ALFA',
+    faseJogo: 'COMBATE',
+    classeAlvoInicial: 'BARCO_HUMANO',
+  });
+  const estF2 = despacharComandoUi(estF1, { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: true } }).estado;
+  const estF3Base = criarEstadoInicialPartida({
+    seedPartida: 'paridade-f3',
+    idArquitetura: 'MANTA_VOLT',
+    faseJogo: 'COMBATE',
+  });
+  const estF3 = congelarProfundo({
+    ...structuredClone(estF3Base),
+    alvoCombate: structuredClone(criarAlvoSetor1Canonico('MONSTRO_MARINHO')),
+  });
+  const estDragaBase = criarEstadoInicialPartida({
+    seedPartida: 'paridade-draga',
+    idArquitetura: 'COURACA_LIMIAR',
+    faseJogo: 'COMBATE',
+    classeAlvoInicial: 'CHEFE_DRAGA',
+  });
+  const estDraga = congelarProfundo({
+    ...structuredClone(estDragaBase),
+    alvoCombate: structuredClone(criarEstadoChefeDraga(3)),
+  });
+  const estMapa7 = criarEstadoInicialPartida({
+    seedPartida: 'paridade-mapa',
+    idArquitetura: 'SOMBRA_ABISSAL',
+    faseJogo: 'MAPA',
+  });
+  const estLoja7 = criarEstadoInicialPartida({
+    seedPartida: 'paridade-loja',
+    idArquitetura: 'COLMEIA_VIVA',
+    faseJogo: 'LOJA',
+  });
+  const estEvento7 = criarEstadoInicialPartida({
+    seedPartida: 'paridade-evento',
+    idArquitetura: 'CARCACA_ALFA',
+    faseJogo: 'EVENTO',
+  });
+
+  const telas7 = [estF1, estF2, estF3, estDraga, estMapa7, estLoja7, estEvento7];
+  let bytesComparados = 0;
+  let bytesDiferentes = 0;
+  let totalHitboxesZeroColisao9 = 0;
+  for (const estTela of telas7) {
+    const vmTela = projetarViewModelWireframe(estTela);
+    const hbsTela = obterMapaHitboxesNativo(vmTela);
+    // Verifica 0 colisão AABB em todas as 7 telas (incluindo LOJA e EVENTO!)
+    for (let i = 0; i < hbsTela.length; i += 1) {
+      for (let j = i + 1; j < hbsTela.length; j += 1) {
+        const a = hbsTela[i];
+        const b = hbsTela[j];
+        const colide =
+          a.x < b.x + b.largura &&
+          a.x + a.largura > b.x &&
+          a.y < b.y + b.altura &&
+          a.y + a.altura > b.y;
+        assert.equal(colide, false, `Hitboxes ${a.idHitbox} e ${b.idHitbox} não podem colidir em ${vmTela.faseJogo}`);
+      }
+    }
+    totalHitboxesZeroColisao9 += hbsTela.length;
+
+    const idHover = hbsTela[0]?.idHitbox ?? null;
+    const ev60 = interpolarEstadoVisual60Fps(null, vmTela, 1 / 60, { hoverHitboxId: idHover, hitboxes: hbsTela });
+    const opcoesRender = {
+      tempoSeg: 0.75,
+      cicloSpriteF4: 2,
+      estadoVisual60Fps: ev60,
+      hoverHitboxId: idHover,
+    };
+    const rgbaServidorDireto = rasterizarQuadroRgba960x540(vmTela, opcoesRender, assetsDecodificadosCli, hbsTela, tabelasCli);
+    const rgbaClienteSandbox = fnRasterExtraidaCliente(vmTela, opcoesRender, assetsDecodificadosCli, hbsTela, tabelasCli);
+    const pngServidorBuf = renderizarCenaCanvasParaPngBuffer(vmTela, { ...opcoesRender, escalaInteira: 1 });
+    const rgbaPngServidor = decodificarPngRgbaParaTeste(pngServidorBuf).rgba;
+    assert.equal(rgbaClienteSandbox.length, 960 * 540 * 4);
+    assert.equal(rgbaServidorDireto.length, 960 * 540 * 4);
+    for (let bIdx = 0; bIdx < rgbaClienteSandbox.length; bIdx += 1) {
+      bytesComparados += 1;
+      if (rgbaClienteSandbox[bIdx] !== rgbaPngServidor[bIdx] || rgbaServidorDireto[bIdx] !== rgbaPngServidor[bIdx]) {
+        bytesDiferentes += 1;
+      }
+    }
+  }
+  assert.equal(bytesComparados, 14515200, '[N4] Examinados: 14.515.200 bytes RGBA (7 telas x 960 x 540 x 4)');
+  assert.equal(bytesDiferentes, 0, 'Paridade visual Servidor <-> Navegador (/cliente.js) deve ter 0 bytes de diferença nas 7 telas');
+
+  // 3. Interpolação Sub-Tick 60 FPS (casco, nado contínuo entre câmaras, shake, warm tooltip <16ms) — [MUT-O6-13]
+  const vmFoilInterp = projetarViewModelWireframe(estF1);
+  const vmTdInterp = projetarViewModelWireframe(estF2);
+  let estadoVis = interpolarEstadoVisual60Fps(null, vmFoilInterp, 1 / 60);
+  assert.equal(Object.isFrozen(estadoVis), true);
+  assert.equal(estadoVis.deslocamentoCascoPx, 0);
+  estadoVis = interpolarEstadoVisual60Fps(estadoVis, vmTdInterp, 1 / 60);
+  assert.equal(
+    estadoVis.deslocamentoCascoPx > 10 && estadoVis.deslocamentoCascoPx < 90,
+    true,
+    '[MUT-O6-13] A interpolação sub-tick a 60 FPS deve deslizar suavemente o casco entre 0 px e 100 px no primeiro quadro (16.6ms)'
+  );
+  for (let q = 0; q < 45; q += 1) {
+    estadoVis = interpolarEstadoVisual60Fps(estadoVis, vmTdInterp, 1 / 60);
+  }
+  assert.equal(estadoVis.deslocamentoCascoPx, 100);
+
+  // Nado contínuo de tripulante + Warm Tooltip (< 16ms na janela quente após abertura fria de 180ms)
+  const polvoAlfa = estF1.naveJogador.tripulacao.find((t) => t.especie === 'POLVO');
+  const estPolvoNadando = despacharComandoUi(estF1, {
+    tipo: 'MOVER_TRIPULANTE',
+    payload: { tripulanteId: polvoAlfa.id, camaraDestinoId: 5 },
+  }).estado;
+  const estPolvoMeioNado = avancarTickPartidaEmTempoReal(estPolvoNadando, 0.25);
+  let visNado = interpolarEstadoVisual60Fps(null, projetarViewModelWireframe(estF1), 1 / 60, { hoverHitboxId: 'BTN_DRENAR_SEGURO' });
+  assert.equal(visNado.tooltipAberto, false, 'Tooltip frio não abre no 1º frame (16.6ms < 180ms)');
+  for (let q = 0; q < 12; q += 1) {
+    visNado = interpolarEstadoVisual60Fps(visNado, projetarViewModelWireframe(estPolvoMeioNado), 1 / 60, {
+      hoverHitboxId: 'BTN_DRENAR_SEGURO',
+    });
+  }
+  assert.equal(visNado.tooltipAberto, true, 'Tooltip abre após ~180ms de hover sustentado');
+  assert.equal(visNado.posicoesTripulantes[polvoAlfa.id].nadando, true, 'Polvo deve interpolar nado contínuo entre câmaras');
+  const visWarm = interpolarEstadoVisual60Fps(visNado, projetarViewModelWireframe(estPolvoMeioNado), 1 / 60, {
+    hoverHitboxId: 'BTN_DRENAR_TUDO',
+  });
+  assert.equal(visWarm.tooltipAberto, true, 'Na janela quente (Warm Tooltip), trocar de botão abre o novo tooltip instantaneamente em < 16ms!');
+
+  // 4. GD-1: Reflexo Branquial Simbiótico salva a tripulação da morte silenciosa aos 38s + atalho inteligente [B] / Shift+[B] — [MUT-O6-14]
+  let estSemReflexo = estF1;
+  let estComReflexo = estF1;
+  for (let t = 0; t < 168; t += 1) {
+    estSemReflexo = avancarTickPartidaEmTempoReal(estSemReflexo, 0.25, {
+      suprimirAtaqueInimigoMutacao: true,
+      desativarReflexoBranquialMutacao: true,
+    });
+    estComReflexo = avancarTickPartidaEmTempoReal(estComReflexo, 0.25, {
+      suprimirAtaqueInimigoMutacao: true,
+    });
+  }
+  const vivosSemReflexo = estSemReflexo.naveJogador.tripulacao.filter((t) => t.hpAtual > 0).length;
+  const vivosComReflexo = estComReflexo.naveJogador.tripulacao.filter((t) => t.hpAtual > 0).length;
+  assert.equal(vivosSemReflexo < 3, true, 'Sem BRQ nem reflexo, a hipóxia aos 38s vitima tripulantes aquáticos');
+  assert.equal(
+    estComReflexo.naveJogador.reflexoBranquialUsado,
+    true,
+    '[MUT-O6-14] O Reflexo Branquial Simbiótico deve disparar automaticamente em O2 <= 35%'
+  );
+  assert.equal(
+    vivosComReflexo,
+    3,
+    '[MUT-O6-14] O Reflexo Branquial Simbiótico deve manter os 3 tripulantes vivos após 42s'
+  );
+
+  // Atalho [B] empresta 1 barra quando reator está 0/7, e Shift+[B] desaloca BRQ
+  const tradKeyB = traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyB' }, estF1, vmFoilInterp, {});
+  assert.equal(tradKeyB.resultadoMotor?.aceito, true);
+  assert.equal(tradKeyB.resultadoMotor.estado.naveJogador.camaras.find((c) => c.id === 3).barrasEnergiaAlocada, 1);
+  const tradShiftKeyB = traduzirInputDomParaComandoUi(
+    { tipoEvento: 'KEYDOWN', code: 'KeyB', shiftKey: true },
+    tradKeyB.resultadoMotor.estado,
+    projetarViewModelWireframe(tradKeyB.resultadoMotor.estado),
+    {}
+  );
+  assert.equal(tradShiftKeyB.resultadoMotor?.aceito, true);
+  assert.equal(tradShiftKeyB.resultadoMotor.estado.naveJogador.camaras.find((c) => c.id === 3).barrasEnergiaAlocada, 0);
+
+  // 5. GD-2: Dreno Seguro ([D] / BTN_DRENAR_SEGURO) corta em >= 62.5 kg sem cavitação vs DRENAR_TUDO cavitando — [MUT-O6-15]
+  const ghostDrenoTudo = calcularGhostPreviewTermometro(estF1, 'BTN_DRENAR_TUDO');
+  assert.equal(ghostDrenoTudo.entrariaEmCavitacao, true);
+  assert.equal(ghostDrenoTudo.perdaSustentacaoCavitacaoKg, 125);
+  assert.equal(ghostDrenoTudo.pesoProjetadoKg, 125);
+  assert.equal(ghostDrenoTudo.sustentacaoProjetadaKg, 135);
+  assert.equal(ghostDrenoTudo.causariaQuedaNoMar, false);
+  assert.equal(ghostDrenoTudo.rotuloFantasma, '[CAVITAÇÃO -125kg]');
+
+  const estF1ComCarga = congelarProfundo({
+    ...structuredClone(estF1),
+    naveJogador: {
+      ...structuredClone(estF1.naveJogador),
+      poraoCarga: [{ item: { id: 'CARGA_PESADA', pesoKg: 15 } }],
+    },
+  });
+  const ghostDrenoTudoQueda = calcularGhostPreviewTermometro(estF1ComCarga, 'BTN_DRENAR_TUDO');
+  assert.equal(ghostDrenoTudoQueda.entrariaEmCavitacao, true);
+  assert.equal(ghostDrenoTudoQueda.causariaQuedaNoMar, true);
+  assert.equal(ghostDrenoTudoQueda.rotuloFantasma, '[CAVITAÇÃO -> QUEDA]');
+
+  const ghostDrenoSeguro = calcularGhostPreviewTermometro(estF1, 'BTN_DRENAR_SEGURO');
+  assert.equal(ghostDrenoSeguro.aguaProjetadaKg, 62.5);
+  assert.equal(ghostDrenoSeguro.entrariaEmCavitacao, false);
+  assert.equal(ghostDrenoSeguro.causariaQuedaNoMar, false);
+  assert.equal(ghostDrenoSeguro.travadoHidrostatico, false);
+  assert.equal(ghostDrenoSeguro.rotuloFantasma, '[SEGURO >=63kg]');
+
+  const ghostTravaTouchdown = calcularGhostPreviewTermometro(estF2, 'BTN_DRENAR_SEGURO');
+  assert.equal(ghostTravaTouchdown.travadoHidrostatico, true);
+  assert.equal(ghostTravaTouchdown.pesoProjetadoKg, estF2.naveJogador.pesoTotalKg);
+  assert.equal(ghostTravaTouchdown.rotuloFantasma, '[TRAVA HIDROSTÁTICA]');
+
+  let estDrenoSeg = traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyD' }, estF1, vmFoilInterp, {}).resultadoMotor.estado;
+  for (let t = 0; t < 36; t += 1) {
+    estDrenoSeg = avancarTickPartidaEmTempoReal(estDrenoSeg, 0.25, { suprimirAtaqueInimigoMutacao: true });
+  }
+  const aguaFinalDrenoSeg = estDrenoSeg.naveJogador.camaras.reduce((acc, c) => acc + c.aguaKg, 0);
+  assert.equal(
+    aguaFinalDrenoSeg >= 62.5 && aguaFinalDrenoSeg <= 65.0,
+    true,
+    '[MUT-O6-15] O Dreno Seguro [D] deve cortar automaticamente as válvulas em >= 62.5 kg sem entrar em cavitação'
+  );
+  assert.equal(projetarViewModelWireframe(estDrenoSeg).termometroSustentacao.emCavitacao, false);
+  assert.equal(estDrenoSeg.naveJogador.estadoFisico, '1_NO_FOIL');
+  assert.equal(estDrenoSeg.naveJogador.sustentacaoAtualKg, 260);
+
+  // 6. GD-3: Contragolpes Táticos de Meio de Luta (Barco Mina Magnética, Teuthis Carapaça/Quilha e Chefe Draga Sobrecarga 50%) — [MUT-O6-16]
+  const copiaBarco50 = structuredClone(estF1);
+  copiaBarco50.alvoCombate.hpCascoAtual = Math.floor(copiaBarco50.alvoCombate.hpCascoMax * 0.5);
+  const estMinaLancada = avancarTickPartidaEmTempoReal(congelarProfundo(copiaBarco50), 0.25);
+  assert.equal(
+    estMinaLancada.alvoCombate.protocoloCortaFogoUsado && estMinaLancada.alvoCombate.minaMagneticaAtivaSeg > 0,
+    true,
+    '[MUT-O6-16] Barco Humano <= 50% HP deve acionar Protocolo Corta-Fogo e lançar Mina Magnética de 4.0s'
+  );
+  // Em 1_NO_FOIL evade a mina; em 2_TOUCHDOWN sofre -2 HP de casco e brecha na câmara 6
+  let estMinaEvadida = estMinaLancada;
+  let estMinaExplodida = despacharComandoUi(estMinaLancada, { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: true } }).estado;
+  const hpAntesMina = estMinaExplodida.naveJogador.hpCascoAtual;
+  for (let t = 0; t < 18; t += 1) {
+    estMinaEvadida = avancarTickPartidaEmTempoReal(estMinaEvadida, 0.25, { suprimirAtaqueInimigoMutacao: true });
+    // Avança apenas a contagem da mina em Touchdown mantendo fogo normal controlado: usamos seed determinística e checamos brecha na câmara 6
+    estMinaExplodida = avancarTickPartidaEmTempoReal(estMinaExplodida, 0.25);
+  }
+  assert.equal(estMinaEvadida.naveJogador.camaras.find((c) => c.id === 6).brechaAtiva, false);
+  assert.equal(estMinaExplodida.naveJogador.hpCascoAtual <= hpAntesMina - 2, true);
+  assert.equal(estMinaExplodida.naveJogador.camaras.find((c) => c.id === 6).brechaAtiva, true);
+
+  // Teuthis Couraçada: Aperto de Quilha (+40 kg) + Carapaça Quitina sobre Gânglio quebrada ao atingir Tentáculos!
+  const copiaMonstroQuilha = structuredClone(estF3);
+  copiaMonstroQuilha.alvoCombate.carapacaReflexaSeg = 5.0;
+  copiaMonstroQuilha.alvoCombate.escudoQuitinaGanglioPts = 1;
+  copiaMonstroQuilha.alvoCombate.apertoQuilhaSeg = 5.0;
+  copiaMonstroQuilha.naveJogador.armasAtivas[0].arma.salaAlvoId = 4; // Gânglio
+  copiaMonstroQuilha.naveJogador.armasAtivas[0].arma.progressoRecargaSeg = 99;
+  const estBloqueouGanglio = avancarTickPartidaEmTempoReal(congelarProfundo(copiaMonstroQuilha), 0.25, {
+    forcarAcerto100Pct: true,
+  });
+  assert.equal(estBloqueouGanglio.alvoCombate.escudoQuitinaGanglioPts, 0, 'Carapaça deve absorver o tiro direto no Gânglio');
+  assert.equal(
+    estBloqueouGanglio.naveJogador.pesoTotalKg,
+    estF3.naveJogador.pesoTotalKg + 40,
+    'Aperto de Quilha deve adicionar +40 kg de arrasto real à bio-nave'
+  );
+  const copiaQuebraTent = structuredClone(estBloqueouGanglio);
+  copiaQuebraTent.alvoCombate.escudoQuitinaGanglioPts = 1;
+  copiaQuebraTent.naveJogador.armasAtivas[0].arma.salaAlvoId = 1; // Tentáculos
+  copiaQuebraTent.naveJogador.armasAtivas[0].arma.progressoRecargaSeg = 99;
+  const estQuebrouCarapaca = avancarTickPartidaEmTempoReal(congelarProfundo(copiaQuebraTent), 0.25, {
+    forcarAcerto100Pct: true,
+  });
+  assert.equal(estQuebrouCarapaca.alvoCombate.carapacaReflexaSeg, 0);
+  assert.equal(estQuebrouCarapaca.alvoCombate.apertoQuilhaSeg, 0);
+
+  // Chefe Draga: Sobrecarga Geotérmica de Meio de Fase (<= 50% HP -> +3 Blindagem Térmica + 3.5s Alarme de Fervura)
+  const copiaDraga50 = structuredClone(estDragaBase);
+  copiaDraga50.alvoCombate = structuredClone(criarEstadoChefeDraga(1));
+  copiaDraga50.alvoCombate.hpCascoAtual = 10;
+  const estDragaSobrecarga = avancarTickPartidaEmTempoReal(congelarProfundo(copiaDraga50), 0.25);
+  assert.equal(estDragaSobrecarga.alvoCombate.sobrecargaGeotermicaFaseUsada, true);
+  assert.equal(estDragaSobrecarga.alvoCombate.blindagemTermicaExternaPts, 3);
+  assert.equal(estDragaSobrecarga.alvoCombate.alarmeFervuraAtivoSeg >= 3.25, true);
+
+  // 7. Atalhos de Microinteração (KeyP, KeyE, KeyT, Shift+Click bulbo, Click mover, Loja 2:1 e Evento KeyB)
+  const resKeyP = traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyP' }, estF1, vmFoilInterp, {});
+  assert.equal(resKeyP.comandoMotor?.tipo, 'ATIVAR_BAIACU');
+  assert.equal(resKeyP.resultadoMotor?.aceito, true);
+  const hbCam5 = obterMapaHitboxesNativo(vmFoilInterp).find((h) => h.idHitbox === 'CAMARA_5');
+  const resClickMover = traduzirInputDomParaComandoUi(
+    {
+      tipoEvento: 'CLICK',
+      clientX: (hbCam5.x + 20) * 2,
+      clientY: (hbCam5.y + 20) * 2,
+      button: 0,
+      retanguloCanvas: { left: 0, top: 0, width: 1920, height: 1080 },
+    },
+    estF1,
+    vmFoilInterp,
+    { tripulanteSelecionadoId: polvoAlfa.id }
+  );
+  assert.equal(resClickMover.comandoMotor?.tipo, 'MOVER_TRIPULANTE');
+  assert.equal(resClickMover.resultadoMotor?.aceito, true);
+
+  const hbCam2 = obterMapaHitboxesNativo(vmFoilInterp).find((h) => h.idHitbox === 'CAMARA_2');
+  const resShiftBulbo = traduzirInputDomParaComandoUi(
+    {
+      tipoEvento: 'CLICK',
+      clientX: (hbCam2.x + 20) * 2,
+      clientY: (hbCam2.y + 20) * 2,
+      button: 0,
+      shiftKey: true,
+      retanguloCanvas: { left: 0, top: 0, width: 1920, height: 1080 },
+    },
+    estF1,
+    vmFoilInterp,
+    { tripulanteSelecionadoId: polvoAlfa.id }
+  );
+  assert.equal(resShiftBulbo.comandoMotor?.tipo, 'MOVER_TRIPULANTE');
+  assert.equal(resShiftBulbo.resultadoMotor?.aceito, true);
+  assert.equal(
+    resShiftBulbo.resultadoMotor.estado.naveJogador.tripulacao.find((t) => t.id === polvoAlfa.id).acopladoBulbo,
+    !polvoAlfa.acopladoBulbo
+  );
+
+  const vmLoja7 = projetarViewModelWireframe(estLoja7);
+  const hbDigLoja = obterMapaHitboxesNativo(vmLoja7).find((h) => h.idHitbox === 'LOJA_DIGESTAO_SUC_BIO');
+  const resDigLoja = traduzirInputDomParaComandoUi(
+    {
+      tipoEvento: 'CLICK',
+      clientX: (hbDigLoja.x + 12) * 2,
+      clientY: (hbDigLoja.y + 12) * 2,
+      button: 0,
+      retanguloCanvas: { left: 0, top: 0, width: 1920, height: 1080 },
+    },
+    estLoja7,
+    vmLoja7,
+    {}
+  );
+  assert.equal(resDigLoja.resultadoMotor?.aceito, true);
+  assert.equal(resDigLoja.resultadoMotor.estado.economia.sucata, estLoja7.economia.sucata - 2);
+  assert.equal(resDigLoja.resultadoMotor.estado.economia.biomassa, estLoja7.economia.biomassa + 1);
+
+  const vmEv7 = projetarViewModelWireframe(estEvento7);
+  const resEvKeyB = traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyB' }, estEvento7, vmEv7, {});
+  assert.equal(resEvKeyB.comandoMotor?.tipo, 'ESCOLHER_OPCAO_EVENTO');
+  assert.equal(resEvKeyB.resultadoMotor?.aceito, true);
+
+  console.log(
+    `[N4] Portão 08.7 examinado: ${telas7.length} telas com 0 bytes diff (${bytesComparados} bytes RGBA), ${totalHitboxesZeroColisao9} hitboxes 0 colisão, GD-1/GD-2/GD-3 e 60 FPS validados`
   );
 });
 
