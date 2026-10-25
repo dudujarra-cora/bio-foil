@@ -1197,20 +1197,41 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
         });
       });
     } else if (classeAlvo === 'CHEFE_DRAGA' || salasAlvo.length > 4) {
+      const dyDragaTd = ehTouchdown ? -88 : 0;
       const secas = salasAlvo.filter((s) => !s.submersa);
       const submersas = salasAlvo.filter((s) => s.submersa);
       for (const sala of salasAlvo) {
         const fila = sala.submersa ? submersas : secas;
         const idxFila = Math.max(0, fila.findIndex((x) => x.salaId === sala.salaId));
-        const passoFila = Math.floor(296 / Math.max(1, fila.length));
-        const larguraSala = Math.min(92, passoFila - 4);
+        let xSala;
+        let larguraSala;
+        let ySala;
+        let alturaSala;
+        if (!sala.submersa) {
+          const passoSeca = Math.floor(276 / Math.max(1, secas.length));
+          larguraSala = Math.min(88, passoSeca - 4);
+          xSala = 680 + idxFila * passoSeca;
+          ySala = 276 + dyDragaTd;
+          alturaSala = 46;
+        } else if (submersas.length === 2) {
+          xSala = idxFila === 0 ? 706 : 862;
+          larguraSala = idxFila === 0 ? 104 : 92;
+          ySala = 338 + dyDragaTd;
+          alturaSala = 42;
+        } else {
+          const passoSub = Math.floor(264 / Math.max(1, submersas.length));
+          larguraSala = Math.min(84, passoSub - 4);
+          xSala = 692 + idxFila * passoSub;
+          ySala = 338 + dyDragaTd;
+          alturaSala = 42;
+        }
         hitboxes.push({
           idHitbox: `SALA_ALVO_${sala.salaId}`,
           tipo: 'SALA_ALVO',
-          x: 656 + idxFila * passoFila + desalinhamentoMutacao,
-          y: sala.submersa ? 338 : 268,
+          x: xSala + desalinhamentoMutacao,
+          y: ySala,
           largura: larguraSala,
-          altura: 56,
+          altura: alturaSala,
           metadados: {
             salaId: sala.salaId,
             nomeSala: sala.nomeSala,

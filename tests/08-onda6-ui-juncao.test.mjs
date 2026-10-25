@@ -1942,17 +1942,22 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   // 1. Exportação imutável de texturas Hi-Bit para 60 FPS + endpoint HTTP GET /api/assets-60fps
   const pacote60 = exportarPacoteAssets60Fps();
   assert.equal(Object.isFrozen(pacote60), true);
-  assert.equal(pacote60.versao, 'STEAM_60FPS_V2');
-  assert.equal(Object.keys(pacote60.placas).length, 4, '[N4] Examinadas: 4 placas cênicas Hi-Bit base64');
+  assert.equal(pacote60.versao, 'STEAM_60FPS_V3');
+  assert.equal(Object.keys(pacote60.placas).length, 7, '[N4] Examinadas: 7 placas cênicas Hi-Bit base64 (F1, F2, F3, F4, Draga, Evento, Mapa)');
   assert.equal(Object.keys(pacote60.retratos).length, 4, '[N4] Examinados: 4 retratos orgânicos Hi-Bit base64');
+  assert.equal(Object.keys(pacote60.iconesHiBit).length, 22, '[N4] Examinados: 22 sprites/ícones Hi-Bit base64 (7 armas + 6 órgãos + 3 invasores + 6 extras)');
 
   const srv60 = await iniciarServidorClienteWebBiofoil({ porta: 0, seedInicial: 'seed-60fps-http' });
   try {
     const respAssets = await fetch(`${srv60.url}/api/assets-60fps`);
     assert.equal(respAssets.status, 200);
     const jsonAssets = await respAssets.json();
-    assert.equal(jsonAssets.versao, 'STEAM_60FPS_V2');
+    assert.equal(jsonAssets.versao, 'STEAM_60FPS_V3');
     assert.equal(typeof jsonAssets.placas?.f1Play, 'string');
+    assert.equal(typeof jsonAssets.placas?.dragaPlay, 'string');
+    assert.equal(typeof jsonAssets.placas?.eventoPlay, 'string');
+    assert.equal(typeof jsonAssets.placas?.mapaPlay, 'string');
+    assert.equal(typeof jsonAssets.iconesHiBit?.CORACAO_BIO_ELETRICO, 'string');
   } finally {
     await srv60.fechar();
   }
@@ -1963,20 +1968,30 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
     const dec = decodificarPngRgbaParaTeste(buf);
     return { largura: dec.largura, altura: dec.altura, rgba: new Uint8ClampedArray(dec.rgba) };
   };
+  const iconesDecodificadosCli = {};
+  for (const [kIcone, uriIcone] of Object.entries(pacote60.iconesHiBit)) {
+    iconesDecodificadosCli[kIcone] = decodificarDataUri(uriIcone);
+  }
   const assetsDecodificadosCli = Object.freeze({
     f1Play: decodificarDataUri(pacote60.placas.f1Play),
     f2Play: decodificarDataUri(pacote60.placas.f2Play),
     f3Play: decodificarDataUri(pacote60.placas.f3Play),
     f4Ships: decodificarDataUri(pacote60.placas.f4Ships),
+    dragaPlay: decodificarDataUri(pacote60.placas.dragaPlay),
+    eventoPlay: decodificarDataUri(pacote60.placas.eventoPlay),
+    mapaPlay: decodificarDataUri(pacote60.placas.mapaPlay),
     retratos: Object.freeze({
       POLVO: decodificarDataUri(pacote60.retratos.POLVO),
       ARRAIA: decodificarDataUri(pacote60.retratos.ARRAIA),
       BAIACU: decodificarDataUri(pacote60.retratos.BAIACU),
       CARANGUEJO: decodificarDataUri(pacote60.retratos.CARANGUEJO),
     }),
+    iconesHiBit: Object.freeze(iconesDecodificadosCli),
   });
   const tabelasCli = Object.freeze({
     glifos8px: pacote60.glifos8px,
+    glifos5x7: pacote60.glifos5x7,
+    glifos6x7: pacote60.glifos6x7,
     mapaAcentos: pacote60.mapaAcentos,
     mascaraSoquete: pacote60.mascaraSoquete,
     mascaraBolha: pacote60.mascaraBolha,
@@ -1992,6 +2007,8 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
     atlasAnimacao4Frames: pacote60.atlasAnimacao4Frames,
     paletaRgba: pacote60.paletaRgba,
   });
+  assert.equal(Object.keys(pacote60.glifos5x7).length >= 38, true);
+  assert.equal(Object.keys(pacote60.glifos6x7).length >= 38, true);
 
   const codigoClienteJs = gerarCodigoJsClienteBiofoil();
   assert.equal(codigoClienteJs.includes('function rasterizarQuadroRgba960x540'), true);
@@ -2094,6 +2111,27 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   }
   assert.equal(bytesComparados, 14515200, '[N4] Examinados: 14.515.200 bytes RGBA (7 telas x 960 x 540 x 4)');
   assert.equal(bytesDiferentes, 0, 'Paridade visual Servidor <-> Navegador (/cliente.js) deve ter 0 bytes de diferença nas 7 telas');
+
+  // 2B. Prova L4 de Coesão Pictórica Hi-Bit (CHEFE_DRAGA, LOJA, EVENTO, MAPA e CORAÇÃO BIO-ELÉTRICO com densidade real de cores Hi-Bit)
+  const contarCoresUnicasRegiao = (rgbaImg, x0, y0, x1, y1) => {
+    const setCores = new Set();
+    for (let y = y0; y <= y1; y += 1) {
+      for (let x = x0; x <= x1; x += 1) {
+        const i = (y * 960 + x) * 4;
+        setCores.add((rgbaImg[i] << 16) | (rgbaImg[i + 1] << 8) | rgbaImg[i + 2]);
+      }
+    }
+    return setCores.size;
+  };
+  const imgDragaCo = decodificarPngRgbaParaTeste(renderizarCenaCanvasParaPngBuffer(projetarViewModelWireframe(estDraga), { escalaInteira: 1 })).rgba;
+  const imgLojaCo = decodificarPngRgbaParaTeste(renderizarCenaCanvasParaPngBuffer(projetarViewModelWireframe(estLoja7), { escalaInteira: 1 })).rgba;
+  const imgEvCo = decodificarPngRgbaParaTeste(renderizarCenaCanvasParaPngBuffer(projetarViewModelWireframe(estEvento7), { escalaInteira: 1 })).rgba;
+  const imgMapaCo = decodificarPngRgbaParaTeste(renderizarCenaCanvasParaPngBuffer(projetarViewModelWireframe(estMapa7), { escalaInteira: 1 })).rgba;
+  assert.equal(contarCoresUnicasRegiao(imgDragaCo, 620, 128, 955, 425) >= 80, true, 'CHEFE_DRAGA deve renderizar placa Hi-Bit rica (>= 80 tons)');
+  assert.equal(contarCoresUnicasRegiao(imgLojaCo, 165, 146, 945, 200) >= 80, true, 'LOJA deve renderizar vitrine Hi-Bit rica (>= 80 tons)');
+  assert.equal(contarCoresUnicasRegiao(imgEvCo, 162, 102, 945, 216) >= 80, true, 'EVENTO deve renderizar cena marítima Hi-Bit rica (>= 80 tons)');
+  assert.equal(contarCoresUnicasRegiao(imgMapaCo, 152, 96, 955, 425) >= 24, true, 'MAPA deve renderizar relevo batimétrico Hi-Bit (>= 24 tons)');
+  assert.equal(contarCoresUnicasRegiao(imgDragaCo, 6, 456, 48, 502) >= 28, true, 'CORAÇÃO BIO-ELÉTRICO deve renderizar sprite orgânico Hi-Bit (>= 28 tons)');
 
   // 3. Interpolação Sub-Tick 60 FPS (casco, nado contínuo entre câmaras, shake, warm tooltip <16ms) — [MUT-O6-13]
   const vmFoilInterp = projetarViewModelWireframe(estF1);
