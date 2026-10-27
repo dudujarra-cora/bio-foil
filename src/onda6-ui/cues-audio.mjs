@@ -241,7 +241,8 @@ export function construirPlanoGrafoWebAudio(
   });
 
   const somaGanhos = nosSintese.reduce((acc, n) => acc + n.ganhoPico, 0);
-  const ganhoMaster = somaGanhos > 0.85 ? Number((0.85 / somaGanhos).toFixed(4)) : 0.85;
+  const ganhoMaster =
+    opcoesDebug.mudo === true ? 0 : somaGanhos > 0.85 ? Number((0.85 / somaGanhos).toFixed(4)) : 0.85;
 
   return clonarProfundoCongelado({
     estadoFisico: naveAtu.estadoFisico,

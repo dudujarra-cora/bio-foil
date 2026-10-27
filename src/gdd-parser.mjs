@@ -44,16 +44,36 @@ export const CADEIA_CANONICA_ONDAS_SRC = Object.freeze([
   'onda4-mapa/relogio-viagem.mjs',
   'onda5-catalogo-chefe/catalogo-naves-itens.mjs',
   'onda5-catalogo-chefe/chefe-draga.mjs',
+  'onda6-ui/assets-hibit.mjs',
+  'onda6-ui/audio-maritimo.mjs',
+  'onda6-ui/campanha-completa.mjs',
+  'onda6-ui/cliente-web.mjs',
   'onda6-ui/cues-audio.mjs',
   'onda6-ui/despacho-comandos.mjs',
+  'onda6-ui/encontros-eventos-campanha.mjs',
+  'onda6-ui/geometria-layout-960.mjs',
+  'onda6-ui/hitboxes-layout.mjs',
+  'onda6-ui/interpolador-60fps.mjs',
   'onda6-ui/persistencia-perfil.mjs',
   'onda6-ui/presenter-wireframe.mjs',
+  'onda6-ui/primitivas-raster-rgba.mjs',
+  'onda6-ui/renderizador-alvo-inimigo.mjs',
+  'onda6-ui/renderizador-canvas.mjs',
+  'onda6-ui/renderizador-canvas2d-primitivas.mjs',
+  'onda6-ui/renderizador-hud-tooltips.mjs',
+  'onda6-ui/renderizador-telas-campanha.mjs',
+  'onda6-ui/runtime-navegador.mjs',
+  'onda6-ui/sintetizador-webaudio-cliente.mjs',
+  'onda6-ui/tick-combate-tempo-real.mjs',
+  'onda6-ui/tradutor-input-dom.mjs',
+  'onda6-ui/vitrine-spreads.mjs',
 ]);
 
 export const CADEIA_CANONICA_SCRIPTS = Object.freeze([
   'auditar-frente.sh',
   'hooks/pre-commit',
   'hooks/pre-push',
+  'jogar-biofoil.mjs',
   'mcp-testes-agentes.mjs',
   'rodar-mutacoes.mjs',
 ]);
@@ -236,7 +256,7 @@ export function extrairTopologiaOcupacaoBeamVolume01(conteudoVol01) {
 export function clonarProfundoCongelado(obj) {
   const copia = structuredClone(obj);
   const congelar = (alvo) => {
-    if (alvo && typeof alvo === 'object') {
+    if (alvo && typeof alvo === 'object' && !ArrayBuffer.isView(alvo)) {
       Object.freeze(alvo);
       for (const chave of Object.keys(alvo)) {
         congelar(alvo[chave]);

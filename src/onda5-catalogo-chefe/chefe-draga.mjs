@@ -125,6 +125,8 @@ export function criarEstadoChefeDraga(fase = 1, tripulacaoSobrevivente = null) {
     classeInimigo: 'CHEFE_DRAGA',
     nome: `Draga Continental — Fase ${fase}: ${spec.nome}`,
     faseChefe: fase,
+    temSonarMilitar: fase === 2,
+    sonarMilitarAtivo: fase === 2,
     hpCascoAtual: spec.hpCascoMax,
     hpCascoMax: spec.hpCascoMax,
     blindagemTermicaExternaPts: spec.blindagemTermicaExternaPts,
@@ -375,17 +377,61 @@ export function avancarTickChefeDraga(estado, dtSeg = 1.0, opcoesDebug = {}) {
     fervuraAtivaSeg = Math.max(0, Math.round((fervuraAtivaSeg - dtSeg) * 1000) / 1000);
   }
 
+  // 3. Regeneração da Barreira Acústica (Seção 5.5 + Seção 1.4: 1 bolha a cada 2.0s após queda da Blindagem Térmica)
+  const salaEscudo = salas.find((s) => /ESCUDO|BARREIRA/i.test(s.nome ?? ''));
+  const intEscudo = salaEscudo
+    ? Number(salaEscudo.paralisiaIonSeg ?? salaEscudo.tempoRestanteIonSeg ?? 0) > 0
+      ? 0
+      : Math.max(0, Number(salaEscudo.integridadeAtual ?? salaEscudo.integridade ?? 0))
+    : Number(alvo.barreiraBolhasMax ?? 0);
+  const maxEscudo = salaEscudo
+    ? Math.max(1, Number(salaEscudo.integridadeMax ?? salaEscudo.barrasMax ?? 1))
+    : Math.max(1, Number(alvo.barreiraBolhasMax ?? 1));
+  const tetoBolhas = Math.floor((Number(alvo.barreiraBolhasMax ?? 0) * intEscudo) / maxEscudo);
+  let camadasBarreiraAtivas = Number(alvo.camadasBarreiraAtivas ?? alvo.barreiraBolhasAtual ?? 0);
+  let progressoRegenBarreiraSeg = Number(alvo.progressoRegenBarreiraSeg ?? 0);
+
+  if (Number(alvo.blindagemTermicaExternaPts ?? 0) > 0) {
+    camadasBarreiraAtivas = Math.min(camadasBarreiraAtivas, tetoBolhas);
+    progressoRegenBarreiraSeg = 0;
+  } else if (camadasBarreiraAtivas > tetoBolhas) {
+    camadasBarreiraAtivas = tetoBolhas;
+    progressoRegenBarreiraSeg = 0;
+  } else if (camadasBarreiraAtivas < tetoBolhas && opcoesDebug.desativarRegenBarreiraInimigaMutacao !== true) {
+    progressoRegenBarreiraSeg = Math.round((progressoRegenBarreiraSeg + dtSeg) * 10000) / 10000;
+    while (progressoRegenBarreiraSeg >= 2.0 && camadasBarreiraAtivas < tetoBolhas) {
+      progressoRegenBarreiraSeg = Math.round((progressoRegenBarreiraSeg - 2.0) * 10000) / 10000;
+      camadasBarreiraAtivas += 1;
+    }
+    if (camadasBarreiraAtivas >= tetoBolhas) {
+      progressoRegenBarreiraSeg = 0;
+    }
+  } else {
+    progressoRegenBarreiraSeg = 0;
+  }
+
+  const salaSonarDraga = salas.find((s) => /SONAR/i.test(s.nome ?? ''));
+  const sonarMilitarAtivo = salaSonarDraga
+    ? Number(salaSonarDraga.paralisiaIonSeg ?? salaSonarDraga.tempoRestanteIonSeg ?? 0) <= 0 &&
+      Math.max(0, Number(salaSonarDraga.integridadeAtual ?? salaSonarDraga.integridade ?? 0)) > 0
+    : false;
+
   return clonarProfundoCongelado({
     ...estado,
     naveJogador: nave,
     alvoCombate: {
       ...alvo,
+      temSonarMilitar: Boolean(salaSonarDraga),
+      sonarMilitarAtivo,
       iaBackupAtiva,
       progressoReparoIaBackupSeg,
       progressoPowerSurgeSeg,
       alarmeFervuraAtivoSeg,
       fervuraAtivaSeg,
       ultimoPowerSurgeDisparado,
+      camadasBarreiraAtivas,
+      barreiraBolhasAtual: camadasBarreiraAtivas,
+      progressoRegenBarreiraSeg,
       salasOuOrgaos: salas,
     },
   });

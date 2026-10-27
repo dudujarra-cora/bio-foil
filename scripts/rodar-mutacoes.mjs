@@ -16,9 +16,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
+const CAMINHO_SCRIPT_ATUAL = fileURLToPath(import.meta.url);
 const MARCADOR_INICIO = '<!-- INICIO BLOCO GERADO POR scripts/rodar-mutacoes.mjs — NÃO EDITAR À MÃO -->';
 const MARCADOR_FIM = '<!-- FIM BLOCO GERADO -->';
 
@@ -66,12 +67,111 @@ function rodarTestes(diretorio, testes) {
   return { status: r.status, saida: `${r.stdout ?? ''}\n${r.stderr ?? ''}` };
 }
 
+function rodarTestesAsync(diretorio, testes) {
+  return new Promise((resolve) => {
+    const filho = spawn(process.execPath, ['--test', '--test-reporter=spec', ...testes], {
+      cwd: diretorio,
+      env: ambienteSemGit(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const pedacosOut = [];
+    const pedacosErr = [];
+    filho.stdout.on('data', (d) => pedacosOut.push(d));
+    filho.stderr.on('data', (d) => pedacosErr.push(d));
+    filho.on('error', (err) => {
+      resolve({ status: 1, saida: String(err?.stack ?? err) });
+    });
+    filho.on('close', (code) => {
+      const stdout = Buffer.concat(pedacosOut).toString('utf8');
+      const stderr = Buffer.concat(pedacosErr).toString('utf8');
+      resolve({ status: code ?? 1, saida: `${stdout}\n${stderr}` });
+    });
+  });
+}
+
+function prepararTrocasMutacao(tmp, m) {
+  const conteudosPorRel = new Map();
+  for (const troca of m.trocas) {
+    const relAlvo = troca.arquivo ?? m.arquivo;
+    if (!conteudosPorRel.has(relAlvo)) {
+      conteudosPorRel.set(relAlvo, fs.readFileSync(path.join(tmp, relAlvo), 'utf8'));
+    }
+    let conteudo = conteudosPorRel.get(relAlvo);
+    const ocorrencias = conteudo.split(troca.buscar).length - 1;
+    if (ocorrencias !== 1) {
+      return {
+        ok: false,
+        desatualizada: `trecho "${troca.buscar.slice(0, 60)}" aparece ${ocorrencias}x em ${relAlvo} (esperado 1x)`,
+      };
+    }
+    conteudo = conteudo.replace(troca.buscar, () => troca.substituir);
+    conteudosPorRel.set(relAlvo, conteudo);
+  }
+  for (const [relAlvo, conteudo] of conteudosPorRel.entries()) {
+    fs.writeFileSync(path.join(tmp, relAlvo), conteudo, 'utf8');
+  }
+  return { ok: true, desatualizada: null };
+}
+
+async function executarLoteMutacoesParalelo(raiz, mutacoes, concorrenciaMax) {
+  const total = mutacoes.length;
+  const resultados = new Array(total);
+  let proximoIndice = 0;
+  let ativos = 0;
+
+  const limiteEfetivo = Math.max(
+    1,
+    Math.min(concorrenciaMax ?? Math.min(6, Math.max(2, Math.floor(os.availableParallelism() / 2))), total)
+  );
+
+  const esperarFolgaCarga = async () => {
+    while (ativos >= 2 && os.loadavg()[0] >= 14.5) {
+      await new Promise((r) => setTimeout(r, 180));
+    }
+  };
+
+  const trabalhador = async () => {
+    while (true) {
+      await esperarFolgaCarga();
+      const idx = proximoIndice;
+      if (idx >= total) return;
+      proximoIndice += 1;
+      ativos += 1;
+      const m = mutacoes[idx];
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `ftl-${m.id}-`));
+      try {
+        copiarProjeto(raiz, tmp);
+        const prep = prepararTrocasMutacao(tmp, m);
+        if (!prep.ok) {
+          resultados[idx] = { id: m.id, vermelho: false, linha: '', confere: false, desatualizada: prep.desatualizada };
+        } else {
+          const r = await rodarTestesAsync(tmp, m.testes);
+          const linha = primeiraLinhaDeFalha(r.saida);
+          resultados[idx] = {
+            id: m.id,
+            vermelho: r.status !== 0,
+            linha,
+            confere: r.status !== 0 && linha.includes(m.falhaEsperada),
+            desatualizada: null,
+          };
+        }
+      } finally {
+        ativos -= 1;
+        fs.rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+  };
+
+  await Promise.all(Array.from({ length: limiteEfetivo }, () => trabalhador()));
+  return resultados;
+}
+
 export function carregarMutacoes(raiz) {
   const json = JSON.parse(fs.readFileSync(path.join(raiz, 'padrao', 'protocolo', 'mutacoes.json'), 'utf8'));
   return json.mutacoes;
 }
 
-export function executarMutacoes(raiz, { ids = null } = {}) {
+export function executarMutacoes(raiz, { ids = null, concorrencia = null } = {}) {
   const mutacoes = carregarMutacoes(raiz).filter((m) => !ids || ids.includes(m.id));
   const testesUsados = [...new Set(mutacoes.flatMap((m) => m.testes))];
 
@@ -89,27 +189,41 @@ export function executarMutacoes(raiz, { ids = null } = {}) {
     );
   }
 
+  if (mutacoes.length > 2 && concorrencia !== 1) {
+    const dirCoord = fs.mkdtempSync(path.join(os.tmpdir(), 'ftl-mut-coord-'));
+    try {
+      const arqIn = path.join(dirCoord, 'entrada.json');
+      const arqOut = path.join(dirCoord, 'saida.json');
+      fs.writeFileSync(arqIn, JSON.stringify({ raiz, mutacoes, concorrencia }), 'utf8');
+      const coord = spawnSync(
+        process.execPath,
+        [CAMINHO_SCRIPT_ATUAL, '--coordenador-paralelo-interno', arqIn, arqOut],
+        {
+          cwd: raiz,
+          env: ambienteSemGit(),
+          encoding: 'utf8',
+          maxBuffer: 64 * 1024 * 1024,
+        }
+      );
+      if (coord.status === 0 && fs.existsSync(arqOut)) {
+        const resultados = JSON.parse(fs.readFileSync(arqOut, 'utf8'));
+        return { baselineVerde: true, testesBase: testesUsados, resultados };
+      }
+    } finally {
+      fs.rmSync(dirCoord, { recursive: true, force: true });
+    }
+  }
+
   const resultados = [];
   for (const m of mutacoes) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `ftl-${m.id}-`));
     try {
       copiarProjeto(raiz, tmp);
-      const alvo = path.join(tmp, m.arquivo);
-      let conteudo = fs.readFileSync(alvo, 'utf8');
-      let desatualizada = null;
-      for (const troca of m.trocas) {
-        const ocorrencias = conteudo.split(troca.buscar).length - 1;
-        if (ocorrencias !== 1) {
-          desatualizada = `trecho "${troca.buscar.slice(0, 60)}" aparece ${ocorrencias}x em ${m.arquivo} (esperado 1x)`;
-          break;
-        }
-        conteudo = conteudo.replace(troca.buscar, () => troca.substituir);
-      }
-      if (desatualizada) {
-        resultados.push({ id: m.id, vermelho: false, linha: '', confere: false, desatualizada });
+      const prep = prepararTrocasMutacao(tmp, m);
+      if (!prep.ok) {
+        resultados.push({ id: m.id, vermelho: false, linha: '', confere: false, desatualizada: prep.desatualizada });
         continue;
       }
-      fs.writeFileSync(alvo, conteudo, 'utf8');
       const r = rodarTestes(tmp, m.testes);
       const linha = primeiraLinhaDeFalha(r.saida);
       resultados.push({
@@ -178,4 +292,21 @@ export function executarCliMutacoes(
 }
 
 const executadoDiretamente = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
-if (executadoDiretamente) process.exit(executarCliMutacoes());
+if (executadoDiretamente) {
+  if (process.argv[2] === '--coordenador-paralelo-interno') {
+    const arqIn = process.argv[3];
+    const arqOut = process.argv[4];
+    const { raiz, mutacoes, concorrencia } = JSON.parse(fs.readFileSync(arqIn, 'utf8'));
+    executarLoteMutacoesParalelo(raiz, mutacoes, concorrencia)
+      .then((resultados) => {
+        fs.writeFileSync(arqOut, JSON.stringify(resultados), 'utf8');
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error(err);
+        process.exit(1);
+      });
+  } else {
+    process.exit(executarCliMutacoes());
+  }
+}

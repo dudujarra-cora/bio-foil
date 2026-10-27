@@ -422,7 +422,7 @@ export const BESTIARIO_ARQUETIPOS_57A = Object.freeze([
   Object.freeze({ id: 'BARCO_1_LANCHA', classe: 'BARCO_HUMANO', nome: '1. Lancha Patrulheira', setorMin: 1, setorMax: 3, totalSalas: 4, salasSuperiores: 2, salasSubmersas: 2 }),
   Object.freeze({ id: 'BARCO_2_CORVETA', classe: 'BARCO_HUMANO', nome: '2. Corveta de Sonar', setorMin: 2, setorMax: 5, totalSalas: 5, salasSuperiores: 3, salasSubmersas: 2, temSonarMilitar: true }),
   Object.freeze({ id: 'BARCO_3_ARRASTAO', classe: 'BARCO_HUMANO', nome: '3. Arrastão Blindado', setorMin: 3, setorMax: 6, totalSalas: 6, salasSuperiores: 3, salasSubmersas: 3 }),
-  Object.freeze({ id: 'BARCO_4_SUBMARINO', classe: 'BARCO_HUMANO', nome: '4. Submarino Térmico de Assalto', setorMin: 5, setorMax: 7, totalSalas: 6, salasSuperiores: 2, salasSubmersas: 4 }),
+  Object.freeze({ id: 'BARCO_4_SUBMARINO', classe: 'BARCO_HUMANO', nome: '4. Submarino Térmico de Assalto', setorMin: 5, setorMax: 7, totalSalas: 6, salasSuperiores: 2, salasSubmersas: 4, temSonarMilitar: true }),
   Object.freeze({ id: 'MONSTRO_1_TEUTHIS', classe: 'MONSTRO_BIOLOGICO', nome: '5. Teuthis Couraçada Mutante', setorMin: 1, setorMax: 3, totalSalas: 4, orgaoExtraido: 'BOLSA_TINTA_ABISSAL' }),
   Object.freeze({ id: 'MONSTRO_2_ENGUIA', classe: 'MONSTRO_BIOLOGICO', nome: '6. Enguia Elétrica Abissal', setorMin: 2, setorMax: 5, totalSalas: 4, orgaoExtraido: 'ELETRO_PLACA_ARRAIA' }),
   Object.freeze({ id: 'MONSTRO_3_CARANGUEJO', classe: 'MONSTRO_BIOLOGICO', nome: '7. Caranguejo-Titã de Trincheira', setorMin: 4, setorMax: 6, totalSalas: 4, orgaoExtraido: 'BEXIGA_ALTA_PRESSAO' }),
@@ -528,7 +528,7 @@ export function avancarTickChoqueEIsolamentoSala(salaAlvo, dtSeg = 1.0, opcoesDe
  * Colmeia-Viva (+1 HP a cada 12s contínuos em Touchdown em combate ativo, máx. +2 HP por luta — MUT-O5-04).
  */
 export function avancarTickBiomaEColmeiaViva(estado, dtSeg = 1.0, opcoesDebug = {}) {
-  const nave = estado.naveJogador;
+  let nave = estado.naveJogador;
   const alvo = estado.alvoCombate;
   const classeInimigo = alvo?.classeInimigo ?? alvo?.classeAlvo ?? 'BARCO_HUMANO';
   const tripulacaoAlvo =
@@ -592,8 +592,14 @@ export function avancarTickBiomaEColmeiaViva(estado, dtSeg = 1.0, opcoesDebug = 
   } else {
     tempoTouchdownContinuoSeg = 0;
     corrosoesMastroTouchdown = 0;
-    // Setor 6 (ou nó PER_1_CHUVA_ACIDA): Chuva Ácida a cada 15.0s em 1_NO_FOIL
-    if (estado.mapaSetorial?.setorNumero === 6 || estado.meta?.perigoAmbientalId === 'PER_1_CHUVA_ACIDA') {
+    // Setor 6 (ou nó PER_1_CHUVA_ACIDA): Chuva Ácida a cada 15.0s em 1_NO_FOIL (neutralizável por Blue Option 30s)
+    const neutrAtual = Math.max(0, Number(nave.neutralizaChuvaAcidaRestanteSeg ?? 0));
+    if (neutrAtual > 0) {
+      nave = {
+        ...nave,
+        neutralizaChuvaAcidaRestanteSeg: Math.max(0, Math.round((neutrAtual - dtSeg) * 1000) / 1000),
+      };
+    } else if (estado.mapaSetorial?.setorNumero === 6 || estado.meta?.perigoAmbientalId === 'PER_1_CHUVA_ACIDA') {
       tempoChuvaAcidaAcumuladoSeg = Math.round((tempoChuvaAcidaAcumuladoSeg + dtSeg) * 1000) / 1000;
       if (tempoChuvaAcidaAcumuladoSeg >= 15.0) {
         hpCascoAtual = Math.max(0, hpCascoAtual - 1);

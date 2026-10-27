@@ -48,11 +48,57 @@ export const GRAFOS_BEAM_CANONICOS = Object.freeze({
     3: [1, 4],
     4: [2, 3],
   }),
+  BARCO_CORVETA_5: Object.freeze({
+    1: [2, 4],
+    2: [1, 3, 4, 5],
+    3: [2, 5],
+    4: [1, 2, 5],
+    5: [2, 3, 4],
+  }),
+  BARCO_ARRASTAO_6: Object.freeze({
+    1: [2, 4],
+    2: [1, 3, 5],
+    3: [2, 6],
+    4: [1, 5],
+    5: [2, 4, 6],
+    6: [3, 5],
+  }),
+  BARCO_SUBMARINO_6: Object.freeze({
+    1: [2, 3, 4],
+    2: [1, 5, 6],
+    3: [1, 4],
+    4: [1, 3, 5],
+    5: [2, 4, 6],
+    6: [2, 5],
+  }),
   MONSTRO_1X4: Object.freeze({
     1: [2],
     2: [1, 3],
     3: [2, 4],
     4: [3],
+  }),
+  DRAGA_F1_6: Object.freeze({
+    1: [2, 5],
+    2: [1, 3, 5],
+    3: [2, 4, 6],
+    4: [3, 6],
+    5: [1, 2, 6],
+    6: [3, 4, 5],
+  }),
+  DRAGA_F2_6: Object.freeze({
+    1: [2, 4],
+    2: [1, 3, 5],
+    3: [2, 6],
+    4: [1, 5],
+    5: [2, 4, 6],
+    6: [3, 5],
+  }),
+  DRAGA_F3_5: Object.freeze({
+    1: [2, 4],
+    2: [1, 3, 4, 5],
+    3: [2, 5],
+    4: [1, 2, 5],
+    5: [2, 3, 4],
   }),
 });
 
@@ -209,9 +255,78 @@ export function enumerarTrincasBeam(grafoOrtogonal = GRAFOS_BEAM_CANONICOS.BIONA
 }
 
 /**
+ * Sincroniza da esquerda para a direita (`slot 0..3`) a energia ativa das armas dorsais (`armasAtivas`)
+ * com o orçamento energético efetivo da Câmara 1 (`ARTILHARIA_DORSAL`: `min(barrasEnergiaAlocada, barrasIntegridade) - danoIonizado`).
+ */
+export function sincronizarEnergiaArmasComCamaraArtilharia(nave, opcoes = {}) {
+  if (!nave || typeof nave !== 'object' || !Array.isArray(nave.armasAtivas)) {
+    return nave;
+  }
+  const camArt = Array.isArray(nave.camaras) ? nave.camaras.find((c) => Number(c.id) === 1) : null;
+  if (!camArt) {
+    return Object.isFrozen(nave) ? nave : congelarProfundo(structuredClone(nave));
+  }
+  const intArt = Math.max(0, Number(camArt.barrasIntegridade ?? camArt.integridade ?? 0));
+  const ionArt = Math.max(0, Number(camArt.danoIonizado ?? camArt.barrasIonizadas ?? 0));
+  const alocArt = Math.max(0, Number(camArt.barrasEnergiaAlocada ?? camArt.energiaAlocada ?? 0));
+  const redistribuir = opcoes.redistribuir === true;
+  let orcamentoRestante =
+    opcoes.ignorarTetoArtilhariaMutacao === true
+      ? 99
+      : Math.max(0, Math.min(alocArt, Math.max(0, intArt - ionArt)));
+
+  const ordemIndices = nave.armasAtivas
+    .map((slot, idx) => {
+      const arma = slot && typeof slot === 'object' && 'arma' in slot ? slot.arma : slot;
+      const temAlvoAtivo =
+        Boolean(arma) &&
+        ((arma.salaAlvoId !== null && arma.salaAlvoId !== undefined) ||
+          (Array.isArray(arma.trincaSalasBeam) && arma.trincaSalasBeam.length > 0));
+      return { idx, prioridade: temAlvoAtivo ? 0 : 1 };
+    })
+    .sort((a, b) => a.prioridade - b.prioridade || a.idx - b.idx);
+
+  const novasArmas = new Array(nave.armasAtivas.length);
+  for (const { idx } of ordemIndices) {
+    const slot = nave.armasAtivas[idx];
+    const temWrapper = slot && typeof slot === 'object' && 'arma' in slot;
+    const arma = temWrapper ? slot.arma : slot;
+    if (!arma) {
+      novasArmas[idx] = slot;
+      continue;
+    }
+    const custo = Math.max(1, Number(arma.energiaCusto ?? arma.energia ?? 1));
+    const estavaLigada = Number(arma.energiaAlocada ?? custo) >= custo;
+    const deveLigar = redistribuir ? orcamentoRestante >= custo : estavaLigada && orcamentoRestante >= custo;
+    if (deveLigar) {
+      orcamentoRestante -= custo;
+      const armaLigada = {
+        ...arma,
+        energiaAlocada: custo,
+      };
+      novasArmas[idx] = temWrapper ? { ...slot, arma: armaLigada } : armaLigada;
+      continue;
+    }
+    const armaDesligada = {
+      ...arma,
+      energiaAlocada: 0,
+      progressoRecargaSeg: 0.0,
+      disparoManualAutorizado: false,
+    };
+    novasArmas[idx] = temWrapper ? { ...slot, arma: armaDesligada } : armaDesligada;
+  }
+
+  const resultado = {
+    ...nave,
+    armasAtivas: novasArmas,
+  };
+  return Object.isFrozen(nave) ? congelarProfundo(structuredClone(resultado)) : resultado;
+}
+
+/**
  * Avança um tick puro dos Sistemas, Armas, Barreira, Oxigênio e Curto-Circuito da nave.
  */
-export function avancarTickSistemasEArmas(estado, dtSeg = 0.25) {
+export function avancarTickSistemasEArmas(estado, dtSeg = 0.25, opcoesDebug = {}) {
   if (!Object.isFrozen(estado)) {
     throw new Error('[Lei L2] avancarTickSistemasEArmas exige estado de entrada congelado (Object.freeze)');
   }
@@ -329,7 +444,11 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25) {
     }
   }
 
-  // 4. Recarga de Armas Ativas (Câmara 1 — Artilharia Dorsal)
+  // 4. Recarga de Armas Ativas (Câmara 1 — Artilharia Dorsal acoplada ao orçamento real de energia/integridade/íon)
+  nave.armasAtivas = sincronizarEnergiaArmasComCamaraArtilharia(nave, {
+    redistribuir: false,
+    ...opcoesDebug,
+  }).armasAtivas;
   const operadorArtilharia = nave.tripulacao.find(
     (t) =>
       t.localizacao === 'NAVE_JOGADOR' &&

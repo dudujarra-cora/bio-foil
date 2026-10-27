@@ -12,6 +12,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import vm from 'node:vm';
 import zlib from 'node:zlib';
 
@@ -31,7 +34,10 @@ import { avancarTickFisicaHidraulica } from '../src/onda1-fisica/tick-hidraulica
 import { criarAlvoSetor1Canonico, CONSTANTES_IA_INIMIGOS } from '../src/onda3-inimigos/ia-barco-monstro.mjs';
 import { CURVA_SAQUE_SETORIAL_56C } from '../src/onda3-inimigos/abordagem-vitoria.mjs';
 import { inspecionarSalaAlvo, CONSTANTES_TRIPULACAO } from '../src/onda2-combate/tick-tripulacao.mjs';
-import { CONSTANTES_SISTEMAS_ARMAS } from '../src/onda2-combate/tick-sistemas-armas.mjs';
+import {
+  CONSTANTES_SISTEMAS_ARMAS,
+  sincronizarEnergiaArmasComCamaraArtilharia,
+} from '../src/onda2-combate/tick-sistemas-armas.mjs';
 import {
   LARGURA_SETOR_MN,
   ALTURA_SETOR_MN,
@@ -82,23 +88,133 @@ import {
   ATLAS_ANIMACAO_4FRAMES_BIOFOIL,
   projetarViewModelWireframe,
   obterAtlasSpritesNativo,
-  obterQuadroAnimacaoEntidade,
   calcularEncaixeCamaraBioNave,
   calcularEncaixeDorsalArma,
   renderizarQuadroAnimadoCenaBiofoil,
   rasterizarSpriteRgba,
-  exportarAtlasHiBitsPngBuffer,
-  exportarPacoteAssets60Fps,
   interpolarEstadoVisual60Fps,
-  rasterizarQuadroRgba960x540,
   renderizarViewModelNoCanvas2d,
   renderizarCenaCanvasParaPngBuffer,
+  exportarSpreadAnimacaoSteamPngBuffer,
+} from '../src/onda6-ui/presenter-wireframe.mjs';
+import {
+  codificarBufferRgbaParaPng,
+  obterAssetsConceitoHiBit,
+  escalarNearestRgba,
+  exportarAtlasHiBitsPngBuffer,
+  obterQuadroAnimacaoEntidade,
+  exportarPacoteAssets60Fps,
+  obterTabelasRasterUnificado,
+  obterIconeSistemaRodape12x12,
+  obterPerfilVisualArquetipoInimigo,
+  VARIANTES_VISUAIS_INIMIGOS_57A,
+  ICONES_SISTEMAS_RODAPE_12X12,
+} from '../src/onda6-ui/assets-hibit.mjs';
+import {
+  CAMADAS_PAISAGEM_MARITIMA,
+  CATALOGO_SFX_MULTICAMADA_BIOFOIL,
+  ESTADOS_TRILHA_ADAPTATIVA_BIOFOIL,
+  selecionarEstadoTrilhaAdaptativa,
+  extrairSfxMulticamadaDoTick,
+  construirPaisagemSonoraCompleta,
+  sintetizarBufferPcmMulticamada,
+  gerarCodigoSintetizadorMaritimoClienteJs,
+} from '../src/onda6-ui/audio-maritimo.mjs';
+import {
+  ACOES_CAMPANHA_BIOFOIL,
+  MODOS_DISPARO_ARMAS,
+  resolverGrafoOrtogonalAlvo,
+  calcularCaminhoCurtoGrafoAlvo,
+  possuiSalaSonarAlvo,
+  possuiSonarMilitarAtivoAlvo,
+  calcularTrincaBeamAutomatica,
+  gerarAlvoInimigoEscaladoSetor,
+  anexarMapaSetorAoEstado,
+  resolverEntradaNoMapaCampanha,
+  aplicarRegrasSaquePosCombateCampanha,
+  construirDesfechoEventoCanonicamente,
+  alternarModoDisparoArma,
+  dispararSalvaManualPronta,
+  ordenarMovimentoAbordagemInimiga,
+  TABELA_NARRATIVA_17_EVENTOS_45A,
+  construirEventoResumoCanonico45A,
+  construirTelemetriaMapaSetorial,
+} from '../src/onda6-ui/encontros-eventos-campanha.mjs';
+import {
+  calcularCustoProximoUpgradeNave,
+  aplicarUpgradeNaveCampanha,
+  gerenciarEquipamentoPoraoEOrgaos,
+  criarEstadoCampanhaCompleta,
+  executarAcaoCampanhaCompleta,
+  avancarTickCampanhaCompleta,
+} from '../src/onda6-ui/campanha-completa.mjs';
+import {
+  MODULOS_ESM_NAVEGADOR_ONDA6,
   escaparHtmlSeguro,
   gerarCodigoJsClienteBiofoil,
   gerarHtmlClienteJogavelBiofoil,
   iniciarServidorClienteWebBiofoil,
-  exportarSpreadAnimacaoSteamPngBuffer,
-} from '../src/onda6-ui/presenter-wireframe.mjs';
+} from '../src/onda6-ui/cliente-web.mjs';
+import { criarContextoPrimitivasRgba960x540 } from '../src/onda6-ui/primitivas-raster-rgba.mjs';
+import {
+  congelarProfundoClienteSeguro,
+  calcularLayoutPlacaCamaras960,
+  calcularRetanguloCardHangar960,
+  calcularRetanguloCardLoja960,
+  calcularRetanguloVendaPoraoLoja960,
+  calcularGeometriaOficina960,
+  calcularRetangulosModaisCampanha960,
+  calcularRetangulosSalasAlvo960,
+} from '../src/onda6-ui/geometria-layout-960.mjs';
+import {
+  converterCoordenadaTelaParaNativa as converterCoordenadaHitboxDireta,
+  obterMapaHitboxesNativo as obterMapaHitboxesDireto,
+  calcularGhostPreviewTermometro as calcularGhostPreviewDireto,
+} from '../src/onda6-ui/hitboxes-layout.mjs';
+import { interpolarEstadoVisual60Fps as interpolar60FpsDireto } from '../src/onda6-ui/interpolador-60fps.mjs';
+import {
+  obterAtlasSpritesNativo as obterAtlasPrimitivasDireto,
+  rasterizarSpriteRgba as rasterizarSpriteDireto,
+  renderizarViewModelNoCanvas2d as renderizarCanvas2dDireto,
+  calcularEncaixeCamaraBioNave as calcularEncaixeCamaraDireto,
+  calcularEncaixeDorsalArma as calcularEncaixeDorsalDireto,
+} from '../src/onda6-ui/renderizador-canvas2d-primitivas.mjs';
+import {
+  renderizarHudSuperiorTermometroERodape,
+  renderizarTooltipContextualEAvisoToast,
+} from '../src/onda6-ui/renderizador-hud-tooltips.mjs';
+import {
+  renderizarTelaHangarOuFimDeRun,
+  renderizarViewportCampanhaNaoCombate,
+  renderizarModalSaqueOverlay,
+  renderizarModalOficinaOverlay,
+  renderizarModalDesfechoEventoOverlay,
+} from '../src/onda6-ui/renderizador-telas-campanha.mjs';
+import {
+  renderizarAlvoInimigoESalasCombate,
+  prepararFundoAtmosfericoCombate,
+  renderizarSobrecomposicaoCombate60Fps,
+} from '../src/onda6-ui/renderizador-alvo-inimigo.mjs';
+import { rasterizarQuadroRgba960x540 } from '../src/onda6-ui/renderizador-canvas.mjs';
+import {
+  formatarMensagemRejeicaoUi,
+  enriquecerGhostPreviewCliente,
+  criarControladorToastCliente,
+  iniciarRuntimeDomBiofoil,
+} from '../src/onda6-ui/runtime-navegador.mjs';
+import { criarMotorAudioMaritimoCliente } from '../src/onda6-ui/sintetizador-webaudio-cliente.mjs';
+import {
+  resolverGrafoBeamAlvoInterno,
+  calcularCaminhoCurtoGrafoAlvoInterno,
+  recalcularSubsistemasAlvoInPlace,
+  avancarTickPartidaEmTempoReal as avancarTickDireto,
+} from '../src/onda6-ui/tick-combate-tempo-real.mjs';
+import {
+  construirTrincaBeamAssistidaDom,
+  traduzirInputDomParaComandoUi,
+} from '../src/onda6-ui/tradutor-input-dom.mjs';
+import { exportarSpreadAnimacaoSteamPngBufferComHooks } from '../src/onda6-ui/vitrine-spreads.mjs';
+import { iniciarJogoBiofoilCli } from '../scripts/jogar-biofoil.mjs';
 import {
   ESQUEMA_15_COMANDOS_85A,
   COORDENADAS_GRADE_CAMARAS_16A,
@@ -106,14 +222,21 @@ import {
   converterCoordenadaTelaParaNativa,
   obterMapaHitboxesNativo,
   calcularGhostPreviewTermometro,
-  traduzirInputDomParaComandoUi,
   avancarTickPartidaEmTempoReal,
 } from '../src/onda6-ui/despacho-comandos.mjs';
+const traduzirInputDomDireto = traduzirInputDomParaComandoUi;
 import {
   CARCACAS_PERFIL_85B,
   criarPerfilInicial,
   atualizarPerfilComMetricasRun,
   gerenciarPersistenciaTransicao,
+  obterDiretorioDadosPadraoBiofoil,
+  salvarPerfilDisco,
+  carregarPerfilDisco,
+  apagarRunSavePermadeathDisco,
+  salvarRunSaveDisco,
+  carregarRunSaveDisco,
+  sincronizarTransicaoPersistenciaDisco,
 } from '../src/onda6-ui/persistencia-perfil.mjs';
 import {
   CATALOGO_8_CUES_SONOROS_85C,
@@ -1944,7 +2067,8 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   // 1. Exportação imutável de texturas Hi-Bit para 60 FPS + endpoint HTTP GET /api/assets-60fps
   const pacote60 = exportarPacoteAssets60Fps();
   assert.equal(Object.isFrozen(pacote60), true);
-  assert.equal(pacote60.versao, 'STEAM_60FPS_V3');
+  assert.equal(pacote60.versao, 'STEAM_60FPS_V4');
+  assert.equal(Object.keys(pacote60.bestiario57a).length, 6, '[N4] Examinados: 6 sprites Hi-Bit Bestiário 5.7.A dedicados');
   assert.equal(Object.keys(pacote60.placas).length, 7, '[N4] Examinadas: 7 placas cênicas Hi-Bit base64 (F1, F2, F3, F4, Draga, Evento, Mapa)');
   assert.equal(Object.keys(pacote60.retratos).length, 4, '[N4] Examinados: 4 retratos orgânicos Hi-Bit base64');
   assert.equal(Object.keys(pacote60.iconesHiBit).length, 22, '[N4] Examinados: 22 sprites/ícones Hi-Bit base64 (7 armas + 6 órgãos + 3 invasores + 6 extras)');
@@ -1957,7 +2081,8 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
     assert.equal(respAssets.headers.get('x-content-type-options'), 'nosniff');
     assert.equal(respAssets.headers.get('x-frame-options'), 'DENY');
     const jsonAssets = await respAssets.json();
-    assert.equal(jsonAssets.versao, 'STEAM_60FPS_V3');
+    assert.equal(jsonAssets.versao, 'STEAM_60FPS_V4');
+    assert.equal(typeof jsonAssets.bestiario57a?.BARCO_2_CORVETA, 'string');
     assert.equal(typeof jsonAssets.placas?.f1Play, 'string');
     assert.equal(typeof jsonAssets.placas?.dragaPlay, 'string');
     assert.equal(typeof jsonAssets.placas?.eventoPlay, 'string');
@@ -2030,13 +2155,13 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   assert.equal(codigoClienteJs.includes('new Function'), false, 'CSP estrito: /cliente.js não usa new Function');
   assert.equal(codigoClienteJs.includes('eval('), false, 'CSP estrito: /cliente.js não usa eval');
 
-  // Executa a exata função rasterizarQuadroRgba960x540 extraída de /cliente.js num contexto VM isolado
-  const iniFnRaster = codigoClienteJs.indexOf('function rasterizarQuadroRgba960x540');
+  // Executa a exata função rasterizarQuadroRgba960x540 (e submódulos puros) extraída de /cliente.js num contexto VM isolado
+  const iniFnRaster = codigoClienteJs.indexOf('function criarContextoPrimitivasRgba960x540');
   const fimFnRaster = codigoClienteJs.indexOf('let estadoCliente = JSON.parse');
   assert.equal(iniFnRaster > 0 && fimFnRaster > iniFnRaster, true);
   const fnRasterExtraidaCliente = vm.runInNewContext(
     `(function() {\n"use strict";\n${codigoClienteJs.slice(iniFnRaster, fimFnRaster)}\nreturn rasterizarQuadroRgba960x540;\n})()`,
-    { Math, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Uint8Array, Uint8ClampedArray, Int32Array, Float64Array }
+    { Math, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Uint8Array, Uint8ClampedArray, Int16Array, Int32Array, Float64Array }
   );
 
   const estF1 = criarEstadoInicialPartida({
@@ -2465,7 +2590,25 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   const vmEv7 = projetarViewModelWireframe(estEvento7);
   const resEvKeyB = traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyB' }, estEvento7, vmEv7, {});
   assert.equal(resEvKeyB.comandoMotor?.tipo, 'ESCOLHER_OPCAO_EVENTO');
-  assert.equal(resEvKeyB.resultadoMotor?.aceito, true);
+  assert.equal(resEvKeyB.resultadoMotor?.aceito, false);
+  const resEvKeyA = traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyA' }, estEvento7, vmEv7, {});
+  assert.equal(resEvKeyA.comandoMotor?.tipo, 'ESCOLHER_OPCAO_EVENTO');
+  assert.equal(resEvKeyA.resultadoMotor?.aceito, true);
+  const estEvCouraca7 = criarEstadoInicialPartida({
+    seedPartida: 'paridade-evento',
+    idArquitetura: 'COURACA_LIMIAR',
+    faseJogo: 'EVENTO',
+  });
+  const clEvCouraca7 = structuredClone(estEvCouraca7);
+  clEvCouraca7.eventoAtual = { noId: 'NO_1_A', tipoNo: 'SOS', idTemplateEvento: 'SOS_1_REDE_ARRASTO' };
+  const congEvCouraca7 = congelarProfundo(clEvCouraca7);
+  const resEvKeyBCouraca = traduzirInputDomParaComandoUi(
+    { tipoEvento: 'KEYDOWN', code: 'KeyB' },
+    congEvCouraca7,
+    projetarViewModelWireframe(congEvCouraca7),
+    {}
+  );
+  assert.equal(resEvKeyBCouraca.resultadoMotor?.aceito, true);
 
   console.log(
     `[N4] Portão 08.7 examinado: ${telas7.length} telas com 0 bytes diff (${bytesComparados} bytes RGBA), ${totalHitboxesZeroColisao9} hitboxes 0 colisão, GD-1/GD-2/GD-3 e 60 FPS validados`
@@ -2640,6 +2783,2626 @@ test('[PORTÃO 08.8 | Vitrine Steam 4-Frames + Travessia de Portais 60 FPS | L1 
 
   console.log('[N4] Portão 08.8 examinado: 28 poses 4-frames, 92 matrizes Hi-Bit, 3 pranchas Steam 1080p, continuidade de handoff e sifão J do Duto Ventral 5<->6 validados');
 });
+
+test('[PORTÃO 08.9 | Jogo Completo Steam 9/10 | L1 + L2 + L3 + L4 + L6 + N1 + N4 + MUT-O6-18..25] Campanha S1..S8 ponta a ponta, Persistência em Disco + Permadeath, Oficina 10 Árvores (2330 Alfa) + Porão Peso Real, Salva Manual, Placas de Blindagem, Abordagem Sala-a-Sala, Áudio Marítimo Multicamada 400Hz, 8 Variantes 5.7.A, Paridade 0-Byte nas Novas Telas e Launcher CLI', async () => {
+  const dirTmpPersist = fs.mkdtempSync(path.join(os.tmpdir(), 'biofoil-portao089-persist-'));
+  const dirTmpCli = fs.mkdtempSync(path.join(os.tmpdir(), 'biofoil-portao089-cli-'));
+
+  try {
+    // 1. Persistência Atômica Real em Disco (profile.json + run_save.json + Permadeath TR_7A) [MUT-O6-18]
+    const dirPadraoResolvido = obterDiretorioDadosPadraoBiofoil({ diretorioDados: dirTmpPersist });
+    assert.equal(dirPadraoResolvido, path.resolve(dirTmpPersist));
+
+    const perfilIni = criarPerfilInicial();
+    assert.equal(Object.isFrozen(perfilIni), true);
+    const resSalvaPerfil = salvarPerfilDisco(perfilIni, { diretorioDados: dirTmpPersist });
+    assert.equal(resSalvaPerfil.ok, true);
+    const resLidoPerfil = carregarPerfilDisco({ diretorioDados: dirTmpPersist });
+    assert.equal(resLidoPerfil.ok, true);
+    assert.equal(resLidoPerfil.status, 'CARREGADO_DISCO');
+    assert.equal(resLidoPerfil.perfil.carcacasDesbloqueadas.CARCACA_ALFA, true);
+    assert.equal(resLidoPerfil.perfil.carcacasDesbloqueadas.MANTA_VOLT, false);
+
+    const estRunDisco = criarEstadoInicialPartida({
+      seedPartida: 'seed-persist-089',
+      idArquitetura: 'CARCACA_ALFA',
+      faseJogo: 'COMBATE',
+      classeAlvoInicial: 'BARCO_HUMANO',
+    });
+    const resSalvaRun = salvarRunSaveDisco(estRunDisco, { diretorioDados: dirTmpPersist });
+    assert.equal(resSalvaRun.ok, true);
+    assert.equal(fs.existsSync(path.join(dirTmpPersist, 'run_save.json')), true);
+
+    const resLidoRun = carregarRunSaveDisco({ diretorioDados: dirTmpPersist });
+    assert.equal(resLidoRun.ok, true);
+    assert.equal(resLidoRun.status, 'ENCONTRADO');
+    assert.equal(resLidoRun.estadoRun.meta.seedPartida, 'seed-persist-089');
+
+    const resSyncPermadeath = sincronizarTransicaoPersistenciaDisco(
+      estRunDisco,
+      perfilIni,
+      'TR_7A_DERROTA_EM_COMBATE',
+      { setorNumeroAlcanceMaxNestaRun: 8, incrementarRunsIniciadas: 1 },
+      { diretorioDados: dirTmpPersist }
+    );
+    assert.equal(resSyncPermadeath.aceita, true);
+    assert.equal(resSyncPermadeath.apagouRunSavePermadeath, true);
+    assert.equal(
+      fs.existsSync(path.join(dirTmpPersist, 'run_save.json')),
+      false,
+      '[MUT-O6-18] Permadeath (TR_7A_DERROTA_EM_COMBATE) deve apagar fisicamente run_save.json do disco'
+    );
+
+    salvarRunSaveDisco(estRunDisco, { diretorioDados: dirTmpPersist });
+    const resSyncVitoriaFinal = sincronizarTransicaoPersistenciaDisco(
+      estRunDisco,
+      perfilIni,
+      'TR_7B_VITORIA_FINAL',
+      { setorNumeroAlcanceMaxNestaRun: 8, incrementarVitoriasFinais: 1 },
+      { diretorioDados: dirTmpPersist }
+    );
+    assert.equal(resSyncVitoriaFinal.aceita, true);
+    assert.equal(fs.existsSync(path.join(dirTmpPersist, 'run_save.json')), false);
+    const perfilPosTr7b = carregarPerfilDisco({ diretorioDados: dirTmpPersist });
+    assert.equal(perfilPosTr7b.perfil.carcacasDesbloqueadas.COLMEIA_VIVA, true);
+
+    salvarRunSaveDisco(estRunDisco, { diretorioDados: dirTmpPersist });
+    const resApagaDireto = apagarRunSavePermadeathDisco({ diretorioDados: dirTmpPersist });
+    assert.equal(resApagaDireto.ok, true);
+    assert.equal(fs.existsSync(path.join(dirTmpPersist, 'run_save.json')), false);
+
+    // 2. Assets Hi-Bit, Escala Nearest, Ícones 12x12 dos 8 Sistemas e 8 Variantes Visuais 5.7.A [MUT-O6-19]
+    const assetsHiBit = obterAssetsConceitoHiBit();
+    assert.equal(assetsHiBit.f1Play.largura, 810);
+    assert.equal(assetsHiBit.f1Play.altura, 390);
+    const tabRaster = obterTabelasRasterUnificado();
+    assert.equal(Object.isFrozen(tabRaster), true);
+
+    const miniRgba = Buffer.from([
+      255, 0, 0, 255, 0, 255, 0, 255,
+      0, 0, 255, 255, 255, 255, 0, 255,
+    ]);
+    const esc2x = escalarNearestRgba(2, 2, miniRgba, 2);
+    assert.equal(esc2x.largura, 4);
+    assert.equal(esc2x.altura, 4);
+    const png4x4 = codificarBufferRgbaParaPng(esc2x.largura, esc2x.altura, esc2x.rgba);
+    assert.equal(png4x4.subarray(0, 4).toString('hex'), '89504e47');
+    const atlasPngBuf = exportarAtlasHiBitsPngBuffer(1);
+    assert.equal(atlasPngBuf.length > 1000, true);
+    const qPolvo0 = obterQuadroAnimacaoEntidade('POLVO', 0);
+    assert.equal(qPolvo0.ok, true);
+    assert.equal(exportarPacoteAssets60Fps().versao, 'STEAM_60FPS_V4');
+
+    const siglasSistemas = ['ESC', 'SIF', 'BRQ', 'ART', 'CTX', 'MST', 'TUB', 'TNT'];
+    const hashesIcones = new Set();
+    for (const sig of siglasSistemas) {
+      const ic = obterIconeSistemaRodape12x12(sig);
+      assert.equal(ic.ok, true);
+      assert.equal(ic.gradePixels.length, 12);
+      assert.equal(ic.gradePixels[0].length, 12);
+      hashesIcones.add(ic.gradePixels.join('|'));
+    }
+    assert.equal(hashesIcones.size, 8);
+    assert.equal(Object.keys(ICONES_SISTEMAS_RODAPE_12X12).length, 8);
+    assert.equal(obterIconeSistemaRodape12x12('INEXISTENTE').ok, false);
+
+    const idsBestiario8 = [
+      'BARCO_1_LANCHA',
+      'BARCO_2_CORVETA',
+      'BARCO_3_ARRASTAO',
+      'BARCO_4_SUBMARINO',
+      'MONSTRO_1_TEUTHIS',
+      'MONSTRO_2_ENGUIA',
+      'MONSTRO_3_CARANGUEJO',
+      'MONSTRO_4_HIDRA',
+    ];
+    const assinaturasVisuais8 = new Set();
+    for (const idArqInim of idsBestiario8) {
+      const pv = obterPerfilVisualArquetipoInimigo(idArqInim);
+      assert.equal(Object.isFrozen(pv), true);
+      assinaturasVisuais8.add(
+        `${pv.idArquetipo}|${pv.superestrutura ?? pv.morfologia}|${pv.tintCascoRgb.join(',')}`
+      );
+    }
+    assert.equal(
+      assinaturasVisuais8.size,
+      8,
+      '[MUT-O6-19] Todos os 8 arquétipos do Bestiário 5.7.A devem ter silhueta/superestrutura/paleta distintas'
+    );
+    assert.equal(Object.keys(VARIANTES_VISUAIS_INIMIGOS_57A).length, 11);
+
+    // 3. Áudio Marítimo Multicamada (4 camadas + 11 SFX FM/Ruído + Trilha 5 Estados + Filtro 400 Hz) [MUT-O6-20]
+    assert.equal(CAMADAS_PAISAGEM_MARITIMA.length, 4);
+    assert.equal(Object.keys(CATALOGO_SFX_MULTICAMADA_BIOFOIL).length, 11);
+    assert.equal(Object.keys(ESTADOS_TRILHA_ADAPTATIVA_BIOFOIL).length, 5);
+
+    const trilhaHangar = selecionarEstadoTrilhaAdaptativa({ meta: { faseJogo: 'INICIO' } });
+    const trilhaDraga = selecionarEstadoTrilhaAdaptativa({
+      meta: { faseJogo: 'COMBATE' },
+      alvoCombate: { ativo: true, classeAlvo: 'CHEFE_DRAGA' },
+    });
+    assert.equal(trilhaHangar.id, 'TRILHA_HANGAR_INICIO');
+    assert.equal(trilhaDraga.id, 'TRILHA_CHEFE_DRAGA');
+
+    const estFoilSom = criarEstadoCampanhaCompleta({ faseInicial: 'COMBATE', seedPartida: 'seed-som-089' });
+    const estTdSom = structuredClone(estFoilSom);
+    estTdSom.naveJogador.estadoFisico = '2_TOUCHDOWN';
+    estTdSom.meta.eventosVisuaisUltimoTick = [
+      { idEvento: 1, tipo: 'DISPARO_JOGADOR', chassiId: 'CANHAO_ARPAO_CABO' },
+      { idEvento: 2, tipo: 'IMPACTO_JOGADOR', dano: 2 },
+    ];
+    const sfxTick = extrairSfxMulticamadaDoTick(estFoilSom, estTdSom, null);
+    assert.equal(sfxTick.length >= 2, true);
+
+    const paisagemFoil = construirPaisagemSonoraCompleta(estFoilSom, estFoilSom, null);
+    const paisagemTd = construirPaisagemSonoraCompleta(estFoilSom, estTdSom, null);
+    assert.equal(paisagemFoil.filtroSubaquaticoMaster.frequenciaCorteHz, 20000);
+    assert.equal(
+      paisagemTd.filtroSubaquaticoMaster.frequenciaCorteHz,
+      400,
+      '[MUT-O6-20] Em 2_TOUCHDOWN o filtro subaquático master da paisagem sonora deve cortar em 400 Hz'
+    );
+
+    const pcmArpao = sintetizarBufferPcmMulticamada('SFX_DISPARO_ARPAO_CABO', { submerso: false, sampleRate: 8000 });
+    const pcmArpaoSub = sintetizarBufferPcmMulticamada('SFX_DISPARO_ARPAO_CABO', { submerso: true, sampleRate: 8000 });
+    assert.equal(pcmArpao.ok, true);
+    assert.equal(pcmArpao.picoAbs > 0.05, true);
+    assert.equal(pcmArpaoSub.frequenciaCorteMasterHz, 400);
+    assert.equal(pcmArpaoSub.energiaAltaFreqRelativa < pcmArpao.energiaAltaFreqRelativa, true);
+    const srcSintJs = gerarCodigoSintetizadorMaritimoClienteJs();
+    assert.equal(srcSintJs.includes('criarMotorAudioMaritimoCliente'), true);
+
+    // 4. Beam Assistido (4 salas + Draga F1/F2/F3), Salva Manual [A]/[X], 10 Árvores (2330 Alfa), Blindagem, Porão 0kg e Abordagem Viva [MUT-O6-21..23]
+    for (const [faseDraga, totalSalas] of [[1, 6], [2, 6], [3, 5]]) {
+      const trincaDraga = calcularTrincaBeamAutomatica(
+        { classeAlvo: 'CHEFE_DRAGA', faseChefe: faseDraga, salasOuOrgaos: Array.from({ length: totalSalas }, (_, i) => ({ id: i + 1 })) },
+        1
+      );
+      assert.equal(trincaDraga.ok, true);
+      assert.equal(trincaDraga.trincaSalasBeam.length, 3);
+    }
+
+    // Prova real do Cortador Térmico a Plasma varrendo 3 salas ortogonais da CHEFE_DRAGA Fase 3 (após Blindagem Térmica cair a 0) [MUT-O6-21]
+    const estBeamDragaF3 = structuredClone(estFoilSom);
+    estBeamDragaF3.naveJogador.camaras.find((c) => c.id === 1).nivelMaxBarras = 4;
+    estBeamDragaF3.naveJogador.camaras.find((c) => c.id === 1).barrasIntegridade = 4;
+    estBeamDragaF3.naveJogador.camaras.find((c) => c.id === 1).energiaAlocada = 2;
+    estBeamDragaF3.naveJogador.armasAtivas = [
+      {
+        slotIndex: 0,
+        arma: {
+          id: 'CORTADOR_TERMICO_PLASMA',
+          chassiId: 'CORTADOR_TERMICO_PLASMA',
+          energiaCusto: 2,
+          soquetesMax: 1,
+          orgaosEnxertados: [],
+          tempoRecargaBaseSeg: 14,
+          progressoRecargaSeg: 13.9,
+          salaAlvoId: 1,
+          trincaSalasBeam: [1, 2, 3],
+          modoDisparo: 'AUTOMATICO',
+        },
+      },
+    ];
+    estBeamDragaF3.alvoCombate = {
+      ativo: true,
+      idInimigo: 'CHEFE_DRAGA',
+      nome: 'Draga Continental Fase 3',
+      classeAlvo: 'CHEFE_DRAGA',
+      faseChefe: 3,
+      hpCascoAtual: 24,
+      hpCascoMax: 24,
+      camadasBarreiraAtivas: 0,
+      blindagemTermicaExternaPts: 0,
+      esquivaEfetivaPct: 0,
+      salasOuOrgaos: [1, 2, 3, 4, 5].map((idS) => ({
+        id: idS,
+        nome: `SALA_F3_${idS}`,
+        integridadeAtual: 3,
+        integridadeMax: 3,
+        aguaKg: 0,
+        tripulantes: [],
+      })),
+    };
+    const posDisparoBeamF3 = avancarTickPartidaEmTempoReal(congelarProfundo(estBeamDragaF3), 0.25);
+    assert.equal(
+      posDisparoBeamF3.alvoCombate.hpCascoAtual,
+      18,
+      '[MUT-O6-21] Cortador Térmico (2 dano/sala, Seção 5.1) deve varrer as 3 salas ortogonais [1,2,3] da Draga Fase 3 (DRAGA_F3_5) causando 6 de dano total ao casco'
+    );
+
+    // Salva Manual [A] segura disparo em 100% e [X] dispara em uníssono [MUT-O6-22]
+    const resModoManual = alternarModoDisparoArma(estFoilSom, 'TODOS', true);
+    assert.equal(resModoManual.ok, true);
+    assert.equal(resModoManual.modoAtivo, 'MANUAL');
+    assert.equal(MODOS_DISPARO_ARMAS.MANUAL, 'MANUAL');
+    const estProntoManual = structuredClone(resModoManual.estado);
+    estProntoManual.naveJogador.armasAtivas[0].arma.salaAlvoId = 1;
+    estProntoManual.naveJogador.armasAtivas[0].arma.progressoRecargaSeg =
+      estProntoManual.naveJogador.armasAtivas[0].arma.tempoRecargaBaseSeg;
+    estProntoManual.alvoCombate.esquivaEfetivaPct = 0;
+    estProntoManual.alvoCombate.camadasBarreiraAtivas = 0;
+    const hpAlvoAntesHold = estProntoManual.alvoCombate.hpCascoAtual;
+    const estAposTickHold = avancarTickPartidaEmTempoReal(congelarProfundo(estProntoManual), 0.25);
+    assert.equal(
+      estAposTickHold.alvoCombate.hpCascoAtual,
+      hpAlvoAntesHold,
+      '[MUT-O6-22] Armas em modo MANUAL devem segurar 100% de carga sem disparar sozinhas no tick'
+    );
+    const resSalva = dispararSalvaManualPronta(estAposTickHold, 'TODOS');
+    assert.equal(resSalva.ok, true);
+    assert.equal(resSalva.armasAutorizadas >= 1, true);
+    const estPosSalvaDisparada = avancarTickPartidaEmTempoReal(resSalva.estado, 0.25);
+    assert.equal(estPosSalvaDisparada.naveJogador.armasAtivas[0].arma.progressoRecargaSeg, 0);
+
+    // Todas as 10 árvores da Oficina (5.6.A): soma exata 2330 na Carcaça Alfa + Placas de Blindagem (+15kg/nv e +5 HP/nv) [MUT-O6-23]
+    let estOficinaAlfa = criarEstadoCampanhaCompleta({
+      idArquitetura: 'CARCACA_ALFA',
+      faseInicial: 'LOJA',
+      seedPartida: 'seed-oficina-2330',
+    });
+    const cloneCarteiraRica = structuredClone(estOficinaAlfa);
+    cloneCarteiraRica.economia = { sucata: 5000, biomassa: 5000, combustivel: 20, municao: 20 };
+    cloneCarteiraRica.recursos = cloneCarteiraRica.economia;
+    estOficinaAlfa = congelarProfundo(cloneCarteiraRica);
+    const pesoAlfaAntesUpgrades = estOficinaAlfa.naveJogador.pesoTotalKg;
+
+    let gastoTotal2330 = 0;
+    const ids10Arvores = [
+      'MASTRO_FOIL',
+      'ARTILHARIA_DORSAL',
+      'PLACAS_BLINDAGEM',
+      'GLANDULA_BARREIRA',
+      'SIFAO_PROPULSAO',
+      'BOMBA_BRANQUIAL',
+      'CORTEX_NAVEGACAO',
+      'TUBO_PRESSURIZADO',
+      'GLANDULA_TINTA_FURTIVA',
+      'CORACAO_BIO_ELETRICO',
+    ];
+    for (const idArv of ids10Arvores) {
+      let guard = 0;
+      while (guard < 20) {
+        guard += 1;
+        const cot = calcularCustoProximoUpgradeNave(estOficinaAlfa.naveJogador, idArv, true);
+        if (!cot.disponivel || cot.custoProximo === null) break;
+        const moedaUsar = idArv === 'CORACAO_BIO_ELETRICO' && guard % 2 === 0 ? 'BIOMASSA' : 'SUCATA';
+        const resUp = aplicarUpgradeNaveCampanha(estOficinaAlfa, idArv, { moedaPreferencial: moedaUsar });
+        assert.equal(resUp.ok, true);
+        gastoTotal2330 += resUp.custoPago;
+        estOficinaAlfa = resUp.estado;
+      }
+    }
+    assert.equal(gastoTotal2330, 2330);
+    assert.equal(estOficinaAlfa.naveJogador.nivelBlindagem, 3);
+    assert.equal(estOficinaAlfa.naveJogador.hpCascoMax, 45);
+    assert.equal(
+      estOficinaAlfa.naveJogador.pesoTotalKg,
+      pesoAlfaAntesUpgrades + 45,
+      '[MUT-O6-23] Placas de Blindagem Nv.3 devem adicionar exatamente +45 kg (3 x 15 kg) à massa total da bio-nave'
+    );
+
+    // Porão de Carga com Massa Física Real (Contra-Auditoria #4) + Equipar/Desequipar Arma + Enxertar/Remover/Ejetar Órgão
+    const pesoSemPorao = estOficinaAlfa.naveJogador.pesoTotalKg;
+    let estPorao = structuredClone(estOficinaAlfa);
+    estPorao.naveJogador.poraoCarga = [
+      { slotIndex: 0, item: { id: 'GLANDULA_BAIACU', tipo: 'ORGAO', nome: 'Glândula de Baiacu', pesoKg: 5 } },
+      { slotIndex: 1, item: { id: 'MORTEIRO_ESPOROS', tipo: 'ARMA', nome: 'Morteiro de Esporos', pesoKg: 12 } },
+      { slotIndex: 2, item: { id: 'BOLSA_TINTA_ABISSAL', tipo: 'ORGAO', nome: 'Bolsa de Tinta', pesoKg: 5 } },
+      { slotIndex: 3, item: null },
+    ];
+    estPorao = congelarProfundo(estPorao);
+    const pesoEsperadoCom22KgPorao = pesoSemPorao + 22;
+    const resEnxerto = gerenciarEquipamentoPoraoEOrgaos(estPorao, {
+      tipo: 'ENXERTAR_ORGAO_PORAO',
+      indicePorao: 0,
+      slotArmaIndex: 0,
+    });
+    assert.equal(resEnxerto.ok, true);
+    assert.equal(resEnxerto.estado.naveJogador.pesoTotalKg, pesoEsperadoCom22KgPorao);
+    assert.equal(resEnxerto.estado.naveJogador.armasAtivas[0].arma.orgaosEnxertados.length, 1);
+    const resRemoverOrg = gerenciarEquipamentoPoraoEOrgaos(resEnxerto.estado, {
+      tipo: 'REMOVER_ORGAO_PARA_PORAO',
+      slotArmaIndex: 0,
+      indiceOrgao: 0,
+    });
+    assert.equal(resRemoverOrg.ok, true);
+    assert.equal(resRemoverOrg.estado.naveJogador.pesoTotalKg, pesoEsperadoCom22KgPorao);
+    const resEquipArma = gerenciarEquipamentoPoraoEOrgaos(resRemoverOrg.estado, {
+      tipo: 'EQUIPAR_ARMA_PORAO',
+      indicePorao: 1,
+      slotArmaIndex: 2,
+    });
+    assert.equal(resEquipArma.ok, true);
+    assert.equal(resEquipArma.estado.naveJogador.pesoTotalKg, pesoEsperadoCom22KgPorao);
+    assert.equal(resEquipArma.estado.naveJogador.armasAtivas[2].arma.chassiId, 'MORTEIRO_ESPOROS');
+    const resDesequipArma = gerenciarEquipamentoPoraoEOrgaos(resEquipArma.estado, {
+      tipo: 'DESEQUIPAR_ARMA_PARA_PORAO',
+      slotArmaIndex: 2,
+    });
+    assert.equal(resDesequipArma.ok, true);
+    assert.equal(resDesequipArma.estado.naveJogador.pesoTotalKg, pesoEsperadoCom22KgPorao);
+    const resDescartar = gerenciarEquipamentoPoraoEOrgaos(resDesequipArma.estado, {
+      tipo: 'DESCARTAR_ITEM_PORAO',
+      indicePorao: 2,
+    });
+    assert.equal(resDescartar.ok, true);
+    assert.equal(resDescartar.estado.naveJogador.pesoTotalKg, pesoEsperadoCom22KgPorao - 5);
+
+    // Abordagem Real BORDO_INIMIGO: Caranguejos (15 DPS), Movimento entre Salas Inimigas e Captura Intacta
+    let estAbord = criarEstadoCampanhaCompleta({
+      idArquitetura: 'COURACA_LIMIAR',
+      faseInicial: 'COMBATE',
+      seedPartida: 'seed-abordagem-089',
+    });
+    const cloneAbord = structuredClone(estAbord);
+    const crabs = cloneAbord.naveJogador.tripulacao.filter((t) => t.especie === 'CARANGUEJO');
+    crabs[0].camaraAtualId = 7;
+    crabs[1].camaraAtualId = 7;
+    cloneAbord.alvoCombate = criarAlvoSetor1Canonico('BARCO_HUMANO');
+    estAbord = congelarProfundo(cloneAbord);
+    const lancRes = despacharComandoUi(estAbord, {
+      tipo: 'LANCAR_ABORDAGEM',
+      tripulantesIds: [crabs[0].id, crabs[1].id],
+      salaAlvoId: 1,
+    });
+    assert.equal(lancRes.aceito, true);
+    const movAbRes = ordenarMovimentoAbordagemInimiga(lancRes.estado, crabs[0].id, 2);
+    assert.equal(movAbRes.ok, true);
+    assert.equal(
+      movAbRes.estado.naveJogador.tripulacao.find((t) => t.id === crabs[0].id).proximaSalaInimigaId,
+      2
+    );
+    // Move ambos com travessia cadenciada (1.25s/salto) para eliminar a tripulação inimiga e acionar CAPTURA_INTACTA!
+    let estLutaBordo = ordenarMovimentoAbordagemInimiga(movAbRes.estado, crabs[1].id, 2).estado;
+    const clInimFraco = structuredClone(estLutaBordo);
+    for (const s of clInimFraco.alvoCombate.salasOuOrgaos) {
+      s.tripulantes = s.id === 2 ? [{ id: 'mar-unico', especie: 'MARINHEIRO', hpAtual: 12, hpMax: 100 }] : [];
+    }
+    estLutaBordo = avancarTickCampanhaCompleta(congelarProfundo(clInimFraco), 1.5);
+    assert.equal(
+      estLutaBordo.naveJogador.tripulacao.find((t) => t.id === crabs[0].id).salaInimigaId,
+      2
+    );
+    estLutaBordo = avancarTickCampanhaCompleta(estLutaBordo, 1.0);
+    assert.equal(estLutaBordo.meta.modalCampanhaAtivo, 'SAQUE');
+    assert.equal(estLutaBordo.meta.saquePendente.modalidade, 'CAPTURA_INTACTA');
+
+    // 5. Escalonamento S1..S7, Campanha HTTP Completa + Draga F1->F2->F3 -> VITÓRIA, Paridade 0-Byte nas Novas Telas e Launcher CLI [MUT-O6-24..25]
+    const alvoS1 = gerarAlvoInimigoEscaladoSetor('seed-s17', 1, 'NO_1');
+    const alvoS7 = gerarAlvoInimigoEscaladoSetor('seed-s17', 7, 'NO_7');
+    assert.equal(alvoS7.hpCascoMax > alvoS1.hpCascoMax, true);
+
+    const spreadViaHooks = exportarSpreadAnimacaoSteamPngBufferComHooks(
+      'TRIPULACAO_INVASORES_4FRAMES',
+      { escalaInteira: 1 },
+      { projetarViewModelWireframe, interpolarEstadoVisual60Fps }
+    );
+    assert.equal(spreadViaHooks.ok, true);
+
+    const cliInst = await iniciarJogoBiofoilCli({
+      port: 0,
+      diretorioDados: dirTmpCli,
+      seedPartida: 'seed-cli-campanha-089',
+      abrirNavegador: false,
+      silencioso: true,
+    });
+    try {
+      assert.equal(cliInst.ok, true);
+      assert.equal(cliInst.faseInicial, 'INICIO');
+
+      // Verifica Hangar inicial via GET /api/estado e inicia Nova Run via POST /api/comando (ACAO_CAMPANHA) [MUT-O6-24]
+      const rEstIni = await fetch(`${cliInst.url}/api/estado`);
+      const jEstIni = await rEstIni.json();
+      assert.equal(jEstIni.viewModel.faseJogo, 'INICIO');
+      assert.equal(jEstIni.paisagemSonora.trilhaAdaptativa.idEstado, 'TRILHA_HANGAR_INICIO');
+
+      const hbIniciar = jEstIni.hitboxes.find((h) => h.idHitbox === 'HANGAR_INICIAR_RUN');
+      const rClickIni = await fetch(`${cliInst.url}/api/comando`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventoInput: {
+            tipoEvento: 'CLICK',
+            botaoMouse: 0,
+            clientX: hbIniciar.x + 10,
+            clientY: hbIniciar.y + 10,
+            retanguloCanvas: { left: 0, top: 0, width: 960, height: 540 },
+          },
+        }),
+      });
+      const jPosIni = await rClickIni.json();
+      assert.equal(
+        jPosIni.viewModel.faseJogo,
+        'MAPA',
+        '[MUT-O6-24] Clicar em HANGAR_INICIAR_RUN no servidor web deve iniciar a campanha e transicionar INICIO -> MAPA'
+      );
+      assert.equal(fs.existsSync(path.join(dirTmpCli, 'run_save.json')), true);
+
+      // Abre modal OFICINA via tecla KeyU no servidor web e valida paridade 0-byte + visibilidade real [MUT-O6-25]
+      const rKeyU = await fetch(`${cliInst.url}/api/comando`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ eventoInput: { tipoEvento: 'KEYDOWN', code: 'KeyU' } }),
+      });
+      const jOficina = await rKeyU.json();
+      assert.equal(jOficina.viewModel.modalCampanhaAtivo, 'OFICINA');
+      assert.equal(jOficina.viewModel.oficinaResumo.arvores.length, 10);
+
+      // Prova visual e paridade 0-byte Server<->Browser nas 4 telas/modais novos: INICIO, OFICINA, SAQUE e FIM_DE_RUN!
+      const vmSaque = projetarViewModelWireframe(estLutaBordo);
+      const resConfSaque = executarAcaoCampanhaCompleta(estLutaBordo, { tipoAcao: 'CONFIRMAR_SAQUE_POS_COMBATE' });
+      assert.equal(resConfSaque.ok, true);
+      assert.equal(resConfSaque.estado.meta.modalCampanhaAtivo, null);
+
+      // Derrota as 3 fases da CHEFE_DRAGA no Setor 8 -> VITORIA_CAMPANHA em FIM_DE_RUN!
+      let estDragaS8 = criarEstadoCampanhaCompleta({
+        idArquitetura: 'CARCACA_ALFA',
+        faseInicial: 'COMBATE',
+        setorNumero: 8,
+        seedPartida: 'seed-vitoria-draga-089',
+      });
+      const prepFase = (st, faseEsperada) => {
+        const cl = structuredClone(st);
+        if (faseEsperada === 1) {
+          cl.alvoCombate = {
+            ativo: true,
+            idInimigo: 'CHEFE_DRAGA',
+            nome: 'Draga Continental',
+            classeAlvo: 'CHEFE_DRAGA',
+            faseChefe: 1,
+            hpCascoAtual: 1,
+            hpCascoMax: 24,
+            camadasBarreiraAtivas: 0,
+            esquivaEfetivaPct: 0,
+            salasOuOrgaos: [1, 2, 3, 4, 5, 6].map((i) => ({ id: i, nome: `S_${i}`, integridadeAtual: 2, integridadeMax: 2, aguaKg: 0, tripulantes: [] })),
+          };
+        } else {
+          cl.alvoCombate.hpCascoAtual = 1;
+          cl.alvoCombate.camadasBarreiraAtivas = 0;
+          cl.alvoCombate.blindagemTermicaExternaPts = 0;
+          cl.alvoCombate.esquivaEfetivaPct = 0;
+        }
+        cl.naveJogador.armasAtivas[0].arma.salaAlvoId = 1;
+        cl.naveJogador.armasAtivas[0].arma.progressoRecargaSeg = 99;
+        return congelarProfundo(cl);
+      };
+      estDragaS8 = avancarTickCampanhaCompleta(prepFase(estDragaS8, 1), 0.25);
+      assert.equal(estDragaS8.alvoCombate.faseChefe, 2);
+      estDragaS8 = avancarTickCampanhaCompleta(prepFase(estDragaS8, 2), 0.25);
+      assert.equal(estDragaS8.alvoCombate.faseChefe, 3);
+      estDragaS8 = avancarTickCampanhaCompleta(prepFase(estDragaS8, 3), 0.25);
+      assert.equal(estDragaS8.meta.faseJogo, 'FIM_DE_RUN');
+      assert.equal(estDragaS8.meta.desfechoRun, 'VITORIA_CAMPANHA');
+      assert.equal(estDragaS8.perfilJogador.estatisticasGlobais.vitoriasFinais, 1);
+
+      const vmOficina = jOficina.viewModel;
+      const hbsOficina = obterMapaHitboxesNativo(vmOficina);
+      const rgbaMapaPuro = rasterizarQuadroRgba960x540(
+        { ...vmOficina, modalCampanhaAtivo: null },
+        {},
+        assetsHiBit,
+        hbsOficina,
+        tabRaster
+      );
+      const rgbaOficina = rasterizarQuadroRgba960x540(vmOficina, {}, assetsHiBit, hbsOficina, tabRaster);
+      let diffOficinaVsMapa = 0;
+      for (let b = 0; b < rgbaOficina.length; b += 1) {
+        if (rgbaOficina[b] !== rgbaMapaPuro[b]) diffOficinaVsMapa += 1;
+      }
+      assert.equal(
+        diffOficinaVsMapa > 50000,
+        true,
+        '[MUT-O6-25] Modal OFICINA deve desenhar o painel completo sobre o Mapa no Canvas 960x540'
+      );
+
+      // Valida 0 colisão de hitboxes E paridade 0-byte Servidor<->Cliente nas 4 telas/modais novos!
+      const codigoCliente089 = gerarCodigoJsClienteBiofoil();
+      const idxRast089 = codigoCliente089.indexOf('function criarContextoPrimitivasRgba960x540');
+      const idxBoot089 = codigoCliente089.indexOf('let estadoCliente = JSON.parse');
+      const ctxVm089 = vm.createContext({
+        Math,
+        Number,
+        String,
+        Boolean,
+        Array,
+        Object,
+        Set,
+        Map,
+        WeakMap,
+        Uint8Array,
+        Uint8ClampedArray,
+        Int16Array,
+        Int32Array,
+      });
+      vm.runInContext(
+        `${codigoCliente089.slice(idxRast089, idxBoot089)}\nglobalThis.__rast089 = rasterizarQuadroRgba960x540;`,
+        ctxVm089
+      );
+
+      const telasNovas = [
+        ['INICIO', jEstIni.viewModel],
+        ['OFICINA', vmOficina],
+        ['SAQUE', vmSaque],
+        ['FIM_DE_RUN', projetarViewModelWireframe(estDragaS8)],
+      ];
+      let bytesParidade089 = 0;
+      for (const [rotTela, vmT] of telasNovas) {
+        const hbsT = obterMapaHitboxesNativo(vmT);
+        assert.equal(hbsT.length >= 2, true, `Tela ${rotTela} deve expor hitboxes interativas`);
+        for (let i = 0; i < hbsT.length; i += 1) {
+          for (let j = i + 1; j < hbsT.length; j += 1) {
+            const A = hbsT[i];
+            const B = hbsT[j];
+            const colide =
+              A.x < B.x + B.largura &&
+              A.x + A.largura > B.x &&
+              A.y < B.y + B.altura &&
+              A.y + A.altura > B.y;
+            assert.equal(colide, false, `Colisão de hitboxes em ${rotTela}: ${A.idHitbox} vs ${B.idHitbox}`);
+          }
+        }
+        const srvBuf = rasterizarQuadroRgba960x540(vmT, {}, assetsHiBit, hbsT, tabRaster);
+        const cliBuf = ctxVm089.__rast089(vmT, {}, assetsHiBit, hbsT, tabRaster);
+        let diffBytes = 0;
+        for (let k = 0; k < srvBuf.length; k += 1) {
+          if (srvBuf[k] !== cliBuf[k]) diffBytes += 1;
+        }
+        assert.equal(diffBytes, 0, `Paridade 0-byte Server<->Browser violada em ${rotTela}`);
+        bytesParidade089 += srvBuf.length;
+      }
+
+      console.log(
+        `[N4] Portão 08.9 examinado: 10 árvores (2330 Alfa), 8 arquétipos 5.7.A, 10 SFX + 5 trilhas + 4 camadas marítimas, 4 novas telas com 0 bytes diff (${bytesParidade089} bytes RGBA) e campanha S1..S8 completa`
+      );
+    } finally {
+      await cliInst.fechar();
+    }
+  } finally {
+    fs.rmSync(dirTmpPersist, { recursive: true, force: true });
+    fs.rmSync(dirTmpCli, { recursive: true, force: true });
+  }
+});
+
+test('Portão 08.10: Submódulos Acíclicos Onda 6, Estoque Finito de Loja, Topologias 5/6 Salas 5.7.A, PCM Int16 e Runtime Completo /cliente.js em VM [MUT-O6-26]', async () => {
+  const dirTmp0810 = fs.mkdtempSync(path.join(os.tmpdir(), 'biofoil-rt-0810-'));
+  try {
+    const assetsHiBit = obterAssetsConceitoHiBit();
+    const tabRaster = obterTabelasRasterUnificado();
+    const cachesTeste = {
+      f4CropCache: new WeakMap(),
+      portraitCleanCache: new WeakMap(),
+      placaCleanCache: new WeakMap(),
+    };
+
+    // 0. Auditoria Estática Real de Aciclicidade (DFS) sobre 100% do grafo ESM de src/ (38 módulos, 0 ciclos dirigidos)
+    const listarMjsRecursivo = (dir) =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((ent) =>
+        ent.isDirectory()
+          ? listarMjsRecursivo(path.join(dir, ent.name))
+          : ent.name.endsWith('.mjs')
+            ? [path.resolve(dir, ent.name)]
+            : []
+      );
+    const arquivosSrcEsm = listarMjsRecursivo(path.resolve(process.cwd(), 'src'));
+    assert.equal(arquivosSrcEsm.length >= 38, true);
+    const arestasEsm = new Map();
+    for (const arqAbs of arquivosSrcEsm) {
+      const conteudoArq = fs.readFileSync(arqAbs, 'utf8');
+      const depsArq = [];
+      for (const mImp of conteudoArq.matchAll(/(?:import|export)\s+(?:[\s\S]*?\s+from\s+)?['"](\.[^'"]+)['"]/g)) {
+        depsArq.push(path.resolve(path.dirname(arqAbs), mImp[1]));
+      }
+      arestasEsm.set(arqAbs, depsArq);
+    }
+    const corVisita = new Map();
+    const pilhaDfs = [];
+    const ciclosDirigidosEsm = [];
+    const visitarDfsEsm = (u) => {
+      corVisita.set(u, 1);
+      pilhaDfs.push(u);
+      for (const v of arestasEsm.get(u) ?? []) {
+        if (!corVisita.get(v)) {
+          visitarDfsEsm(v);
+        } else if (corVisita.get(v) === 1) {
+          const idxCiclo = pilhaDfs.indexOf(v);
+          ciclosDirigidosEsm.push(
+            pilhaDfs
+              .slice(idxCiclo)
+              .concat(v)
+              .map((p) => path.relative(process.cwd(), p))
+              .join(' -> ')
+          );
+        }
+      }
+      pilhaDfs.pop();
+      corVisita.set(u, 2);
+    };
+    for (const arqAbs of arquivosSrcEsm) {
+      if (!corVisita.get(arqAbs)) visitarDfsEsm(arqAbs);
+    }
+    assert.deepEqual(
+      ciclosDirigidosEsm,
+      [],
+      `Grafo ESM de src/ deve ser estritamente acíclico (0 ciclos dirigidos), mas encontrou: ${ciclosDirigidosEsm.join(' | ')}`
+    );
+
+    // 1. Invocação direta de 100% dos 6 submódulos/funções puras de renderização (Regra #7)
+    const perfilDesbloqueado0810 = congelarProfundo({
+      ...structuredClone(criarPerfilInicial()),
+      carcacasDesbloqueadas: Object.fromEntries(CARCACAS_PERFIL_85B.map((c) => [c.idArquitetura, true])),
+    });
+    const estHangar = criarEstadoCampanhaCompleta({
+      seedPartida: 'seed-0810-mod',
+      faseInicial: 'INICIO',
+      perfilInicial: perfilDesbloqueado0810,
+    });
+    const vmHangar = projetarViewModelWireframe(estHangar);
+    const hbsHangar = obterMapaHitboxesNativo(vmHangar);
+    const ctxPrimHangar = criarContextoPrimitivasRgba960x540(vmHangar, { tempoSeg: 0.5 }, assetsHiBit, hbsHangar, tabRaster, cachesTeste);
+    assert.equal(ctxPrimHangar.W, 960);
+    assert.equal(ctxPrimHangar.H, 540);
+    const resTelaHangar = renderizarTelaHangarOuFimDeRun(ctxPrimHangar);
+    assert.equal(resTelaHangar instanceof Uint8ClampedArray, true);
+    assert.equal(resTelaHangar.length, 960 * 540 * 4);
+
+    let estMapa = executarAcaoCampanhaCompleta(estHangar, { tipo: 'INICIAR_NOVA_RUN', idArquitetura: 'COLMEIA_VIVA', seedPartida: 'seed-0810-colmeia' }).estado;
+    assert.deepEqual(
+      estMapa.naveJogador.tripulacao.map((t) => t.especie),
+      ['BAIACU', 'BAIACU', 'ARRAIA'],
+      'COLMEIA_VIVA deve iniciar com 2 BAIACU + 1 ARRAIA conforme Catálogo 5.1.A'
+    );
+    const vmMapa = projetarViewModelWireframe(estMapa);
+    const ctxPrimMapa = criarContextoPrimitivasRgba960x540(vmMapa, { tempoSeg: 0.4 }, assetsHiBit, obterMapaHitboxesNativo(vmMapa), tabRaster, cachesTeste);
+    renderizarViewportCampanhaNaoCombate(ctxPrimMapa);
+    let somaAlphaMapa = 0;
+    for (let i = 3; i < ctxPrimMapa.rgba.length; i += 4096) somaAlphaMapa += ctxPrimMapa.rgba[i];
+    assert.equal(somaAlphaMapa > 0, true);
+
+    const estOficina = executarAcaoCampanhaCompleta(estMapa, { tipoAcao: 'ABRIR_FECHAR_OFICINA' }).estado;
+    const vmOficina = projetarViewModelWireframe(estOficina);
+    const ctxPrimOficina = criarContextoPrimitivasRgba960x540(vmOficina, {}, assetsHiBit, obterMapaHitboxesNativo(vmOficina), tabRaster, cachesTeste);
+    renderizarViewportCampanhaNaoCombate(ctxPrimOficina);
+    renderizarModalOficinaOverlay(ctxPrimOficina);
+
+    const clSaque = structuredClone(estMapa);
+    clSaque.meta.modalCampanhaAtivo = 'SAQUE';
+    clSaque.meta.saquePendente = {
+      modalidade: 'DESTRUICAO_CASCO',
+      sucataGanha: 21,
+      biomassaGanha: 6,
+      dropItemEspecial: 'ARMA:CANHAO_FERRO',
+      arquetipoDerrotado: 'Corveta Blindada',
+      setorNumero: 1,
+    };
+    const vmSaque = projetarViewModelWireframe(congelarProfundo(clSaque));
+    const ctxPrimSaque = criarContextoPrimitivasRgba960x540(vmSaque, {}, assetsHiBit, obterMapaHitboxesNativo(vmSaque), tabRaster, cachesTeste);
+    renderizarModalSaqueOverlay(ctxPrimSaque);
+
+    // 2. Topologias 5/6 salas 5.7.A, degradação real de subsistemas inimigos, limite de 2 invasores/sala e renderizador-alvo-inimigo
+    const corveta5 = gerarAlvoInimigoEscaladoSetor('seed-57a', 2, 'NO_CORV', { arquetipoId: 'BARCO_2_CORVETA' });
+    const arrastao6 = gerarAlvoInimigoEscaladoSetor('seed-57a', 4, 'NO_ARR', { arquetipoId: 'BARCO_3_ARRASTAO' });
+    const submarino6 = gerarAlvoInimigoEscaladoSetor('seed-57a', 6, 'NO_SUB', { arquetipoId: 'BARCO_4_SUBMARINO' });
+    assert.equal(corveta5.salasOuOrgaos.length, 5);
+    assert.equal(arrastao6.salasOuOrgaos.length, 6);
+    assert.equal(submarino6.salasOuOrgaos.length, 6);
+    const trincaSub = calcularTrincaBeamAutomatica(submarino6, 1, 2);
+    assert.equal(trincaSub.ok, true);
+    assert.equal(trincaSub.trincaSalasBeam.length, 3, 'Grafo ortogonal BARCO_SUBMARINO_6 deve traçar trinca válida de 3 salas');
+
+    const clCombSub = structuredClone(estMapa);
+    clCombSub.meta.faseJogo = 'COMBATE';
+    clCombSub.alvoCombate = structuredClone(submarino6);
+    const camTub = clCombSub.naveJogador.camaras.find((c) => c.id === 7);
+    if (camTub) {
+      camTub.barrasIntegridade = Math.max(2, Number(camTub.barrasIntegridade ?? 1));
+      camTub.barrasEnergiaAlocada = 2;
+      camTub.energiaAlocada = 2;
+    }
+    clCombSub.naveJogador.recargaTuboAbordagemSeg = 0;
+    clCombSub.naveJogador.tripulacao.push(
+      { id: 'crab-a', especie: 'CARANGUEJO', camaraAtualId: 7, camaraDestinoId: null, hpAtual: 110, hpMax: 110, localizacao: 'NAVE_JOGADOR', salaInimigaId: null },
+      { id: 'crab-b', especie: 'CARANGUEJO', camaraAtualId: 7, camaraDestinoId: null, hpAtual: 110, hpMax: 110, localizacao: 'NAVE_JOGADOR', salaInimigaId: null },
+      { id: 'crab-c', especie: 'CARANGUEJO', camaraAtualId: 7, camaraDestinoId: null, hpAtual: 110, hpMax: 110, localizacao: 'NAVE_JOGADOR', salaInimigaId: null }
+    );
+    let estCombSub = congelarProfundo(clCombSub);
+    const vmCombSub = projetarViewModelWireframe(estCombSub);
+    const ctxPrimAlvo = criarContextoPrimitivasRgba960x540(vmCombSub, { tempoSeg: 0.7 }, assetsHiBit, obterMapaHitboxesNativo(vmCombSub), tabRaster, cachesTeste);
+    const perfilEsqTeste = ctxPrimAlvo.obterPerfilLimpo(assetsHiBit.f1Play);
+    renderizarAlvoInimigoESalasCombate(ctxPrimAlvo, {
+      placaEsq: assetsHiBit.f1Play,
+      perfilEsq: perfilEsqTeste,
+      yLinhaDaguaCena: 232,
+      obterBocaDorsalRender: () => ({ x: 340, y: 120 }),
+    });
+    assert.equal(ctxPrimAlvo.hitboxes.filter((h) => h.tipo === 'SALA_ALVO').length, 6);
+
+    // Lançar 2 invasores na sala 1 aceita; tentar mover 3º invasor para a mesma sala lotada (cap 2) rejeita!
+    const resAb1 = despacharComandoUi(estCombSub, {
+      tipo: 'LANCAR_ABORDAGEM',
+      payload: { tripulantesIds: ['crab-a', 'crab-b'], salaAlvoId: 1 },
+    });
+    assert.equal(resAb1.aceito, true);
+    const clResetTubo = structuredClone(resAb1.estado);
+    clResetTubo.naveJogador.recargaTuboAbordagemSeg = 0;
+    const resAb2 = despacharComandoUi(congelarProfundo(clResetTubo), {
+      tipo: 'LANCAR_ABORDAGEM',
+      payload: { tripulantesIds: ['crab-c'], salaAlvoId: 2 },
+    });
+    assert.equal(resAb2.aceito, true);
+    estCombSub = resAb2.estado;
+    const movLotado = ordenarMovimentoAbordagemInimiga(estCombSub, 'crab-c', 1);
+    assert.equal(movLotado.ok, false);
+    assert.equal(movLotado.codigoErro, 'SALA_INIMIGA_LOTADA_MAX_2');
+
+    // Zerar integridade da Sala MOTOR/PROPULSAO e Sala ESCUDO/BARREIRA do alvo degrada esquiva e bolhas no tick real!
+    const clDeg = structuredClone(estMapa);
+    clDeg.meta.faseJogo = 'COMBATE';
+    clDeg.alvoCombate = structuredClone(arrastao6);
+    clDeg.alvoCombate.barreiraBolhasMax = 2;
+    clDeg.alvoCombate.camadasBarreiraAtivas = 2;
+    clDeg.alvoCombate.barreiraBolhasAtual = 2;
+    for (const s of clDeg.alvoCombate.salasOuOrgaos) {
+      if (/MOTOR|MAQUINAS|PROPULSAO|REATOR|ESCUDO|BARREIRA/i.test(s.nome ?? '')) {
+        s.integridadeAtual = 0;
+        s.integridade = 0;
+        s.tripulantes = [];
+      }
+    }
+    const estPosDeg = avancarTickCampanhaCompleta(congelarProfundo(clDeg), 0.25);
+    assert.equal(estPosDeg.alvoCombate.esquivaEfetivaPct, 0, 'Sala MOTOR destruída (0 HP) deve zerar esquiva efetiva do barco inimigo');
+    assert.equal(estPosDeg.alvoCombate.camadasBarreiraAtivas, 0, 'Sala ESCUDO destruída (0 HP) deve derrubar barreira de bolhas inimiga');
+
+    // Paridade 0-byte Server<->Client nos 8 arquétipos 5.7.A (incluindo os 6 novos sprites Bestiário Hi-Bit)
+    const idsVariantes8 = [
+      'BARCO_1_LANCHA',
+      'BARCO_2_CORVETA',
+      'BARCO_3_ARRASTAO',
+      'BARCO_4_SUBMARINO',
+      'MONSTRO_1_TEUTHIS',
+      'MONSTRO_2_ENGUIA',
+      'MONSTRO_3_CARANGUEJO',
+      'MONSTRO_4_HIDRA',
+    ];
+    for (const idVCheck of idsVariantes8) {
+      assert.equal(Boolean(VARIANTES_VISUAIS_INIMIGOS_57A[idVCheck]), true);
+    }
+    const codCliParity8 = gerarCodigoJsClienteBiofoil();
+    const fnCliParity8 = vm.runInNewContext(
+      `(function(){\n"use strict";\n${codCliParity8.slice(
+        codCliParity8.indexOf('function criarContextoPrimitivasRgba960x540'),
+        codCliParity8.indexOf('let estadoCliente = JSON.parse')
+      )}\nreturn rasterizarQuadroRgba960x540;\n})()`,
+      { Math, Number, String, Boolean, Array, Object, Set, Map, WeakMap, Uint8Array, Uint8ClampedArray, Int16Array, Int32Array }
+    );
+    for (let idxV = 0; idxV < idsVariantes8.length; idxV += 1) {
+      const idVar = idsVariantes8[idxV];
+      const alvoVar = gerarAlvoInimigoEscaladoSetor('seed-par8', idxV + 1, `NO_V_${idxV}`, { arquetipoId: idVar });
+      const clV = structuredClone(estMapa);
+      clV.meta.faseJogo = 'COMBATE';
+      clV.alvoCombate = structuredClone(alvoVar);
+      const vmV = projetarViewModelWireframe(congelarProfundo(clV));
+      const hbsV = obterMapaHitboxesNativo(vmV);
+      const bSrv = rasterizarQuadroRgba960x540(vmV, { tempoSeg: 0.35 }, assetsHiBit, hbsV, tabRaster);
+      const bCli = fnCliParity8(vmV, { tempoSeg: 0.35 }, assetsHiBit, hbsV, tabRaster);
+      let diffV = 0;
+      for (let p = 0; p < bSrv.length; p += 1) {
+        if (bSrv[p] !== bCli[p]) diffV += 1;
+      }
+      assert.equal(diffV, 0, `Paridade 0-byte violada no arquétipo ${idVar}`);
+    }
+
+    // 3. Estoque finito de Loja, reposição ao vender e digestão independente 2 SUC->1 BIO vs 2 BIO->1 SUC [MUT-O6-26]
+    const clLoja = structuredClone(estMapa);
+    clLoja.meta.faseJogo = 'LOJA';
+    clLoja.economia = { ...(clLoja.economia ?? {}), sucata: 250, biomassa: 40, combustivel: 10, municao: 8 };
+    clLoja.recursos = { ...clLoja.economia };
+    const noLojaRef = clLoja.mapaSetorial.nos[0];
+    clLoja.mapaSetorial.noAtualId = noLojaRef.id;
+    noLojaRef.tipo = 'LOJA';
+    noLojaRef.tipoNo = 'LOJA';
+    let estLoja = congelarProfundo(clLoja);
+    const vmLojaIni = projetarViewModelWireframe(estLoja);
+    const hbsLojaIni = obterMapaHitboxesNativo(vmLojaIni);
+    assert.equal(hbsLojaIni.some((h) => h.idHitbox === 'LOJA_DIGESTAO_SUC_BIO'), true);
+    assert.equal(hbsLojaIni.some((h) => h.idHitbox === 'LOJA_DIGESTAO_BIO_SUC'), true);
+
+    const resDigSucBio = despacharComandoUi(estLoja, {
+      tipo: 'COMPRAR_OU_VENDER_LOJA',
+      payload: { acao: 'DIGESTAO_ENZIMATICA', moedaOrigem: 'SUCATA' },
+    });
+    assert.equal(resDigSucBio.aceito, true);
+    assert.equal(resDigSucBio.estado.economia.sucata, 248);
+    assert.equal(resDigSucBio.estado.economia.biomassa, 41);
+
+    const resDigBioSuc = despacharComandoUi(resDigSucBio.estado, {
+      tipo: 'COMPRAR_OU_VENDER_LOJA',
+      payload: { acao: 'DIGESTAO_ENZIMATICA', moedaOrigem: 'BIOMASSA' },
+    });
+    assert.equal(resDigBioSuc.aceito, true);
+    assert.equal(resDigBioSuc.estado.economia.sucata, 249);
+    assert.equal(resDigBioSuc.estado.economia.biomassa, 39);
+
+    const idArmaUnicaLoja = 'CANHAO_ARPAO_CABO';
+    const resCompra1 = despacharComandoUi(resDigBioSuc.estado, {
+      tipo: 'COMPRAR_OU_VENDER_LOJA',
+      payload: { acao: 'COMPRAR', itemOuSistemaId: idArmaUnicaLoja },
+    });
+    assert.equal(resCompra1.aceito, true);
+    const resCompraRepetida = despacharComandoUi(resCompra1.estado, {
+      tipo: 'COMPRAR_OU_VENDER_LOJA',
+      payload: { acao: 'COMPRAR', itemOuSistemaId: idArmaUnicaLoja },
+    });
+    assert.equal(resCompraRepetida.aceito, false, '[MUT-O6-26] Item único comprado na Loja deve ficar ESGOTADO neste nó');
+    assert.equal(resCompraRepetida.marcadorRejeicao, 'PRECONDICAO_NAO_ATENDIDA');
+
+    const resVendaRepoe = despacharComandoUi(resCompra1.estado, {
+      tipo: 'COMPRAR_OU_VENDER_LOJA',
+      payload: { acao: 'VENDER', itemOuSistemaId: idArmaUnicaLoja },
+    });
+    assert.equal(resVendaRepoe.aceito, true);
+    const resRecompraPosVenda = despacharComandoUi(resVendaRepoe.estado, {
+      tipo: 'COMPRAR_OU_VENDER_LOJA',
+      payload: { acao: 'COMPRAR', itemOuSistemaId: idArmaUnicaLoja },
+    });
+    assert.equal(resRecompraPosVenda.aceito, true, 'Vender a arma de volta deve repor 1 unidade na vitrine da Loja');
+
+    // 4. PCM 16-bit com sinal (Int16Array) + mudo sincronizado em construirPaisagemSonoraCompleta
+    const pcmArpao = sintetizarBufferPcmMulticamada('SFX_DISPARO_ARPAO_CABO', { sampleRate: 8000 });
+    assert.equal(pcmArpao.amostrasPcmInt16 instanceof Int16Array, true);
+    let temPositivo = false;
+    let temNegativo = false;
+    for (let i = 0; i < pcmArpao.amostrasPcmInt16.length; i += 1) {
+      if (pcmArpao.amostrasPcmInt16[i] > 500) temPositivo = true;
+      if (pcmArpao.amostrasPcmInt16[i] < -500) temNegativo = true;
+    }
+    assert.equal(temPositivo && temNegativo, true, 'PCM Int16Array deve preservar excursão positiva e negativa sem wrap unsigned');
+    const clMudo = structuredClone(estMapa);
+    clMudo.meta.audioMutado = true;
+    const paisagemMuda = construirPaisagemSonoraCompleta(congelarProfundo(clMudo), congelarProfundo(clMudo), null);
+    assert.equal(paisagemMuda.mudo, true);
+    assert.equal(paisagemMuda.ganhoMasterEfetivo, 0);
+    assert.equal(paisagemMuda.planoTatico85C.ganhoMaster, 0);
+
+    // Invoca vitrine-spreads diretamente (Regra #7)
+    const spreadCheck = exportarSpreadAnimacaoSteamPngBufferComHooks(
+      'ARMAS_ORGAOS_SISTEMAS_4FRAMES',
+      { escalaInteira: 1 },
+      { projetarViewModelWireframe, interpolarEstadoVisual60Fps }
+    );
+    assert.equal(spreadCheck.ok, true);
+
+    // 5. Execução ponta a ponta do /cliente.js COMPLETO (sem slice!) em node:vm contra servidor HTTP real
+    function decodificarPngDataUriSemPerdas(uri) {
+      const b64 = String(uri).replace(/^data:image\/png;base64,/, '');
+      const bufPng = Buffer.from(b64, 'base64');
+      let pos = 8;
+      let width = 0;
+      let height = 0;
+      const chunksIdat = [];
+      while (pos + 8 <= bufPng.length) {
+        const len = bufPng.readUInt32BE(pos);
+        const tipo = bufPng.subarray(pos + 4, pos + 8).toString('ascii');
+        const dados = bufPng.subarray(pos + 8, pos + 8 + len);
+        if (tipo === 'IHDR') {
+          width = dados.readUInt32BE(0);
+          height = dados.readUInt32BE(4);
+        } else if (tipo === 'IDAT') {
+          chunksIdat.push(dados);
+        } else if (tipo === 'IEND') {
+          break;
+        }
+        pos += 12 + len;
+      }
+      const bruto = zlib.inflateSync(Buffer.concat(chunksIdat));
+      const rgba = new Uint8ClampedArray(width * height * 4);
+      const stride = 1 + width * 4;
+      for (let y = 0; y < height; y += 1) {
+        const ini = y * stride + 1;
+        rgba.set(bruto.subarray(ini, ini + width * 4), y * width * 4);
+      }
+      return { width, height, rgba };
+    }
+
+    const srvRt = await iniciarServidorClienteWebBiofoil({
+      port: 0,
+      host: '127.0.0.1',
+      modoCampanhaCompleta: true,
+      diretorioDados: dirTmp0810,
+      estadoInicial: criarEstadoCampanhaCompleta({ seedPartida: 'seed-vm-full-0810', faseInicial: 'INICIO' }),
+    });
+    try {
+      const htmlBoot = await (await fetch(srvRt.url)).text();
+      const scriptCli = await (await fetch(`${srvRt.url}/cliente.js`)).text();
+      const matchBoot = htmlBoot.match(/<script id="biofoil-bootstrap" type="application\/json">([\s\S]*?)<\/script>/);
+      assert.equal(Boolean(matchBoot), true);
+      const jsonBootstrapDesescapado = matchBoot[1]
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&');
+
+      const listenersCanvas = new Map();
+      const listenersWindow = new Map();
+      const quadrosPutImageData = [];
+      let rafCallback = null;
+      const timersInterval = [];
+
+      const telemetriaAudioVm = {
+        filtrosCriados: [],
+        ganhosCriados: [],
+        osciladoresCriados: [],
+        fontesRuidoCriadas: [],
+        pannersCriados: [],
+        buffersCriados: 0,
+        desconexoesOnEnded: 0,
+      };
+
+      function criarAudioParamSpy(valorInicial = 1) {
+        const param = {
+          value: valorInicial,
+          historicoTargets: [],
+          setValueAtTime(v) { param.value = v; },
+          linearRampToValueAtTime(v) { param.value = v; },
+          exponentialRampToValueAtTime(v) { param.value = v; },
+          setTargetAtTime(v) {
+            param.value = v;
+            param.historicoTargets.push(v);
+          },
+        };
+        return param;
+      }
+
+      class AudioContextSpy {
+        constructor() {
+          this.state = 'running';
+          this.sampleRate = 22050;
+          this.currentTime = 0;
+          this.destination = { tipo: 'DESTINATION' };
+        }
+        resume() { return Promise.resolve(); }
+        createBiquadFilter() {
+          const flt = {
+            type: 'lowpass',
+            frequency: criarAudioParamSpy(20000),
+            Q: criarAudioParamSpy(0.7071),
+            connect() {},
+            disconnect() { telemetriaAudioVm.desconexoesOnEnded += 1; },
+          };
+          telemetriaAudioVm.filtrosCriados.push(flt);
+          return flt;
+        }
+        createGain() {
+          const g = {
+            gain: criarAudioParamSpy(1),
+            connect() {},
+            disconnect() { telemetriaAudioVm.desconexoesOnEnded += 1; },
+          };
+          telemetriaAudioVm.ganhosCriados.push(g);
+          return g;
+        }
+        createDynamicsCompressor() {
+          return { connect() {}, disconnect() {} };
+        }
+        createStereoPanner() {
+          const p = {
+            pan: criarAudioParamSpy(0),
+            connect() {},
+            disconnect() { telemetriaAudioVm.desconexoesOnEnded += 1; },
+          };
+          telemetriaAudioVm.pannersCriados.push(p);
+          return p;
+        }
+        createBuffer(canais, tamanho, taxa) {
+          telemetriaAudioVm.buffersCriados += 1;
+          const arr = new Float32Array(tamanho);
+          return { numberOfChannels: canais, length: tamanho, sampleRate: taxa, getChannelData: () => arr };
+        }
+        createBufferSource() {
+          const src = {
+            buffer: null,
+            loop: false,
+            onended: null,
+            connect() {},
+            disconnect() { telemetriaAudioVm.desconexoesOnEnded += 1; },
+            start() {},
+            stop() { if (typeof src.onended === 'function') src.onended(); },
+          };
+          telemetriaAudioVm.fontesRuidoCriadas.push(src);
+          return src;
+        }
+        createOscillator() {
+          const osc = {
+            type: 'sine',
+            frequency: criarAudioParamSpy(440),
+            onended: null,
+            connect() {},
+            disconnect() { telemetriaAudioVm.desconexoesOnEnded += 1; },
+            start() {},
+            stop() { if (typeof osc.onended === 'function') osc.onended(); },
+          };
+          telemetriaAudioVm.osciladoresCriados.push(osc);
+          return osc;
+        }
+      }
+
+      class ImageVm {
+        constructor() {
+          this.onload = null;
+          this.onerror = null;
+          this.naturalWidth = 0;
+          this.naturalHeight = 0;
+          this.width = 0;
+          this.height = 0;
+          this._rgba = null;
+        }
+        set src(uri) {
+          try {
+            const dec = decodificarPngDataUriSemPerdas(uri);
+            this.naturalWidth = dec.width;
+            this.naturalHeight = dec.height;
+            this.width = dec.width;
+            this.height = dec.height;
+            this._rgba = dec.rgba;
+            Promise.resolve().then(() => {
+              if (typeof this.onload === 'function') this.onload();
+            });
+          } catch (err) {
+            Promise.resolve().then(() => {
+              if (typeof this.onerror === 'function') this.onerror(err);
+            });
+          }
+        }
+      }
+
+      const canvasPrincipal = {
+        width: 960,
+        height: 540,
+        style: { cursor: 'crosshair' },
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 960, height: 540 }),
+        addEventListener(tipo, fn) {
+          listenersCanvas.set(tipo, fn);
+        },
+        getContext() {
+          return {
+            imageSmoothingEnabled: false,
+            fillStyle: '#000',
+            strokeStyle: '#000',
+            font: '8px monospace',
+            clearRect() {},
+            fillRect() {},
+            strokeRect() {},
+            fillText() {},
+            createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
+            putImageData(imgData) {
+              quadrosPutImageData.push(new Uint8ClampedArray(imgData.data));
+            },
+          };
+        },
+      };
+
+      const documentVm = {
+        getElementById(id) {
+          if (id === 'biofoil-canvas') return canvasPrincipal;
+          if (id === 'biofoil-bootstrap') return { textContent: jsonBootstrapDesescapado };
+          return null;
+        },
+        createElement(tag) {
+          if (tag === 'canvas') {
+            let bufOff = null;
+            const cOff = {
+              width: 1,
+              height: 1,
+              getContext: () => ({
+                imageSmoothingEnabled: false,
+                drawImage(img) {
+                  bufOff = img._rgba;
+                },
+                getImageData: (x, y, w, h) => ({ width: w, height: h, data: bufOff || new Uint8ClampedArray(w * h * 4) }),
+              }),
+            };
+            return cOff;
+          }
+          return {};
+        },
+      };
+
+      const windowVm = {
+        AudioContext: AudioContextSpy,
+        Image: ImageVm,
+        matchMedia: () => ({ matches: false }),
+        requestAnimationFrame(cb) {
+          rafCallback = cb;
+          return 1;
+        },
+        addEventListener(tipo, fn) {
+          listenersWindow.set(tipo, fn);
+        },
+      };
+
+      const ctxFullCli = vm.createContext({
+        window: windowVm,
+        document: documentVm,
+        fetch: (urlRel, init) => fetch(`${srvRt.url}${urlRel}`, init),
+        setInterval: (fn) => {
+          timersInterval.push(fn);
+          return timersInterval.length;
+        },
+        clearInterval: () => {},
+        Promise,
+        JSON,
+        Math,
+        Number,
+        String,
+        Boolean,
+        Array,
+        Object,
+        Set,
+        Map,
+        WeakMap,
+        RegExp,
+        Uint8Array,
+        Uint8ClampedArray,
+        Int16Array,
+        Int32Array,
+        Float32Array,
+        Float64Array,
+      });
+
+      vm.runInContext(scriptCli, ctxFullCli);
+
+      // Aguarda decodificação assíncrona de todos os data-URIs de /api/assets-60fps
+      for (let tent = 0; tent < 40 && quadrosPutImageData.length === 0; tent += 1) {
+        await new Promise((r) => setTimeout(r, 15));
+        if (rafCallback) rafCallback(16.67 * (tent + 1));
+      }
+      assert.equal(quadrosPutImageData.length >= 1, true, '/cliente.js deve decodificar /api/assets-60fps e pintar no Canvas via putImageData');
+
+      // Clica em HANGAR_INICIAR_RUN no Canvas real -> transiciona INICIO -> MAPA e inicializa grafo WebAudio!
+      const hbIniciar = obterMapaHitboxesNativo(JSON.parse(jsonBootstrapDesescapado).viewModel).find(
+        (h) => h.idHitbox === 'HANGAR_INICIAR_RUN'
+      );
+      const cxIni = hbIniciar.x + Math.floor(hbIniciar.largura / 2);
+      const cyIni = hbIniciar.y + Math.floor(hbIniciar.altura / 2);
+      listenersCanvas.get('mousedown')({ button: 0, clientX: cxIni, clientY: cyIni });
+      listenersCanvas.get('click')({ button: 0, shiftKey: false, clientX: cxIni, clientY: cyIni });
+      await new Promise((r) => setTimeout(r, 45));
+      rafCallback(500);
+
+      const estSrvMapa = await (await fetch(`${srvRt.url}/api/estado`)).json();
+      assert.equal(estSrvMapa.viewModel.faseJogo, 'MAPA');
+      assert.equal(telemetriaAudioVm.buffersCriados, 1, 'Motor WebAudio do cliente deve gerar o buffer de ruído rosa marítimo');
+      assert.equal(telemetriaAudioVm.fontesRuidoCriadas.length >= 2, true, 'Chuva + hidrofólio contínuos devem usar BufferSource de ruído rosa');
+
+      // KeyU abre OFICINA e Escape fecha OFICINA via listener real de teclado do /cliente.js
+      listenersWindow.get('keydown')({ code: 'KeyU', shiftKey: false, preventDefault() {} });
+      await new Promise((r) => setTimeout(r, 35));
+      const estSrvOfic = await (await fetch(`${srvRt.url}/api/estado`)).json();
+      assert.equal(estSrvOfic.viewModel.modalCampanhaAtivo, 'OFICINA');
+
+      listenersWindow.get('keydown')({ code: 'Escape', shiftKey: false, preventDefault() {} });
+      await new Promise((r) => setTimeout(r, 35));
+      const estSrvFechou = await (await fetch(`${srvRt.url}/api/estado`)).json();
+      assert.equal(estSrvFechou.viewModel.modalCampanhaAtivo, null);
+
+      // Salta para um nó do Mapa -> entra em COMBATE ou EVENTO; força salto até COMBATE ou aciona tecla M (MERGULHO_TATICO) e KeyK (Mudo)
+      const hbNo = (estSrvFechou.hitboxes || []).find((h) => h.tipo === 'NO_MAPA' && h.metadados?.alcancavel);
+      assert.ok(
+        hbNo,
+        '[MUT-O6-40] Mapa setorial deve expor nós adjacentes com metadados.alcancavel === true nas hitboxes'
+      );
+      listenersCanvas.get('click')({
+        button: 0,
+        shiftKey: false,
+        clientX: hbNo.x + 6,
+        clientY: hbNo.y + 6,
+      });
+      await new Promise((r) => setTimeout(r, 45));
+      // Tecla M (em Combate recolhe foil -> filtroMaster 400 Hz + SFX 4 camadas com StereoPannerNode!)
+      listenersWindow.get('keydown')({ code: 'KeyM', shiftKey: false, preventDefault() {} });
+      await new Promise((r) => setTimeout(r, 40));
+      rafCallback(1400);
+
+      // Tecla K alterna mudo real sincronizado Servidor <-> Cliente (ganhoMaster === 0)
+      listenersWindow.get('keydown')({ code: 'KeyK', shiftKey: false, preventDefault() {} });
+      await new Promise((r) => setTimeout(r, 40));
+      const estSrvMudo = await (await fetch(`${srvRt.url}/api/estado`)).json();
+      assert.equal(estSrvMudo.paisagemSonora.mudo, true, 'KeyK no browser deve mutar paisagemSonora no servidor e cliente');
+      const ganhoMasterVm = telemetriaAudioVm.ganhosCriados[0];
+      assert.equal(ganhoMasterVm.gain.value, 0, 'ganhoMaster do WebAudio cliente deve cair imediatamente a 0 no mute');
+      assert.equal(telemetriaAudioVm.desconexoesOnEnded > 0, true, 'Nós efêmeros WebAudio devem chamar disconnect() em onended');
+
+      console.log(
+        `[N4] Portão 08.10 examinado: 6 submódulos de renderização, 8 arquétipos 5.7.A (0 diff), topologias 5/6 salas, estoque finito de Loja, PCM Int16 e /cliente.js completo em VM (${quadrosPutImageData.length} quadros Canvas, ${telemetriaAudioVm.osciladoresCriados.length} osciladores WebAudio)`
+      );
+    } finally {
+      await srvRt.fechar();
+    }
+  } finally {
+    fs.rmSync(dirTmp0810, { recursive: true, force: true });
+  }
+});
+
+test('Portão 08.11 — Arquitetura Modular 22 Módulos Onda 6, Regen Barreira 2.0s [MUT-O6-27], Preservação de Órgãos [MUT-O6-28], Hangar Bloqueado [MUT-O6-29], Áudio 32 Passos/Zero Replay [MUT-O6-30] e ES Modules Nativos', async () => {
+  // 1. Cobertura direta da SSOT de geometria 960x540 (geometria-layout-960.mjs)
+  const objCongelado = congelarProfundoClienteSeguro({ a: [1, { b: 2 }] });
+  assert.equal(Object.isFrozen(objCongelado), true);
+  assert.equal(Object.isFrozen(objCongelado.a), true);
+  assert.equal(Object.isFrozen(objCongelado.a[1]), true);
+
+  const layoutFoil = calcularLayoutPlacaCamaras960(false, false);
+  const layoutTd = calcularLayoutPlacaCamaras960(true, false);
+  assert.equal(layoutFoil.larguraCam, 77);
+  assert.equal(layoutTd.toposY[0] - layoutFoil.toposY[0], 4);
+
+  const cardH0 = calcularRetanguloCardHangar960(0, 0);
+  assert.equal(cardH0.largura, 176);
+  assert.equal(cardH0.altura, 272);
+
+  const cardL0 = calcularRetanguloCardLoja960(0, 0);
+  assert.equal(cardL0.largura, 192);
+  const pillPorao2 = calcularRetanguloVendaPoraoLoja960(2, 0);
+  assert.equal(pillPorao2.largura, 89);
+
+  const geomOfic = calcularGeometriaOficina960(0);
+  assert.equal(geomOfic.arvoreUpgrade(0).largura, 218);
+  assert.equal(geomOfic.caixaSlotDorsal(0).altura, 46);
+  assert.equal(geomOfic.btnAbandonarRun.altura, 22);
+
+  const modaisRect = calcularRetangulosModaisCampanha960(0);
+  assert.equal(modaisRect.saqueBtnConfirmar.altura, 34);
+  assert.equal(modaisRect.desfechoEventoBtnConfirmar.altura, 34);
+
+  const salasRect5 = calcularRetangulosSalasAlvo960(
+    [1, 2, 3, 4, 5].map((id) => ({ id })),
+    { ehChefeDraga: false, ehMonstroAlvo: false, faseChefe: 0 }
+  );
+  assert.equal(salasRect5.length, 5);
+
+  // 2. Cobertura direta dos módulos puros extraídos (hitboxes-layout, interpolador-60fps, renderizador-canvas2d-primitivas, renderizador-hud-tooltips)
+  const coordDir = converterCoordenadaHitboxDireta(480, 270, { left: 0, top: 0, width: 960, height: 540 });
+  assert.equal(coordDir.xNativo, 480);
+  assert.equal(coordDir.yNativo, 270);
+
+  const estCombDir = criarEstadoCampanhaCompleta({ faseInicial: 'COMBATE', seedPartida: 'seed-0811-dir' });
+  const vmCombDir = projetarViewModelWireframe(estCombDir);
+  const hbsDir = obterMapaHitboxesDireto(vmCombDir);
+  assert.equal(hbsDir.length >= 20, true);
+  const ghostDir = calcularGhostPreviewDireto(estCombDir, 'BTN_DRENAR_SEGURO');
+  assert.equal(ghostDir.ativo, true);
+
+  const ev60Dir = interpolar60FpsDireto(null, vmCombDir, 1 / 60, { hitboxes: hbsDir, hoverHitboxId: 'BTN_DRENAR_SEGURO' });
+  assert.equal(Object.isFrozen(ev60Dir), true);
+
+  const atlasDir = obterAtlasPrimitivasDireto();
+  assert.equal(Object.isFrozen(atlasDir), true);
+  const sprDir = rasterizarSpriteDireto('aliados', 'POLVO');
+  assert.equal(sprDir.bytesRgba.length > 0, true);
+  const frame2dDir = renderizarCanvas2dDireto(vmCombDir);
+  assert.equal(frame2dDir.comandosDesenho.length > 10, true);
+  const encCamDir = calcularEncaixeCamaraDireto(1, ['POLVO', 'ARRAIA'], 0);
+  assert.equal(encCamDir.zeroColisaoEntreSlots, true);
+  const encDorDir = calcularEncaixeDorsalDireto(0, 'EMISSOR_ACUSTICO_I', 1, true);
+  assert.equal(encDorDir.zeroColisaoTopoCamaras, true);
+
+  const assets0811 = obterAssetsConceitoHiBit();
+  const tab0811 = obterTabelasRasterUnificado();
+  const caches0811 = {};
+  const ctxHudDir = criarContextoPrimitivasRgba960x540(
+    vmCombDir,
+    { exibirTooltipHover: true, hoverHitboxId: 'BTN_LANCAR_ABORDAGEM', avisoToastTexto: 'AVISO TATICO DE TESTE' },
+    assets0811,
+    hbsDir,
+    tab0811,
+    caches0811
+  );
+  renderizarHudSuperiorTermometroERodape(ctxHudDir);
+  renderizarTooltipContextualEAvisoToast(ctxHudDir);
+  let pixelsToast = 0;
+  for (let i = 3; i < ctxHudDir.rgba.length; i += 2048) {
+    if (ctxHudDir.rgba[i] > 0) pixelsToast += 1;
+  }
+  assert.equal(pixelsToast > 10, true);
+
+  // 3. Regen de Barreira Acústica Inimiga 2.0s/bolha ([MUT-O6-27]) + Grafo/BFS Interno + SONAR vs Tinta
+  assert.equal(resolverGrafoBeamAlvoInterno({ classeAlvo: 'CHEFE_DRAGA', faseChefe: 3 })[1].includes(2), true);
+  const caminhoInt = calcularCaminhoCurtoGrafoAlvoInterno(
+    { classeAlvo: 'BARCO_HUMANO', salasOuOrgaos: [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }] },
+    1,
+    4
+  );
+  assert.equal(caminhoInt[0], 1);
+  assert.equal(caminhoInt[caminhoInt.length - 1], 4);
+
+  const cloneBarcoEscudo = structuredClone(estCombDir);
+  cloneBarcoEscudo.alvoCombate = structuredClone(
+    gerarAlvoInimigoEscaladoSetor('seed-0811-escudo', 4, 'N_S4', {
+      arquetipoId: 'BARCO_2_CORVETA',
+    })
+  );
+  recalcularSubsistemasAlvoInPlace(cloneBarcoEscudo.alvoCombate);
+  const maxBolhasInimigo = Number(cloneBarcoEscudo.alvoCombate.tetoBolhasBarreira);
+  assert.equal(maxBolhasInimigo >= 1, true);
+  cloneBarcoEscudo.alvoCombate.camadasBarreiraAtivas = 0;
+  cloneBarcoEscudo.alvoCombate.barreiraBolhasAtual = 0;
+  cloneBarcoEscudo.alvoCombate.progressoRegenBarreiraSeg = 0;
+  // Suprime disparos do jogador p/ medir isoladamente a regeneração de 2.0s da Barreira inimiga
+  cloneBarcoEscudo.naveJogador.armasAtivas = [];
+  let estPosRegen = congelarProfundo(cloneBarcoEscudo);
+  for (let i = 0; i < 8; i += 1) {
+    estPosRegen = avancarTickDireto(estPosRegen, 0.25, { suprimirAtaqueInimigoMutacao: true });
+  }
+  assert.equal(
+    estPosRegen.alvoCombate.camadasBarreiraAtivas,
+    1,
+    '[MUT-O6-27] Barco inimigo com sistema ESCUDO íntegro deve regenerar 1 bolha de Barreira Acústica a cada 2.0s'
+  );
+
+  // Chefe Draga Fase 3 também regenera bolhas a 2.0s/bolha quando a Blindagem Térmica Externa (10 pts) já foi rompida
+  let estDragaRegen = congelarProfundo({
+    ...structuredClone(estCombDir),
+    naveJogador: { ...structuredClone(estCombDir.naveJogador), armasAtivas: [] },
+    alvoCombate: {
+      ...structuredClone(criarEstadoChefeDraga(3)),
+      blindagemTermicaExternaPts: 0,
+      camadasBarreiraAtivas: 0,
+      barreiraBolhasAtual: 0,
+      progressoRegenBarreiraSeg: 0,
+    },
+  });
+  for (let i = 0; i < 8; i += 1) {
+    estDragaRegen = avancarTickChefeDraga(estDragaRegen, 0.25);
+  }
+  assert.equal(estDragaRegen.alvoCombate.camadasBarreiraAtivas, 1);
+
+  // SONAR inimigo íntegro corta Tinta Furtiva pela metade e limpa cegueira de Bolsa de Tinta
+  const cloneSonar = structuredClone(estCombDir);
+  cloneSonar.naveJogador.armasAtivas = [];
+  cloneSonar.naveJogador.furtividadeAtivaSeg = 4.0;
+  cloneSonar.alvoCombate.salasOuOrgaos = [
+    { id: 1, nome: 'LEME', integridadeAtual: 2, integridadeMax: 2, cegaPorTinta: true, tripulantes: [{ id: 'h1', hpAtual: 100 }] },
+    { id: 2, nome: 'SONAR', integridadeAtual: 2, integridadeMax: 2, cegaPorTinta: false, tripulantes: [] },
+    { id: 3, nome: 'ARMAS', integridadeAtual: 2, integridadeMax: 2, cegaPorTinta: true, tripulantes: [] },
+    { id: 4, nome: 'CASCO', integridadeAtual: 2, integridadeMax: 2, cegaPorTinta: false, tripulantes: [] },
+  ];
+  const estPosSonar = avancarTickDireto(congelarProfundo(cloneSonar), 1.0, { suprimirAtaqueInimigoMutacao: true });
+  assert.equal(estPosSonar.naveJogador.furtividadeAtivaSeg, 2.0, 'SONAR inimigo ativo deve consumir Tinta Furtiva a 2x (4.0s -> 2.0s em 1.0s)');
+  assert.equal(estPosSonar.alvoCombate.salasOuOrgaos[0].cegaPorTinta, false, 'SONAR inimigo ativo deve anular cegueira de tinta nas salas');
+  assert.equal(projetarViewModelWireframe(estPosSonar).painelAlvo.sonarMilitarAtivo, true);
+
+  // 4. Loja: Preservação de Órgãos Enxertados ao vender arma equipada ([MUT-O6-28]) + Venda de qualquer slot do Porão
+  const estLojaOrg = congelarProfundo({
+    ...structuredClone(estCombDir),
+    meta: { ...estCombDir.meta, faseJogo: 'LOJA', itensCompradosLojaAtual: [] },
+    economia: { ...estCombDir.economia, sucata: 20, biomassa: 10 },
+    naveJogador: {
+      ...structuredClone(estCombDir.naveJogador),
+      armasAtivas: [
+        {
+          slotIndex: 0,
+          arma: {
+            id: 'CANHAO_ARPAO_CABO',
+            chassiId: 'CANHAO_ARPAO_CABO',
+            energiaCusto: 1,
+            soquetesMax: 1,
+            orgaosEnxertados: ['ELETRO_PLACA_ARRAIA'],
+            tempoRecargaBaseSeg: 10,
+            progressoRecargaSeg: 0,
+            salaAlvoId: 1,
+          },
+        },
+        { slotIndex: 1, arma: null },
+      ],
+      poraoCarga: [
+        { slotIndex: 0, item: null },
+        { slotIndex: 1, item: null },
+        { slotIndex: 2, item: { id: 'GLANDULA_BAIACU', tipo: 'ORGAO', pesoKg: 0, valorVenda: 15 } },
+        { slotIndex: 3, item: null },
+      ],
+    },
+  });
+  const resVendaPorao2 = despacharComandoUi(estLojaOrg, {
+    tipo: 'COMPRAR_OU_VENDER_LOJA',
+    payload: { acao: 'VENDER', itemOuSistemaId: 'GLANDULA_BAIACU', indicePorao: 2 },
+  });
+  assert.equal(resVendaPorao2.aceito, true);
+  assert.equal(resVendaPorao2.estado.naveJogador.poraoCarga[2].item, null);
+  assert.equal(resVendaPorao2.estado.economia.biomassa >= 25, true);
+
+  const resVendaArmaComOrgao = despacharComandoUi(resVendaPorao2.estado, {
+    tipo: 'COMPRAR_OU_VENDER_LOJA',
+    payload: { acao: 'VENDER', itemOuSistemaId: 'CANHAO_ARPAO_CABO', slotArmaIndex: 0 },
+  });
+  assert.equal(resVendaArmaComOrgao.aceito, true);
+  assert.equal(
+    resVendaArmaComOrgao.estado.naveJogador.poraoCarga.some((s) => s.item?.id === 'ELETRO_PLACA_ARRAIA'),
+    true,
+    '[MUT-O6-28] Vender arma equipada na Loja deve preservar e devolver seus órgãos enxertados ao Porão de Carga'
+  );
+
+  // 5. Campanha: Hangar bloqueia carcaças trancadas ([MUT-O6-29]), Modal EVENTO_DESFECHO e Abandonar Expedição em 2 etapas
+  const estHangarTrancado = criarEstadoCampanhaCompleta({
+    seedPartida: 'seed-0811-lock',
+    faseInicial: 'INICIO',
+    perfilInicial: criarPerfilInicial(),
+  });
+  const resTrancado = executarAcaoCampanhaCompleta(estHangarTrancado, {
+    tipoAcao: 'INICIAR_NOVA_RUN',
+    idArquitetura: 'MANTA_VOLT',
+    seedPartida: 'seed-0811-lock',
+  });
+  assert.equal(
+    resTrancado.ok,
+    false,
+    '[MUT-O6-29] INICIAR_NOVA_RUN deve rejeitar bio-nave bloqueada no profile.json com CARCACA_BLOQUEADA_NO_PERFIL'
+  );
+  assert.equal(
+    resTrancado.codigoErro,
+    'CARCACA_BLOQUEADA_NO_PERFIL',
+    '[MUT-O6-29] INICIAR_NOVA_RUN deve rejeitar bio-nave bloqueada no profile.json com CARCACA_BLOQUEADA_NO_PERFIL'
+  );
+
+  let estRunAlfa = executarAcaoCampanhaCompleta(estHangarTrancado, {
+    tipoAcao: 'INICIAR_NOVA_RUN',
+    idArquitetura: 'CARCACA_ALFA',
+    seedPartida: 'seed-0811-alfa',
+  }).estado;
+  assert.equal(estRunAlfa.meta.faseJogo, 'MAPA');
+
+  // Abandono em 2 cliques dentro da Oficina
+  estRunAlfa = executarAcaoCampanhaCompleta(estRunAlfa, { tipoAcao: 'ABRIR_FECHAR_OFICINA' }).estado;
+  const resAband1 = executarAcaoCampanhaCompleta(estRunAlfa, { tipoAcao: 'ABANDONAR_EXPEDICAO' });
+  assert.equal(resAband1.aguardaConfirmacao, true);
+  assert.equal(resAband1.estado.meta.faseJogo, 'MAPA');
+  const resAband2 = executarAcaoCampanhaCompleta(resAband1.estado, { tipoAcao: 'ABANDONAR_EXPEDICAO' });
+  assert.equal(resAband2.estado.meta.faseJogo, 'INICIO');
+  assert.equal(resAband2.estado.meta.temRunSalvaDisponivel, false);
+
+  // Modal EVENTO_DESFECHO e renderizarModalDesfechoEventoOverlay
+  const estEvDesfecho = congelarProfundo({
+    ...structuredClone(estCombDir),
+    meta: {
+      ...estCombDir.meta,
+      faseJogo: 'EVENTO',
+      modalCampanhaAtivo: null,
+      eventoAtual: {
+        id: 'SOS_1_REDE_ARRASTO',
+        categoria: 'SOS',
+        titulo: 'Rede de Arrasto Fantasma',
+        opcoes: [{ letra: 'A', rotulo: 'Cortar cabos' }, { letra: 'B', rotulo: 'Extrair Biomassa' }],
+      },
+    },
+  });
+  const resEscEv = executarAcaoCampanhaCompleta(estEvDesfecho, {
+    comandoMotor: {
+      tipo: 'ESCOLHER_OPCAO_EVENTO',
+      payload: { idEvento: 'SOS_1_REDE_ARRASTO', categoriaEvento: 'SOS', opcao: 'C' },
+    },
+  });
+  assert.equal(resEscEv.ok, true);
+  assert.equal(resEscEv.estado.meta.modalCampanhaAtivo, 'EVENTO_DESFECHO');
+  const vmDesf = projetarViewModelWireframe(resEscEv.estado);
+  const hbsDesf = obterMapaHitboxesDireto(vmDesf);
+  assert.equal(hbsDesf.some((h) => h.idHitbox === 'EVENTO_DESFECHO_CONFIRMAR'), true);
+  const ctxDesf = criarContextoPrimitivasRgba960x540(vmDesf, {}, assets0811, hbsDesf, tab0811, caches0811);
+  renderizarViewportCampanhaNaoCombate(ctxDesf);
+  renderizarModalDesfechoEventoOverlay(ctxDesf);
+  const resConfDesf = executarAcaoCampanhaCompleta(resEscEv.estado, { tipoAcao: 'CONFIRMAR_DESFECHO_EVENTO' });
+  assert.equal(resConfDesf.estado.meta.modalCampanhaAtivo, null);
+  assert.equal(resConfDesf.estado.meta.faseJogo, 'MAPA');
+
+  // 6. Tradutor Input DOM direto: Trinca Beam, Hangar Digit2, Botão Direito SALA_ALVO -> salaAlvoAbordagemId
+  const trincaDom = construirTrincaBeamAssistidaDom(estCombDir.alvoCombate, 1, 2);
+  assert.equal(trincaDom.length, 3);
+  const vmHangTr = projetarViewModelWireframe(estHangarTrancado);
+  const trHangD2 = traduzirInputDomDireto({ tipoEvento: 'KEYDOWN', code: 'Digit2' }, estHangarTrancado, vmHangTr, {});
+  assert.equal(trHangD2.acaoCampanhaUi.payload.idArquitetura, 'MANTA_VOLT');
+  const hbSala3 = hbsDir.find((h) => h.idHitbox === 'SALA_ALVO_3');
+  const trBotDirSala3 = traduzirInputDomDireto(
+    {
+      tipoEvento: 'CLICK',
+      botaoMouse: 2,
+      clientX: hbSala3.x + 8,
+      clientY: hbSala3.y + 8,
+      retanguloCanvas: { left: 0, top: 0, width: 960, height: 540 },
+    },
+    estCombDir,
+    vmCombDir,
+    { modoOrdemAbordagem: false, salaAlvoAbordagemId: 1 }
+  );
+  assert.equal(trBotDirSala3.acaoLocalUi, 'SELECIONAR_SALA_ABORDAGEM');
+  assert.equal(trBotDirSala3.salaAlvoAbordagemId, 3);
+
+  // 7. Áudio Marítimo: 32 passos A/B/A'/C, SFX em comandos de jogador/campanha e ZERO replay em Pausa/Hover ([MUT-O6-30])
+  for (const tr of Object.values(ESTADOS_TRILHA_ADAPTATIVA_BIOFOIL)) {
+    assert.equal(tr.notasBaixoHz.length, 32);
+    assert.equal(tr.notasArpejoHz.length, 32);
+    assert.equal(tr.mascaraRitmoArpejo.length, 32);
+  }
+  const estComDisparoAntigo = congelarProfundo({
+    ...structuredClone(estCombDir),
+    meta: {
+      ...estCombDir.meta,
+      tickAtual: 12,
+      eventosVisuaisUltimoTick: [{ idEvento: 99, tipo: 'DISPARO_JOGADOR', chassiId: 'CANHAO_ARPAO_CABO' }],
+    },
+  });
+  const estMesmoTickPausa = congelarProfundo(structuredClone(estComDisparoAntigo));
+  const sfxEmPausaSemComando = extrairSfxMulticamadaDoTick(estComDisparoAntigo, estMesmoTickPausa, null);
+  assert.equal(
+    sfxEmPausaSemComando.length,
+    0,
+    '[MUT-O6-30] Comandos em Pausa Tática ou MOUSEMOVE sem avanço de tick jamais podem re-tocar disparos antigos de eventosVisuaisUltimoTick'
+  );
+  const sfxAlocarEnergia = extrairSfxMulticamadaDoTick(estComDisparoAntigo, estMesmoTickPausa, {
+    aceito: true,
+    comandoExecutado: { tipo: 'ALOCAR_ENERGIA' },
+  });
+  assert.equal(sfxAlocarEnergia.length, 1);
+  assert.equal(sfxAlocarEnergia[0].idSfx, 'SFX_BARREIRA_BOLHA');
+
+  // Cobertura direta de sintetizador-webaudio-cliente.mjs e runtime-navegador.mjs
+  const motorDireto = criarMotorAudioMaritimoCliente({});
+  assert.equal(motorDireto.garantirGrafo(), false);
+  assert.equal(motorDireto.ajustarVolume(0.5), 0.5);
+  assert.equal(motorDireto.alternarMudo(), true);
+
+  assert.equal(
+    formatarMensagemRejeicaoUi('CARCACA_BLOQUEADA_NO_PERFIL').includes('BLOQUEADA'),
+    true
+  );
+  const toastCtrl = criarControladorToastCliente(2.0);
+  toastCtrl.acionarToast('TESTE TOAST');
+  assert.equal(toastCtrl.obterTextoAtivo(), 'TESTE TOAST');
+  toastCtrl.avancarTempo(2.5);
+  assert.equal(toastCtrl.obterTextoAtivo(), '');
+  assert.equal(iniciarRuntimeDomBiofoil(null, null, null), null);
+
+  // 8. Servidor HTTP: rotas ES Modules nativas (/onda6-ui/*.mjs) + bloqueio de traversal + HTML ESM
+  const htmlEsm = gerarHtmlClienteJogavelBiofoil(estCombDir, { usarModulosEsmNativos: true });
+  assert.equal(htmlEsm.includes('type="module" src="/onda6-ui/runtime-navegador.mjs"'), true);
+
+  const srvEsm = await iniciarServidorClienteWebBiofoil({ modoCampanhaCompleta: true, seedInicial: 'seed-0811-esm' });
+  try {
+    let modulosServidos = 0;
+    for (const nomeMod of MODULOS_ESM_NAVEGADOR_ONDA6) {
+      const rMod = await fetch(`${srvEsm.url}/onda6-ui/${nomeMod}`);
+      assert.equal(rMod.status, 200);
+      assert.equal((rMod.headers.get('content-type') ?? '').includes('application/javascript'), true);
+      const txtMod = await rMod.text();
+      assert.equal(txtMod.length > 100, true);
+      modulosServidos += 1;
+    }
+    assert.equal(modulosServidos, 9);
+    const rTraversal = await fetch(`${srvEsm.url}/onda6-ui/../gdd-parser.mjs`);
+    assert.equal(rTraversal.status, 404);
+
+    console.log(
+      `[N4] Portão 08.11 examinado: ${modulosServidos} módulos ES nativos servidos sem .toString(), 10 árvores Oficina, 32 passos musicais A/B/A'/C e mutações MUT-O6-27..30 validadas`
+    );
+  } finally {
+    await srvEsm.fechar();
+  }
+});
+
+test('Portão 08.12: Encontros/Eventos Canônicos, Power Surges F2/F3 da Draga em Tempo Real, Sonar Militar Dinâmico, WebAudio Lookahead + Ducking 900Hz e Isolamento de Modais [MUT-O6-31, MUT-O6-32]', () => {
+  // 1. Cobertura direta 100% de src/onda6-ui/encontros-eventos-campanha.mjs (Regra #7 + Lei L4)
+  assert.equal(ACOES_CAMPANHA_BIOFOIL.CONFIRMAR_DESFECHO_EVENTO, 'CONFIRMAR_DESFECHO_EVENTO');
+  assert.equal(MODOS_DISPARO_ARMAS.MANUAL, 'MANUAL');
+
+  const submarino57a = gerarAlvoInimigoEscaladoSetor('seed-0812-sub', 6, 'NO_SUB_6', {
+    arquetipoId: 'BARCO_4_SUBMARINO',
+  });
+  assert.equal(submarino57a.salasOuOrgaos.length, 6);
+  assert.equal(possuiSalaSonarAlvo(submarino57a), true);
+  assert.equal(possuiSonarMilitarAtivoAlvo(submarino57a), true);
+
+  const grafoSub6 = resolverGrafoOrtogonalAlvo(submarino57a);
+  assert.deepEqual(grafoSub6[1], [2, 3, 4]);
+  const rotaSub = calcularCaminhoCurtoGrafoAlvo(submarino57a, 1, 6);
+  assert.equal(rotaSub[0], 1);
+  assert.equal(rotaSub[rotaSub.length - 1], 6);
+
+  const dragaF2 = criarEstadoChefeDraga(2);
+  assert.equal(dragaF2.temSonarMilitar, true);
+  assert.equal(possuiSonarMilitarAtivoAlvo(dragaF2), true);
+  const dragaF2SonarQuebrado = structuredClone(dragaF2);
+  const s4Draga = dragaF2SonarQuebrado.salasOuOrgaos.find((s) => s.id === 4);
+  s4Draga.integridadeAtual = 0;
+  s4Draga.integridade = 0;
+  const estComDragaF2 = congelarProfundo({
+    ...structuredClone(criarEstadoInicialPartida({ seedPartida: 'seed-0812-draga2' })),
+    alvoCombate: dragaF2SonarQuebrado,
+  });
+  const dragaF2Tickada = avancarTickChefeDraga(estComDragaF2, 0.25);
+  assert.equal(dragaF2Tickada.alvoCombate.sonarMilitarAtivo, false);
+
+  const estBaseMapa = anexarMapaSetorAoEstado(
+    criarEstadoInicialPartida({ seedPartida: 'seed-0812-mapa' }),
+    'seed-0812-mapa',
+    2
+  );
+  assert.equal(estBaseMapa.mapaSetorial.setorNumero, 2);
+  assert.equal(Object.isFrozen(estBaseMapa), true);
+
+  const noEventoReal =
+    estBaseMapa.mapaSetorial.nos.find((n) => n.tipoNo === 'EVENTO' || n.tipoNo === 'SOS') ?? {
+      id: 'NO_EV_0812',
+      tipoNo: 'SOS',
+      idTemplateEvento: 'SOS_2_CAPSULA_AFUNDANDO',
+      xMn: 20,
+      tPrazoHoras: 12,
+    };
+  const estEmEvento = resolverEntradaNoMapaCampanha(estBaseMapa, noEventoReal);
+  assert.equal(['EVENTO', 'COMBATE', 'LOJA'].includes(estEmEvento.meta.faseJogo), true);
+
+  // 2. Desfecho Canônico de Evento + Recrutamento/Carga na Opção Azul Real (SOS_4_COMBOIO_ENCALHADO + SOS_1_REDE_ARRASTO) [MUT-O6-32]
+  const estMantaEvento = structuredClone(
+    criarEstadoCampanhaCompleta({
+      faseInicial: 'MAPA',
+      idArquitetura: 'MANTA_VOLT',
+      seedPartida: 'seed-0812-ev',
+      opcoesPersistencia: { ignorarBloqueioCarcaca: true },
+    })
+  );
+  estMantaEvento.meta.faseJogo = 'EVENTO';
+  estMantaEvento.economia.sucata = 40;
+  estMantaEvento.recursos.sucata = 40;
+  estMantaEvento.eventoAtual = {
+    noId: 'NO_SOS_4',
+    tipoNo: 'SOS',
+    idTemplateEvento: 'SOS_4_COMBOIO_ENCALHADO',
+    titulo: '4. Cargueiro Corporativo em Pane',
+    noMapa: {
+      id: 'NO_SOS_4',
+      tipoNo: 'SOS',
+      idTemplateEvento: 'SOS_4_COMBOIO_ENCALHADO',
+      xMn: 30,
+      tPrazoHoras: 12,
+    },
+  };
+  const armasPoraoAntes = (estMantaEvento.naveJogador.poraoCarga ?? []).filter((s) => s?.item?.tipo === 'ARMA').length;
+
+  const resEscolhaCamp = executarAcaoCampanhaCompleta(congelarProfundo(estMantaEvento), {
+    tipoAcao: 'ESCOLHER_OPCAO_EVENTO',
+    payload: { opcao: 'B', idEvento: 'SOS_4_COMBOIO_ENCALHADO' },
+  });
+  assert.equal(resEscolhaCamp.ok, true);
+  assert.equal(resEscolhaCamp.estado.meta.modalCampanhaAtivo, 'EVENTO_DESFECHO');
+  const armasPoraoDepois = (resEscolhaCamp.estado.naveJogador.poraoCarga ?? []).filter((s) => s?.item?.tipo === 'ARMA').length;
+  assert.equal(armasPoraoDepois, armasPoraoAntes + 1, 'Blue Option de SOS_4_COMBOIO_ENCALHADO deve depositar 1 arma recuperada no Porão');
+  assert.equal(
+    resEscolhaCamp.estado.meta.desfechoEventoPendente.deltaSucata > 0,
+    true,
+    '[MUT-O6-32] construirDesfechoEventoCanonicamente deve preservar os deltas reais de recursos e bônus de recrutamento/carga do Evento'
+  );
+  assert.equal(
+    resEscolhaCamp.estado.meta.desfechoEventoPendente.bonusEspecialTexto.includes('PORÃO'),
+    true
+  );
+
+  // Recrutamento real via COURACA_LIMIAR (2 Caranguejos) em SOS_1_REDE_ARRASTO (Opção Azul B) + construirDesfechoEventoCanonicamente direto
+  const estCouracaEvento = structuredClone(
+    criarEstadoCampanhaCompleta({
+      faseInicial: 'MAPA',
+      idArquitetura: 'COURACA_LIMIAR',
+      seedPartida: 'seed-0812-recruta',
+      opcoesPersistencia: { ignorarBloqueioCarcaca: true },
+    })
+  );
+  estCouracaEvento.meta.faseJogo = 'EVENTO';
+  estCouracaEvento.eventoAtual = {
+    noId: 'NO_SOS_1',
+    tipoNo: 'SOS',
+    idTemplateEvento: 'SOS_1_REDE_ARRASTO',
+    noMapa: { id: 'NO_SOS_1', tipoNo: 'SOS', idTemplateEvento: 'SOS_1_REDE_ARRASTO', xMn: 25, tPrazoHoras: 12 },
+  };
+  const tripAntesRec = estCouracaEvento.naveJogador.tripulacao.length;
+  const resEscolhaUi = despacharComandoUi(congelarProfundo(estCouracaEvento), {
+    tipo: 'ESCOLHER_OPCAO_EVENTO',
+    payload: { opcao: 'B', idEvento: 'SOS_1_REDE_ARRASTO' },
+  });
+  assert.equal(resEscolhaUi.aceito, true);
+  assert.equal(resEscolhaUi.estado.naveJogador.tripulacao.length, tripAntesRec + 1);
+  const desfechoDireto = construirDesfechoEventoCanonicamente(estMantaEvento, resEscolhaCamp.estado, {
+    opcao: 'B',
+    idEvento: 'SOS_4_COMBOIO_ENCALHADO',
+  });
+  assert.equal(desfechoDireto.deltaSucata > 0, true);
+
+  // 3. Power Surges F2 (Enxame de Drones Cortadores + Arrasto Mastro) e F3 (7 Lasers Industriais) em Tempo Real [MUT-O6-31]
+  const estCombBase = criarEstadoCampanhaCompleta({ faseInicial: 'COMBATE', seedPartida: 'seed-0812-surge' });
+  const estSurgeF2 = structuredClone(estCombBase);
+  estSurgeF2.naveJogador.estadoFisico = '1_NO_FOIL';
+  estSurgeF2.naveJogador.esquivaEfetivaPct = 0;
+  estSurgeF2.naveJogador.tripulacao.forEach((tr) => {
+    if (tr.salaId === 2) tr.salaId = 1;
+  });
+  estSurgeF2.naveJogador.camadasBarreiraAtivas = 2;
+  estSurgeF2.alvoCombate = {
+    ...structuredClone(dragaF2),
+    progressoPowerSurgeSeg: 19.9,
+    salasOuOrgaos: dragaF2.salasOuOrgaos.map((s) => ({
+      ...s,
+      barrasIntegridade: s.integridadeAtual,
+      barrasMax: s.integridadeMax,
+    })),
+  };
+  const dragaF3 = criarEstadoChefeDraga(3);
+  const estSurgeF3 = structuredClone(estSurgeF2);
+  estSurgeF3.naveJogador.camadasBarreiraAtivas = 3;
+  estSurgeF3.alvoCombate = {
+    ...structuredClone(dragaF3),
+    progressoPowerSurgeSeg: 17.9,
+    salasOuOrgaos: dragaF3.salasOuOrgaos.map((s) => ({
+      ...s,
+      barrasIntegridade: s.integridadeAtual,
+      barrasMax: s.integridadeMax,
+    })),
+  };
+  const somaDefesaAntesF3 =
+    estSurgeF3.naveJogador.hpCascoAtual + estSurgeF3.naveJogador.camadasBarreiraAtivas;
+  const estPosSurgeF3 = avancarTickPartidaEmTempoReal(congelarProfundo(estSurgeF3), 0.25);
+  const somaDefesaDepoisF3 =
+    estPosSurgeF3.naveJogador.hpCascoAtual + estPosSurgeF3.naveJogador.camadasBarreiraAtivas;
+  assert.equal(
+    somaDefesaDepoisF3 <= somaDefesaAntesF3 - 5,
+    true,
+    '[MUT-O6-31] Power Surges da Draga Continental (Enxame de Drones F2 e 7 Lasers F3) devem causar impacto real em combate em tempo real'
+  );
+
+  const hpAntesF2 = estSurgeF2.naveJogador.hpCascoAtual;
+  const bolhasAntesF2 = estSurgeF2.naveJogador.camadasBarreiraAtivas;
+  const estPosSurgeF2 = avancarTickPartidaEmTempoReal(congelarProfundo(estSurgeF2), 0.25);
+  const impactoRealF2 =
+    estPosSurgeF2.naveJogador.hpCascoAtual < hpAntesF2 ||
+    estPosSurgeF2.naveJogador.camadasBarreiraAtivas < bolhasAntesF2 ||
+    Number(estPosSurgeF2.naveJogador.pesoVirtualArrastoKg ?? 0) >= 25;
+  assert.equal(
+    impactoRealF2,
+    true,
+    '[MUT-O6-31] Power Surge Fase 2 (Enxame de Drones Cortadores) deve atingir Barreira/Casco ou impor arrasto no Mastro'
+  );
+  assert.equal(
+    (estPosSurgeF2.meta.eventosVisuaisUltimoTick ?? []).some((e) => e.tipo === 'SOBRECARGA_DRAGA'),
+    true,
+    '[MUT-O6-31] Power Surges da Draga Continental devem emitir SOBRECARGA_DRAGA no tick real'
+  );
+
+  // 4. Cobertura direta das funções táticas de encontros-eventos-campanha e renderizador-alvo-inimigo
+  const resModoSlot0 = alternarModoDisparoArma(estCombBase, 0, true);
+  assert.equal(resModoSlot0.ok, true);
+  assert.equal(resModoSlot0.modoAtivo, 'MANUAL');
+
+  const estSalvaPronta = structuredClone(resModoSlot0.estado);
+  estSalvaPronta.naveJogador.armasAtivas[0].arma.salaAlvoId = 1;
+  estSalvaPronta.naveJogador.armasAtivas[0].arma.progressoRecargaSeg =
+    estSalvaPronta.naveJogador.armasAtivas[0].arma.tempoRecargaBaseSeg;
+  const resSalvaDir = dispararSalvaManualPronta(congelarProfundo(estSalvaPronta), 0);
+  assert.equal(resSalvaDir.ok, true);
+  assert.equal(resSalvaDir.armasAutorizadas, 1);
+
+  const estAbordoDir = structuredClone(estCombBase);
+  estAbordoDir.naveJogador.tripulacao[0].localizacao = 'BORDO_INIMIGO';
+  estAbordoDir.naveJogador.tripulacao[0].salaInimigaId = 1;
+  const resMovAbordoDir = ordenarMovimentoAbordagemInimiga(
+    congelarProfundo(estAbordoDir),
+    estAbordoDir.naveJogador.tripulacao[0].id,
+    2
+  );
+  assert.equal(resMovAbordoDir.ok, true);
+
+  // Renderizadores atmosféricos e sobreposição 60 FPS diretos
+  const vmCombateDir = projetarViewModelWireframe(estCombBase);
+  const cachesAtmosTeste = {};
+  const ctxRgbaTeste = criarContextoPrimitivasRgba960x540(
+    vmCombateDir,
+    { tempoSeg: 0.5, eventos60Fps: interpolarEstadoVisual60Fps(null, estCombBase, 0.016) },
+    obterAssetsConceitoHiBit(),
+    obterMapaHitboxesNativo(vmCombateDir),
+    obterTabelasRasterUnificado(),
+    cachesAtmosTeste
+  );
+  const { placaEsq, perfilEsq, deslSubTick } = prepararFundoAtmosfericoCombate(ctxRgbaTeste, cachesAtmosTeste);
+  assert.equal(typeof deslSubTick, 'number');
+  renderizarSobrecomposicaoCombate60Fps(ctxRgbaTeste, {
+    placaEsq,
+    perfilEsq,
+    yLinhaDaguaCena: 332,
+    deslSubTick,
+    brqLigadoCena: true,
+  });
+
+  // 5. Isolamento de Modais (SAQUE / EVENTO_DESFECHO / OFICINA), [U] em EVENTO, Clique Direito por Slot e [H] em FIM_DE_RUN
+  const estMantaCong = congelarProfundo(estMantaEvento);
+  const vmEvento = projetarViewModelWireframe(estMantaCong);
+  assert.equal(Boolean(vmEvento.oficinaResumo), true);
+  const cmdKeyUEvento = traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyU' }, estMantaCong, vmEvento);
+  assert.equal(cmdKeyUEvento.acaoLocalUi, 'ACAO_CAMPANHA');
+  assert.equal(cmdKeyUEvento.acaoCampanhaUi?.tipoAcao, 'ABRIR_FECHAR_OFICINA');
+
+  const vmComModalDesfecho = projetarViewModelWireframe(resEscolhaCamp.estado);
+  const cmdKeyDVazado = traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'KeyD' }, resEscolhaCamp.estado, vmComModalDesfecho);
+  assert.equal(cmdKeyDVazado.reconhecido, false, 'Atalhos táticos não devem vazar por trás do modal EVENTO_DESFECHO');
+  const cmdEnterDesfecho = traduzirInputDomParaComandoUi({ tipoEvento: 'KEYDOWN', code: 'Enter' }, resEscolhaCamp.estado, vmComModalDesfecho);
+  assert.equal(cmdEnterDesfecho.acaoCampanhaUi?.tipoAcao, 'CONFIRMAR_DESFECHO_EVENTO');
+
+  const hbSlot0 = obterMapaHitboxesNativo(vmCombateDir).find((h) => h.tipo === 'SLOT_ARMA' && h.metadados?.slotIndex === 0);
+  const cmdBotaoDireitoSlot = traduzirInputDomParaComandoUi(
+    {
+      tipoEvento: 'CLICK',
+      botaoMouse: 2,
+      clientX: hbSlot0.x + 8,
+      clientY: hbSlot0.y + 8,
+      retanguloCanvas: { left: 0, top: 0, width: 960, height: 540 },
+    },
+    estCombBase,
+    vmCombateDir
+  );
+  assert.equal(cmdBotaoDireitoSlot.acaoCampanhaUi?.tipoAcao, 'ALTERNAR_MODO_DISPARO_ARMA');
+  assert.equal(cmdBotaoDireitoSlot.acaoCampanhaUi?.payload?.slotIndex, 0);
+
+  // 6. WebAudio: Multi-rajada Flak/Rejeição, Lookahead Sample-Accurate (ctx.currentTime dinâmico) e Ducking 900 Hz em Pausa Tática
+  const sfxRejeicaoReal = extrairSfxMulticamadaDoTick(estCombBase, estCombBase, {
+    aceito: false,
+    marcadorRejeicao: 'SEM_ENERGIA_LIVRE_REATOR',
+  });
+  assert.equal(sfxRejeicaoReal.length, 1);
+  assert.equal(sfxRejeicaoReal[0].idSfx, 'SFX_COMANDO_REJEITADO');
+
+  const sfxHoverSilencioso = extrairSfxMulticamadaDoTick(estCombBase, estCombBase, {
+    aceito: false,
+    marcadorRejeicao: 'INPUT_SEM_EFEITO_TATICO',
+  });
+  assert.equal(sfxHoverSilencioso.length, 0);
+
+  const pcmFlak = sintetizarBufferPcmMulticamada('SFX_DISPARO_ESTILHACOS_FLAK', { sampleRate: 8000 });
+  assert.equal(pcmFlak.ok, true);
+  assert.equal(pcmFlak.picoAbs > 0.1, true);
+
+  const paisagemPausada = construirPaisagemSonoraCompleta(estCombBase, estCombBase, null, {
+    pausaTaticaAtiva: true,
+  });
+  assert.equal(paisagemPausada.pausaTaticaAtiva, true);
+  assert.equal(paisagemPausada.frequenciaCorteEfetivaHz, 900);
+
+  let relogioHwSeg = 0;
+  let alvosFiltroMaster = [];
+  let oscStarts = [];
+  class AudioCtxLookaheadTeste {
+    constructor() {
+      this.state = 'running';
+      this.sampleRate = 22050;
+      this.destination = {};
+    }
+    get currentTime() {
+      return relogioHwSeg;
+    }
+    resume() { return Promise.resolve(); }
+    createDynamicsCompressor() { return { connect() {}, disconnect() {} }; }
+    createBiquadFilter() {
+      const flt = {
+        type: 'lowpass',
+        frequency: {
+          value: 20000,
+          setValueAtTime(v) { this.value = v; },
+          setTargetAtTime(v) { this.value = v; alvosFiltroMaster.push(v); },
+        },
+        Q: { value: 0.7, setValueAtTime() {}, setTargetAtTime() {} },
+        connect() {},
+        disconnect() {},
+      };
+      return flt;
+    }
+    createGain() {
+      return {
+        gain: {
+          value: 1,
+          setValueAtTime(v) { this.value = v; },
+          linearRampToValueAtTime(v) { this.value = v; },
+          exponentialRampToValueAtTime(v) { this.value = v; },
+          setTargetAtTime(v) { this.value = v; },
+        },
+        connect() {},
+        disconnect() {},
+      };
+    }
+    createStereoPanner() {
+      return { pan: { value: 0, setValueAtTime() {} }, connect() {}, disconnect() {} };
+    }
+    createBuffer(_c, len, sr) {
+      return { length: len, sampleRate: sr, getChannelData: () => new Float32Array(len) };
+    }
+    createBufferSource() {
+      const s = { buffer: null, loop: false, onended: null, connect() {}, disconnect() {}, start() {}, stop() {} };
+      return s;
+    }
+    createOscillator() {
+      return {
+        type: 'sine',
+        frequency: { value: 440, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} },
+        onended: null,
+        connect() {},
+        disconnect() {},
+        start(t) { oscStarts.push(t); },
+        stop() {},
+      };
+    }
+  }
+
+  const motorLookahead = criarMotorAudioMaritimoCliente({ AudioContext: AudioCtxLookaheadTeste });
+  motorLookahead.aplicarPlanoPaisagem(construirPaisagemSonoraCompleta(estCombBase, estCombBase, null));
+  motorLookahead.pulsarQuadroMusical60Fps(0);
+  relogioHwSeg = 0.05;
+  motorLookahead.pulsarQuadroMusical60Fps(50);
+  relogioHwSeg = 0.42;
+  motorLookahead.pulsarQuadroMusical60Fps(420);
+  assert.equal(oscStarts.length >= 6, true, 'Lookahead sample-accurate + Pad tríade de 3 vozes + batimento lub-dub devem agendar osciladores em tStep exato');
+
+  assert.equal(motorLookahead.definirPausaTatica(true), true);
+  assert.equal(motorLookahead.estaEmPausaTatica(), true);
+  assert.equal(alvosFiltroMaster.includes(900), true, 'Pausa Tática em 1_NO_FOIL deve aplicar ducking passa-baixa em 900 Hz');
+  assert.equal(motorLookahead.definirPausaTatica(false), false);
+
+  console.log(
+    `[N4] Portão 08.12 examinado: 12 funções encontros-eventos-campanha, Power Surges F2/F3 reais, Sonar dinâmico, Desfecho c/ recrutamento e WebAudio lookahead + ducking 900 Hz (${oscStarts.length} agendamentos)`
+  );
+});
+
+test('Portão 08.13: Acoplamento Energético Artilharia<->Armas [MUT-O6-33], Isolamento MAN/AUT por Slot [MUT-O6-34], Rejeições Verdadeiras no Toast [MUT-O6-35], HP Canônico de Recrutamento e Elegia Permadeath', () => {
+  const estComb = criarEstadoCampanhaCompleta({ faseInicial: 'COMBATE', seedPartida: 'seed-0813-art-ux' });
+  const naveDir = sincronizarEnergiaArmasComCamaraArtilharia(estComb.naveJogador, { redistribuir: true });
+  assert.equal(Object.isFrozen(naveDir), true);
+  assert.equal(naveDir.armasAtivas[0].arma.energiaAlocada, 2);
+  assert.equal(naveDir.armasAtivas[1].arma.energiaAlocada, 1);
+
+  // 1. Câmara 1 (ART) sem energia/integridade corta energiaAlocada e zera progressoRecargaSeg das armas dorsais [MUT-O6-33]
+  const estArtDestruida = structuredClone(estComb);
+  estArtDestruida.naveJogador.armasAtivas[0].arma.progressoRecargaSeg = 4.0;
+  estArtDestruida.naveJogador.armasAtivas[1].arma.progressoRecargaSeg = 4.0;
+  const cam1Dest = estArtDestruida.naveJogador.camaras.find((c) => c.id === 1);
+  cam1Dest.barrasIntegridade = 0;
+  cam1Dest.barrasEnergiaAlocada = 0;
+  const estPosTickArtZero = avancarTickPartidaEmTempoReal(congelarProfundo(estArtDestruida), 0.25);
+  assert.equal(
+    estPosTickArtZero.naveJogador.armasAtivas[0].arma.energiaAlocada === 0 &&
+      estPosTickArtZero.naveJogador.armasAtivas[0].arma.progressoRecargaSeg === 0 &&
+      estPosTickArtZero.naveJogador.armasAtivas[1].arma.energiaAlocada === 0,
+    true,
+    '[MUT-O6-33] Câmara 1 (ART) sem energia/integridade deve cortar energiaAlocada e zerar progressoRecargaSeg das armas dorsais'
+  );
+
+  // Retirar energia da Câmara 1 via ALOCAR_ENERGIA (ART: 3->2->0) desenergiza armas que excedem o orçamento [MUT-O6-33]
+  const resMenos1 = despacharComandoUi(estComb, {
+    tipo: 'ALOCAR_ENERGIA',
+    payload: { camaraId: 1, deltaBarras: -1 },
+  });
+  assert.equal(resMenos1.aceito, true);
+  const vmMenos1 = projetarViewModelWireframe(resMenos1.estado);
+  assert.equal(
+    vmMenos1.caixaArmas[0].energizada === true &&
+      vmMenos1.caixaArmas[1].energizada === false &&
+      vmMenos1.caixaArmas[1].energiaAlocada === 0,
+    true,
+    '[MUT-O6-33] Câmara 1 (ART) com 2 barras deve manter Slot 0 (custo 2) energizado e cortar Slot 1 (custo 1)'
+  );
+
+  const resMenos2 = despacharComandoUi(resMenos1.estado, {
+    tipo: 'ALOCAR_ENERGIA',
+    payload: { camaraId: 1, deltaBarras: -1 },
+  });
+  const resZeroArt = despacharComandoUi(resMenos2.estado, {
+    tipo: 'ALOCAR_ENERGIA',
+    payload: { camaraId: 1, deltaBarras: -1 },
+  });
+  assert.equal(resZeroArt.aceito, true);
+  assert.equal(resZeroArt.estado.naveJogador.armasAtivas[0].arma.energiaAlocada, 0);
+  assert.equal(resZeroArt.estado.naveJogador.armasAtivas[1].arma.energiaAlocada, 0);
+
+  // Re-alocar +2 barras em ART religa imediatamente o Slot 0 (Arpão de 2 energia)
+  const resReligar1 = despacharComandoUi(resZeroArt.estado, {
+    tipo: 'ALOCAR_ENERGIA',
+    payload: { camaraId: 1, deltaBarras: 1 },
+  });
+  assert.equal(resReligar1.estado.naveJogador.armasAtivas[0].arma.energiaAlocada, 0);
+  assert.equal(resReligar1.estado.naveJogador.armasAtivas[1].arma.energiaAlocada, 1);
+  const resReligar2 = despacharComandoUi(resReligar1.estado, {
+    tipo: 'ALOCAR_ENERGIA',
+    payload: { camaraId: 1, deltaBarras: 1 },
+  });
+  assert.equal(resReligar2.estado.naveJogador.armasAtivas[0].arma.energiaAlocada, 2);
+  assert.equal(resReligar2.estado.naveJogador.armasAtivas[1].arma.energiaAlocada, 0);
+
+  // 2. Clique direito individual num único slot de arma marca APENAS aquele slot como MAN e mantém os demais em AUT [MUT-O6-34]
+  const resSlot0Man = alternarModoDisparoArma(estComb, 0, true);
+  assert.equal(resSlot0Man.ok, true);
+  const vmMisto = projetarViewModelWireframe(resSlot0Man.estado);
+  assert.equal(
+    vmMisto.caixaArmas[0].modoDisparo === 'MANUAL' && vmMisto.caixaArmas[1].modoDisparo === 'AUTOMATICO',
+    true,
+    '[MUT-O6-34] Alternar modo MANUAL em um único slot de arma jamais pode marcar os outros slots como MANUAL no ViewModel/HUD'
+  );
+
+  // 3. Toast de rejeição jamais exibe banners antigos de chegada em ultimoAvisoCampanha [MUT-O6-35]
+  const msgMoeda = formatarMensagemRejeicaoUi('MOEDA_INSUFICIENTE', 'RECIFE-FORJA SIMBIÓTICO ATRACADO');
+  const msgPrecond = formatarMensagemRejeicaoUi('PRECONDICAO_NAO_ATENDIDA', 'CONTATO HOSTIL: LANCHA PATRULHEIRA');
+  const msgFallback = formatarMensagemRejeicaoUi('BLOQUEIO_EXOTICO_99', 'SETOR 1: CARCAÇA ALFA');
+  assert.equal(
+    msgMoeda.includes('INSUFICIENTE') &&
+      !msgMoeda.includes('RECIFE-FORJA') &&
+      !msgPrecond.includes('CONTATO HOSTIL') &&
+      msgFallback === 'ACAO BLOQUEADA: BLOQUEIO EXOTICO 99',
+    true,
+    '[MUT-O6-35] formatarMensagemRejeicaoUi deve traduzir o código real de rejeição sem vazar ultimoAvisoCampanha antigo no toast de erro'
+  );
+
+  // 4. Recrutamento em Evento usa HP_MAX_POR_ESPECIE canônico e respeita MAX_TRIPULANTES_NAVE = 6
+  const estEvRec = structuredClone(
+    criarEstadoCampanhaCompleta({ idArquitetura: 'MANTA_VOLT', faseInicial: 'EVENTO', seedPartida: 'seed-0813-rec' })
+  );
+  estEvRec.eventoAtual = { idEvento: 'SOS_4_COMBOIO_ENCALHADO', titulo: 'Comboio Encalhado' };
+  if (estEvRec.mapaSetorial?.nos?.[0]) {
+    estEvRec.mapaSetorial.noAtualId = estEvRec.mapaSetorial.nos[0].id;
+    estEvRec.mapaSetorial.nos[0].tipo = 'SOS';
+    estEvRec.mapaSetorial.nos[0].idEvento = 'SOS_4_COMBOIO_ENCALHADO';
+  }
+  const resRec = despacharComandoUi(congelarProfundo(estEvRec), {
+    tipo: 'ESCOLHER_OPCAO_EVENTO',
+    payload: { idEvento: 'SOS_4_COMBOIO_ENCALHADO', opcao: 'B' },
+  });
+  assert.equal(resRec.aceito, true);
+  const recrutaNovo = resRec.estado.naveJogador.tripulacao.at(-1);
+  assert.equal(recrutaNovo.hpMax, HP_MAX_POR_ESPECIE[recrutaNovo.especie]);
+  assert.equal(recrutaNovo.hpAtual, HP_MAX_POR_ESPECIE[recrutaNovo.especie]);
+
+  const estLotado6 = structuredClone(estEvRec);
+  while (estLotado6.naveJogador.tripulacao.length < MAX_TRIPULANTES_NAVE) {
+    estLotado6.naveJogador.tripulacao.push({
+      ...estLotado6.naveJogador.tripulacao[0],
+      id: `trip-extra-${estLotado6.naveJogador.tripulacao.length}`,
+    });
+  }
+  const resRecLotado = despacharComandoUi(congelarProfundo(estLotado6), {
+    tipo: 'ESCOLHER_OPCAO_EVENTO',
+    payload: { idEvento: 'SOS_4_COMBOIO_ENCALHADO', opcao: 'B' },
+  });
+  assert.equal(resRecLotado.estado.naveJogador.tripulacao.length, MAX_TRIPULANTES_NAVE);
+
+  // 5. Junção N1 real FIM_DE_RUN -> Paisagem Sonora: derrotar Draga Fase 3 via avancarTickCampanhaCompleta toca tema de VITORIA (84 BPM) e Permadeath toca elegia de DERROTA (54 BPM) [MUT-O6-36]
+  const estPreVitoriaDraga = structuredClone(
+    criarEstadoCampanhaCompleta({ faseInicial: 'COMBATE', setorNumero: 8, seedPartida: 'seed-0813-vit-real' })
+  );
+  estPreVitoriaDraga.alvoCombate = structuredClone(criarEstadoChefeDraga(3));
+  estPreVitoriaDraga.alvoCombate.hpCascoAtual = 2;
+  estPreVitoriaDraga.alvoCombate.camadasBarreiraAtivas = 0;
+  estPreVitoriaDraga.alvoCombate.barreiraBolhasAtual = 0;
+  estPreVitoriaDraga.alvoCombate.blindagemTermicaExternaPts = 0;
+  estPreVitoriaDraga.alvoCombate.esquivaEfetivaPct = 0;
+  estPreVitoriaDraga.naveJogador.armasAtivas[0] = {
+    slotIndex: 0,
+    arma: {
+      id: 'CORTADOR_TERMICO_PLASMA',
+      chassiId: 'CORTADOR_TERMICO_PLASMA',
+      nome: 'Cortador Térmico a Plasma',
+      energiaCusto: 2,
+      energiaAlocada: 2,
+      soquetesMax: 1,
+      orgaosEnxertados: [],
+      tempoRecargaBaseSeg: 14,
+      progressoRecargaSeg: 14,
+      salaAlvoId: 1,
+      trincaSalasBeam: [1, 2, 3],
+      modoDisparoManual: false,
+    },
+  };
+  const estPosVitoriaReal = avancarTickCampanhaCompleta(congelarProfundo(estPreVitoriaDraga), 0.25);
+  assert.equal(estPosVitoriaReal.meta.faseJogo, 'FIM_DE_RUN');
+  assert.equal(estPosVitoriaReal.meta.desfechoRun, 'VITORIA_CAMPANHA');
+
+  const estPrePermadeath = structuredClone(estComb);
+  estPrePermadeath.naveJogador.hpCascoAtual = 0;
+  const estPosPermadeathReal = avancarTickCampanhaCompleta(congelarProfundo(estPrePermadeath), 0.25);
+  assert.equal(estPosPermadeathReal.meta.faseJogo, 'FIM_DE_RUN');
+  assert.equal(estPosPermadeathReal.meta.desfechoRun, 'DERROTA_PERMADEATH');
+
+  const paisDerrota = construirPaisagemSonoraCompleta(estPosPermadeathReal, estPosPermadeathReal);
+  const paisVitoria = construirPaisagemSonoraCompleta(estPosVitoriaReal, estPosVitoriaReal);
+  assert.equal(
+    paisVitoria.trilhaAdaptativa.modoFimDeRun === 'VITORIA' &&
+      paisVitoria.trilhaAdaptativa.bpm === 84 &&
+      paisDerrota.trilhaAdaptativa.modoFimDeRun === 'DERROTA' &&
+      paisDerrota.trilhaAdaptativa.bpm === 54 &&
+      paisDerrota.trilhaAdaptativa.notaBaixoAtualHz < paisVitoria.trilhaAdaptativa.notaBaixoAtualHz,
+    true,
+    '[MUT-O6-36] VITORIA_CAMPANHA real em FIM_DE_RUN deve tocar tema luminoso de VITORIA (84 BPM) e Permadeath deve tocar elegia de DERROTA (54 BPM)'
+  );
+
+  console.log(
+    '[N4] Portão 08.13 examinado: acoplamento ART<->Armas, isolamento MAN/AUT por slot, toast sem aviso velho, HP recrutamento SSOT e junção real FIM_DE_RUN VITORIA (84 BPM) vs DERROTA (54 BPM)'
+  );
+});
+
+test('Portão 08.14: Junção N1 Onda 4/5 <-> Campanha Onda 6 — Perigos PER_1..3 [MUT-O6-37], Anti-Farming Frota/SOS Expirado [MUT-O6-38], Biomas S3/S5, Não-Repetição Setorial e Reator SSOT no Hangar', () => {
+  // 1. Paridade estrita do Reator Inicial nos 5 cards do Hangar contra criarEstadoInicialPartida (SSOT: [7, 8, 6, 6, 7])
+  const estHangar = criarEstadoCampanhaCompleta({ faseInicial: 'INICIO', seedPartida: 'seed-0814-hangar' });
+  const vmHangar = projetarViewModelWireframe(estHangar);
+  const reatoresHangar = vmHangar.hangarResumo.naves.map((n) => n.reator);
+  const reatoresReaisMotor = vmHangar.hangarResumo.naves.map((n) => {
+    const r = criarEstadoInicialPartida({ idArquitetura: n.id }).naveJogador.reator;
+    return r.barrasCompradas + r.barrasBonusArraias;
+  });
+  assert.deepEqual(reatoresHangar, [7, 8, 6, 6, 7]);
+  assert.deepEqual(reatoresHangar, reatoresReaisMotor);
+
+  // 2. PER_2_VORTICE_CORRENTEZA aplica penalidade real de sustentação (-40 kg na Opção A -> Touchdown; -20 kg na Blue Option B) e restaura pós-luta [MUT-O6-37]
+  const criarEstadoPerigo = (idTemplateEvento) => {
+    const base = structuredClone(
+      criarEstadoCampanhaCompleta({ idArquitetura: 'CARCACA_ALFA', faseInicial: 'EVENTO', seedPartida: 'seed-0814-per' })
+    );
+    const noPerigo = { id: 'NO_PER_TESTE', tipoNo: 'PERIGO', idTemplateEvento, xMn: 30, yMn: 20, tPrazoHoras: null };
+    base.mapaSetorial.noAtualId = noPerigo.id;
+    base.mapaSetorial.nos = [noPerigo, ...base.mapaSetorial.nos.slice(1)];
+    base.eventoAtual = { noId: noPerigo.id, tipoNo: 'PERIGO', idTemplateEvento, noMapa: noPerigo };
+    return base;
+  };
+
+  const estVorticeA = criarEstadoPerigo('PER_2_VORTICE_CORRENTEZA');
+  const resVorticeA = executarAcaoCampanhaCompleta(
+    congelarProfundo(estVorticeA),
+    { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { idEvento: 'PER_2_VORTICE_CORRENTEZA', opcao: 'A' } },
+    { pularModalDesfechoEvento: true }
+  );
+  assert.equal(resVorticeA.ok, true);
+  assert.equal(resVorticeA.estado.meta.faseJogo, 'COMBATE');
+  assert.equal(
+    resVorticeA.estado.naveJogador.sustentacaoAtualKg === 220 &&
+      resVorticeA.estado.naveJogador.estadoFisico === '2_TOUCHDOWN',
+    true,
+    '[MUT-O6-37] PER_2_VORTICE_CORRENTEZA (Opção A) deve subtrair 40 kg da sustentação do Foil (260 -> 220 kg) e derrubar Carcaça Alfa (225 kg) em Touchdown'
+  );
+
+  let estVorticeBlue = criarEstadoPerigo('PER_2_VORTICE_CORRENTEZA');
+  estVorticeBlue.economia = { sucata: 300, biomassa: 300, combustivel: 12, municao: 8 };
+  estVorticeBlue.recursos = { ...estVorticeBlue.economia };
+  estVorticeBlue = aplicarUpgradeNaveCampanha(congelarProfundo(estVorticeBlue), 'MASTRO_FOIL').estado;
+  estVorticeBlue = aplicarUpgradeNaveCampanha(estVorticeBlue, 'MASTRO_FOIL').estado;
+  const resVorticeB = executarAcaoCampanhaCompleta(
+    estVorticeBlue,
+    { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { idEvento: 'PER_2_VORTICE_CORRENTEZA', opcao: 'B' } },
+    { pularModalDesfechoEvento: true }
+  );
+  assert.equal(resVorticeB.ok, true);
+  assert.equal(resVorticeB.estado.naveJogador.penalidadeSustentacaoKg, 20);
+  assert.equal(resVorticeB.estado.naveJogador.sustentacaoAtualKg, 320);
+
+  // 3. PER_1_CHUVA_ACIDA causa dano ácido no Foil na Opção A e respeita neutralização de 30s + +2 munição pós-luta na Blue Option B
+  const estAcidoA = criarEstadoPerigo('PER_1_CHUVA_ACIDA');
+  const resAcidoA = executarAcaoCampanhaCompleta(
+    congelarProfundo(estAcidoA),
+    { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { idEvento: 'PER_1_CHUVA_ACIDA', opcao: 'A' } },
+    { pularModalDesfechoEvento: true }
+  );
+  assert.equal(resAcidoA.estado.meta.perigoAmbientalId, 'PER_1_CHUVA_ACIDA');
+  const clAcidoPacifista = structuredClone(resAcidoA.estado);
+  clAcidoPacifista.alvoCombate.salasOuOrgaos = [];
+  let estTickAcido = congelarProfundo(clAcidoPacifista);
+  const hpAntesAcido = estTickAcido.naveJogador.hpCascoAtual;
+  for (let i = 0; i < 15; i += 1) {
+    estTickAcido = avancarTickPartidaEmTempoReal(estTickAcido, 1.0);
+  }
+  assert.equal(estTickAcido.naveJogador.hpCascoAtual, hpAntesAcido - 1);
+
+  let estAcidoBlue = criarEstadoPerigo('PER_1_CHUVA_ACIDA');
+  estAcidoBlue.economia = { sucata: 300, biomassa: 300, combustivel: 12, municao: 8 };
+  estAcidoBlue.recursos = { ...estAcidoBlue.economia };
+  estAcidoBlue = aplicarUpgradeNaveCampanha(congelarProfundo(estAcidoBlue), 'PLACAS_BLINDAGEM', {
+    permitirForaDeLoja: true,
+  }).estado;
+  estAcidoBlue = aplicarUpgradeNaveCampanha(estAcidoBlue, 'PLACAS_BLINDAGEM', {
+    permitirForaDeLoja: true,
+  }).estado;
+  const resAcidoB = executarAcaoCampanhaCompleta(
+    estAcidoBlue,
+    { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { idEvento: 'PER_1_CHUVA_ACIDA', opcao: 'B' } },
+    { pularModalDesfechoEvento: true }
+  );
+  const clAcidoBluePacifista = structuredClone(resAcidoB.estado);
+  clAcidoBluePacifista.alvoCombate.salasOuOrgaos = [];
+  let estTickAcidoBlue = congelarProfundo(clAcidoBluePacifista);
+  const hpAntesBlue = estTickAcidoBlue.naveJogador.hpCascoAtual;
+  for (let i = 0; i < 20; i += 1) {
+    estTickAcidoBlue = avancarTickPartidaEmTempoReal(estTickAcidoBlue, 1.0);
+  }
+  assert.equal(estTickAcidoBlue.naveJogador.hpCascoAtual, hpAntesBlue);
+  const saqueComMunicaoBonus = aplicarRegrasSaquePosCombateCampanha(
+    { sucata: 15, biomassa: 0, combustivel: 1, municao: 1 },
+    resAcidoB.estado
+  );
+  assert.equal(saqueComMunicaoBonus.municao, 3);
+
+  // 4. PER_3_AGUAS_TURVAS impõe NEGADO_SONAR na Opção A e libera VISIVEL na Blue Option B (Córtex Nv. 3+)
+  const estTurvasA = criarEstadoPerigo('PER_3_AGUAS_TURVAS');
+  const resTurvasA = executarAcaoCampanhaCompleta(
+    congelarProfundo(estTurvasA),
+    { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { idEvento: 'PER_3_AGUAS_TURVAS', opcao: 'A' } },
+    { pularModalDesfechoEvento: true }
+  );
+  assert.equal(resTurvasA.estado.alvoCombate.canalVisibilidadeSonar, 'NEGADO_SONAR');
+  assert.equal(inspecionarSalaAlvo(resTurvasA.estado, 1).canalPermissao, 'NEGADO_SONAR');
+
+  let estTurvasBlue = criarEstadoPerigo('PER_3_AGUAS_TURVAS');
+  estTurvasBlue.economia = { sucata: 300, biomassa: 300, combustivel: 12, municao: 8 };
+  estTurvasBlue.recursos = { ...estTurvasBlue.economia };
+  estTurvasBlue = aplicarUpgradeNaveCampanha(congelarProfundo(estTurvasBlue), 'CORTEX_NAVEGACAO').estado;
+  estTurvasBlue = aplicarUpgradeNaveCampanha(estTurvasBlue, 'CORTEX_NAVEGACAO').estado;
+  const resTurvasB = executarAcaoCampanhaCompleta(
+    estTurvasBlue,
+    { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { idEvento: 'PER_3_AGUAS_TURVAS', opcao: 'B' } },
+    { pularModalDesfechoEvento: true }
+  );
+  assert.equal(inspecionarSalaAlvo(resTurvasB.estado, 1).canalPermissao, 'VISIVEL');
+
+  // 5. Eventos com COMBATE_MONSTRO vs COMBATE_BARCO forçam a classe correta de inimigo
+  for (let idxSeed = 0; idxSeed < 12; idxSeed += 1) {
+    const estNinho = structuredClone(
+      criarEstadoCampanhaCompleta({ faseInicial: 'EVENTO', seedPartida: `seed-mon-${idxSeed}` })
+    );
+    const noNinho = { id: 'NO_NINHO', tipoNo: 'SOS', idTemplateEvento: 'SOS_3_NINHO_SITIADO', xMn: 25, yMn: 20, tPrazoHoras: 99 };
+    estNinho.mapaSetorial.noAtualId = noNinho.id;
+    estNinho.mapaSetorial.nos = [noNinho, ...estNinho.mapaSetorial.nos.slice(1)];
+    estNinho.eventoAtual = { noId: noNinho.id, tipoNo: 'SOS', idTemplateEvento: 'SOS_3_NINHO_SITIADO', noMapa: noNinho };
+    const rNinho = executarAcaoCampanhaCompleta(
+      congelarProfundo(estNinho),
+      { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { idEvento: 'SOS_3_NINHO_SITIADO', opcao: 'A' } },
+      { pularModalDesfechoEvento: true }
+    );
+    if (rNinho.estado.meta.faseJogo === 'COMBATE') {
+      assert.equal(rNinho.estado.alvoCombate.classeAlvo, 'MONSTRO_MARINHO');
+    }
+  }
+
+  // 6. Anti-farming Frota Corporativa (+1 bolha bônus, 0 Sucata / 1 Combustível) e SOS Expirado (Zona Morta floor(0.5 * Sucata)) [MUT-O6-38]
+  const estMapaBase = criarEstadoCampanhaCompleta({ faseInicial: 'MAPA', setorNumero: 2, seedPartida: 'seed-0814-frota' });
+  const barreiraPadraoS3 = gerarAlvoInimigoEscaladoSetor('seed-0814-frota', 3, 'NO_FROTA_1', {
+    classeForcada: 'BARCO_HUMANO',
+  }).barreiraBolhasMax;
+  const estEntradaFrota = congelarProfundo(
+    resolverEntradaNoMapaCampanha(estMapaBase, { id: 'NO_FROTA_1', tipoNo: 'COMBATE', engolidoCorporacao: true })
+  );
+  assert.equal(estEntradaFrota.alvoCombate.barreiraBolhasMax, barreiraPadraoS3 + 1);
+  const clFrotaVitoria = structuredClone(estEntradaFrota);
+  clFrotaVitoria.alvoCombate.hpCascoAtual = 0;
+  const estPosSaqueFrota = avancarTickCampanhaCompleta(congelarProfundo(clFrotaVitoria), 0.25);
+  assert.equal(
+    estPosSaqueFrota.meta.saquePendente.sucata === 0 &&
+      estPosSaqueFrota.meta.saquePendente.biomassa === 0 &&
+      estPosSaqueFrota.meta.saquePendente.combustivel === 1,
+    true,
+    '[MUT-O6-38] Nó engolido pela Frota Corporativa deve impor saque anti-farming (0 Sucata, 0 Biomassa, 1 Combustível)'
+  );
+  assert.equal(estPosSaqueFrota.naveJogador.penalidadeSustentacaoKg, 0);
+
+  const clMapaSosExpirado = structuredClone(estMapaBase);
+  clMapaSosExpirado.mapaSetorial.relogioSetorHoras = 8.0;
+  clMapaSosExpirado.mapaSetorial.frenteCorporacaoMn = 10.0;
+  const estZonaMorta = congelarProfundo(
+    resolverEntradaNoMapaCampanha(clMapaSosExpirado, {
+      id: 'NO_SOS_EXP',
+      tipoNo: 'SOS',
+      idTemplateEvento: 'SOS_2_CAPSULA_AFUNDANDO',
+      xMn: 45,
+      tPrazoHoras: 4.5,
+    })
+  );
+  assert.equal(estZonaMorta.meta.faseJogo, 'COMBATE');
+  assert.equal(estZonaMorta.meta.modificadoresCombateAtivos.origemCombate, 'ZONA_MORTA_INDUSTRIALIZADA');
+  const saqueZonaMorta = aplicarRegrasSaquePosCombateCampanha({ sucata: 25, biomassa: 10, combustivel: 2, municao: 1 }, estZonaMorta);
+  assert.equal(saqueZonaMorta.sucata, 12);
+  assert.equal(saqueZonaMorta.biomassa, 0);
+  assert.equal(saqueZonaMorta.combustivel, 0);
+
+  // 7. Não-repetição de templates SOS/EXPLORACAO entre setores consecutivos + Biomas S3 (-15% esquiva barco) e S5 (Fossa Abissal NEGADO_SONAR)
+  const estSetor1 = anexarMapaSetorAoEstado(estMapaBase, 'seed-nao-repete-0814', 1);
+  const estSetor2 = anexarMapaSetorAoEstado(estSetor1, 'seed-nao-repete-0814', 2);
+  const setS1 = new Set([
+    ...estSetor1.mapaSetorial.templatesSorteados.sos,
+    ...estSetor1.mapaSetorial.templatesSorteados.exploracao,
+  ]);
+  const repetidosS2 = [
+    ...estSetor2.mapaSetorial.templatesSorteados.sos,
+    ...estSetor2.mapaSetorial.templatesSorteados.exploracao,
+  ].filter((idT) => setS1.has(idT));
+  assert.deepEqual(repetidosS2, []);
+
+  const barcoS2 = gerarAlvoInimigoEscaladoSetor('seed-kelp', 2, 'NO_B', { arquetipoId: 'BARCO_2_CORVETA' });
+  const barcoS3Kelp = gerarAlvoInimigoEscaladoSetor('seed-kelp', 3, 'NO_B', { arquetipoId: 'BARCO_2_CORVETA' });
+  assert.equal(barcoS3Kelp.esquivaBasePct < barcoS2.esquivaBasePct, true);
+
+  const estSetor5 = anexarMapaSetorAoEstado(estMapaBase, 'seed-fossa-s5', 5);
+  assert.equal(estSetor5.meta.aguasTurvasAtivas, true);
+  const estCombateS5 = congelarProfundo(
+    resolverEntradaNoMapaCampanha(estSetor5, { id: 'NO_COMB_S5', tipoNo: 'COMBATE', xMn: 30 })
+  );
+  assert.equal(inspecionarSalaAlvo(estCombateS5, 1).canalPermissao, 'NEGADO_SONAR');
+
+  // 8. Todos os 17 templates canônicos 4.5.A têm narrativa própria e Blue Option avaliada contra o kit real [MUT-O6-39]
+  assert.equal(Object.keys(TABELA_NARRATIVA_17_EVENTOS_45A).length, 17);
+  const titulosUnicos17 = new Set(Object.values(TABELA_NARRATIVA_17_EVENTOS_45A).map((v) => v.titulo));
+  assert.equal(titulosUnicos17.size, 17);
+
+  // Carcaça Alfa inicial tem 0 Blue Options elegíveis (Matriz 4.5.C) -> TODAS as 17 opções [B] devem nascer com bloqueada: true!
+  const estAlfaEvento = criarEstadoCampanhaCompleta({
+    idArquitetura: 'CARCACA_ALFA',
+    faseInicial: 'EVENTO',
+    seedPartida: 'seed-0814-17ev',
+  });
+  let blueBloqueadasAlfa = 0;
+  for (const idTemplate17 of Object.keys(TABELA_NARRATIVA_17_EVENTOS_45A)) {
+    const clEv = structuredClone(estAlfaEvento);
+    const catEv = idTemplate17.startsWith('PER_')
+      ? 'PERIGO'
+      : idTemplate17.startsWith('EXP_')
+        ? 'EXPLORACAO'
+        : 'SOS';
+    clEv.eventoAtual = { noId: 'NO_EV_17', tipoNo: catEv, idTemplateEvento: idTemplate17 };
+    const resumoEv = construirEventoResumoCanonico45A(clEv);
+    assert.equal(resumoEv.idEvento, idTemplate17);
+    if (resumoEv.opcoes[1].bloqueada === true) {
+      blueBloqueadasAlfa += 1;
+    }
+  }
+  assert.equal(
+    blueBloqueadasAlfa,
+    17,
+    '[MUT-O6-39] Carcaça Alfa inicial (0 Blue Options na Matriz 4.5.C) deve projetar bloqueada: true nas 17 opções [B] da tela EVENTO'
+  );
+
+  // Coerência narrativa EVENTO <-> EVENTO_DESFECHO em SOS_5_BALEIA_ENCALHADA + desbloqueio ao vivo após upgrade de Sifão Nv.4
+  let estBaleia = structuredClone(estAlfaEvento);
+  const noBaleia = { id: 'NO_BALEIA', tipoNo: 'SOS', idTemplateEvento: 'SOS_5_BALEIA_ENCALHADA', xMn: 30, yMn: 20, tPrazoHoras: 12 };
+  estBaleia.mapaSetorial.noAtualId = noBaleia.id;
+  estBaleia.mapaSetorial.nos = [noBaleia, ...estBaleia.mapaSetorial.nos.slice(1)];
+  estBaleia.eventoAtual = { noId: noBaleia.id, tipoNo: 'SOS', idTemplateEvento: 'SOS_5_BALEIA_ENCALHADA', noMapa: noBaleia };
+  estBaleia.economia = { sucata: 300, biomassa: 300, combustivel: 12, municao: 8 };
+  estBaleia.recursos = { ...estBaleia.economia };
+  const estBaleiaCong = congelarProfundo(estBaleia);
+  const vmBaleiaAntes = projetarViewModelWireframe(estBaleiaCong);
+  assert.equal(vmBaleiaAntes.eventoResumo.titulo.includes('BALEIA-OFICINA'), true);
+  assert.equal(vmBaleiaAntes.eventoResumo.opcoes[1].bloqueada, true);
+  let estBaleiaUp = aplicarUpgradeNaveCampanha(estBaleiaCong, 'SIFAO_PROPULSAO').estado;
+  estBaleiaUp = aplicarUpgradeNaveCampanha(estBaleiaUp, 'SIFAO_PROPULSAO').estado;
+  const vmBaleiaDepois = projetarViewModelWireframe(estBaleiaUp);
+  assert.equal(vmBaleiaDepois.eventoResumo.opcoes[1].bloqueada, false);
+  const resDesfechoBaleia = executarAcaoCampanhaCompleta(estBaleiaUp, {
+    tipo: 'ESCOLHER_OPCAO_EVENTO',
+    payload: { idEvento: 'SOS_5_BALEIA_ENCALHADA', opcao: 'B' },
+  });
+  assert.equal(resDesfechoBaleia.ok, true);
+  const vmModalBaleia = projetarViewModelWireframe(resDesfechoBaleia.estado);
+  assert.equal(vmModalBaleia.desfechoEventoResumo.titulo.includes('BALEIA-OFICINA'), true);
+
+  // 9. Telemetria tática da Carta Hidrográfica (rotas c/ correntes, relógio, alcancavel) + revelaMapaSetorial (cartaRevelada)
+  let estSonarEv = structuredClone(estAlfaEvento);
+  estSonarEv.economia = { sucata: 300, biomassa: 300, combustivel: 12, municao: 8 };
+  estSonarEv.recursos = { ...estSonarEv.economia };
+  const noSonar = { id: 'NO_SONAR_EXP2', tipoNo: 'EXPLORACAO', idTemplateEvento: 'EXP_2_PLATAFORMA_FANTASMA', xMn: 22, yMn: 24, tPrazoHoras: null };
+  estSonarEv.mapaSetorial.noAtualId = noSonar.id;
+  estSonarEv.mapaSetorial.nos = [noSonar, ...estSonarEv.mapaSetorial.nos];
+  estSonarEv.eventoAtual = { noId: noSonar.id, tipoNo: 'EXPLORACAO', idTemplateEvento: 'EXP_2_PLATAFORMA_FANTASMA', noMapa: noSonar };
+  const telAntesRevelar = construirTelemetriaMapaSetorial(estSonarEv, 'MAPA');
+  assert.equal(telAntesRevelar.cartaRevelada, false);
+  assert.equal(
+    telAntesRevelar.nos.some((n) => !n.ehAtual && !n.alcancavel && !n.visitado && n.inteligenciaRevelada === false),
+    true
+  );
+
+  const estSonarUp = aplicarUpgradeNaveCampanha(congelarProfundo(estSonarEv), 'CORTEX_NAVEGACAO').estado;
+  const resRevelar = executarAcaoCampanhaCompleta(
+    estSonarUp,
+    { tipo: 'ESCOLHER_OPCAO_EVENTO', payload: { idEvento: 'EXP_2_PLATAFORMA_FANTASMA', opcao: 'B' } },
+    { pularModalDesfechoEvento: true }
+  );
+  assert.equal(resRevelar.ok, true);
+  assert.equal(resRevelar.estado.mapaSetorial.cartaRevelada, true);
+  const vmMapaRevelado = projetarViewModelWireframe(resRevelar.estado);
+  assert.equal(vmMapaRevelado.mapaSetorialResumo.cartaRevelada, true);
+  assert.equal(
+    vmMapaRevelado.mapaSetorialResumo.nos.every((n) => n.inteligenciaRevelada === true && Boolean(n.subtipoCurto)),
+    true
+  );
+  assert.equal(
+    vmMapaRevelado.mapaSetorialResumo.rotas.some((r) => r.tipoCorrente === 'FAVORAVEL' || r.tipoCorrente === 'REVOLTO'),
+    true
+  );
+  assert.equal(
+    vmMapaRevelado.mapaSetorialResumo.rotas.every((r) => Number.isFinite(r.horasViagem) && r.horasViagem > 0),
+    true
+  );
+  assert.equal(
+    vmMapaRevelado.mapaSetorialResumo.nos
+      .filter((n) => n.alcancavel)
+      .every((n) => Number.isFinite(n.rotaAtiva?.horasViagem) && n.rotaAtiva.horasViagem > 0),
+    true
+  );
+
+  // 10. Paridade 1:1 do Ghost Preview client-side (runtime-navegador.mjs <-> calcularGhostPreviewTermometro) [MUT-O6-41]
+  const estGhostAlfa = criarEstadoCampanhaCompleta({
+    faseInicial: 'COMBATE',
+    idArquitetura: 'CARCACA_ALFA',
+    setorNumero: 1,
+    seedPartida: 'seed-ghost-client-alfa',
+  });
+  const vmGhostAlfa = projetarViewModelWireframe(estGhostAlfa);
+  const vmGhostSifCliente = enriquecerGhostPreviewCliente(vmGhostAlfa, 'SISTEMA_SIF');
+  assert.equal(
+    vmGhostSifCliente.termometroSustentacao.ghostPreview.sustentacaoProjetadaKg,
+    230,
+    '[MUT-O6-41] Ghost Preview client-side em SISTEMA_SIF na Carcaça Alfa (225 kg / 260 kg) deve projetar 230 kg estável no Foil (1:1 com calcularGhostPreviewTermometro)'
+  );
+  assert.equal(vmGhostSifCliente.termometroSustentacao.ghostPreview.causariaQuedaNoMar, false);
+  assert.equal(vmGhostSifCliente.termometroSustentacao.ghostPreview.rotuloFantasma, '[ESTÁVEL NO FOIL]');
+
+  // Também valida o caminho de fallback sem mapaGhostPorHitbox (paridade numérica por câmara)
+  const vmSemMapaSsot = {
+    ...vmGhostAlfa,
+    termometroSustentacao: { ...vmGhostAlfa.termometroSustentacao, mapaGhostPorHitbox: null },
+  };
+  const vmGhostSifFallback = enriquecerGhostPreviewCliente(vmSemMapaSsot, 'SISTEMA_SIF');
+  assert.equal(vmGhostSifFallback.termometroSustentacao.ghostPreview.sustentacaoProjetadaKg, 230);
+  assert.equal(vmGhostSifFallback.termometroSustentacao.ghostPreview.causariaQuedaNoMar, false);
+
+  // Mergulho Tático em Touchdown com sobrepeso (285 kg > 260 kg) deve acusar [PESADO DEMAIS!] em vez de [EMERGIR -> FOIL]
+  const clGhostPesado = structuredClone(estGhostAlfa);
+  clGhostPesado.naveJogador.estadoFisico = '2_TOUCHDOWN';
+  clGhostPesado.naveJogador.mergulhoTaticoAtivo = true;
+  clGhostPesado.naveJogador.nivelBlindagem = 4; // +60 kg -> 285 kg > 260 kg
+  const vmGhostPesado = projetarViewModelWireframe(congelarProfundo(clGhostPesado));
+  const vmGhostMergulho = enriquecerGhostPreviewCliente(vmGhostPesado, 'BTN_MERGULHO_TATICO');
+  assert.equal(vmGhostMergulho.termometroSustentacao.ghostPreview.sustentacaoProjetadaKg, 260);
+  assert.equal(vmGhostMergulho.termometroSustentacao.ghostPreview.causariaQuedaNoMar, true);
+  assert.equal(vmGhostMergulho.termometroSustentacao.ghostPreview.rotuloFantasma, '[PESADO DEMAIS!]');
+
+  // Válvula externa de câmara já seca (0 kg) deve projetar 0 kg de perda de água
+  const clGhostCamSeca = structuredClone(estGhostAlfa);
+  const cam4Seca = clGhostCamSeca.naveJogador.camaras.find((c) => c.id === 4);
+  cam4Seca.aguaKg = 0;
+  const vmGhostCamSeca = projetarViewModelWireframe(congelarProfundo(clGhostCamSeca));
+  const vmGhostValv4 = enriquecerGhostPreviewCliente(vmGhostCamSeca, 'VALVULA_CAMARA_4');
+  assert.equal(
+    vmGhostValv4.termometroSustentacao.ghostPreview.aguaProjetadaKg,
+    vmGhostValv4.termometroSustentacao.aguaTotalKg
+  );
+
+  // 11. Corte tático opaco de BARCO_1_LANCHA (0 vazamento de marinheiro assado + Lei L3) e badge SOS na base do Mapa [MUT-O6-42]
+  const assetsLancha = obterAssetsConceitoHiBit();
+  const tabLancha = obterTabelasRasterUnificado();
+  const clLanchaComTrip = structuredClone(estGhostAlfa);
+  clLanchaComTrip.alvoCombate = gerarAlvoInimigoEscaladoSetor('seed-lancha-cutaway', 1, 'BARCO_1_LANCHA');
+  const estLanchaComTrip = congelarProfundo(clLanchaComTrip);
+  const vmLanchaComTrip = projetarViewModelWireframe(estLanchaComTrip);
+  const hbLancha = obterMapaHitboxesNativo(vmLanchaComTrip);
+  const rgbaLanchaComTrip = rasterizarQuadroRgba960x540(vmLanchaComTrip, { tempoSeg: 0.4 }, assetsLancha, hbLancha, tabLancha);
+
+  const clLanchaVazia = structuredClone(clLanchaComTrip);
+  clLanchaVazia.alvoCombate.tripulacao = [];
+  for (const s of clLanchaVazia.alvoCombate.salasOuOrgaos) {
+    s.tripulantes = [];
+  }
+  const vmLanchaVazia = projetarViewModelWireframe(congelarProfundo(clLanchaVazia));
+  const rgbaLanchaVazia = rasterizarQuadroRgba960x540(vmLanchaVazia, { tempoSeg: 0.4 }, assetsLancha, hbLancha, tabLancha);
+
+  const clLanchaTurva = structuredClone(clLanchaComTrip);
+  clLanchaTurva.alvoCombate.canalVisibilidadeSonar = 'NEGADO_SONAR';
+  const vmLanchaTurva = projetarViewModelWireframe(congelarProfundo(clLanchaTurva));
+  const rgbaLanchaTurva = rasterizarQuadroRgba960x540(vmLanchaTurva, { tempoSeg: 0.4 }, assetsLancha, hbLancha, tabLancha);
+
+  const hbCabineLancha = hbLancha.find((h) => h.tipo === 'SALA_ALVO' && /CABINE/i.test(String(h.metadados?.nomeSala ?? ''))) ??
+    hbLancha.find((h) => h.idHitbox === 'SALA_ALVO_2');
+  let diffCabineTripVsVazia = 0;
+  let diffCabineTripVsTurva = 0;
+  for (let py = hbCabineLancha.y + 12; py < hbCabineLancha.y + hbCabineLancha.altura - 2; py += 1) {
+    for (let px = hbCabineLancha.x + 2; px < hbCabineLancha.x + hbCabineLancha.largura - 2; px += 1) {
+      const idx = (py * 960 + px) * 4;
+      if (
+        rgbaLanchaComTrip[idx] !== rgbaLanchaVazia[idx] ||
+        rgbaLanchaComTrip[idx + 1] !== rgbaLanchaVazia[idx + 1] ||
+        rgbaLanchaComTrip[idx + 2] !== rgbaLanchaVazia[idx + 2]
+      ) {
+        diffCabineTripVsVazia += 1;
+      }
+      if (
+        rgbaLanchaComTrip[idx] !== rgbaLanchaTurva[idx] ||
+        rgbaLanchaComTrip[idx + 1] !== rgbaLanchaTurva[idx + 1] ||
+        rgbaLanchaComTrip[idx + 2] !== rgbaLanchaTurva[idx + 2]
+      ) {
+        diffCabineTripVsTurva += 1;
+      }
+    }
+  }
+  assert.equal(
+    diffCabineTripVsVazia >= 30 && diffCabineTripVsTurva >= 30,
+    true,
+    '[MUT-O6-42] BARCO_1_LANCHA deve desenhar corte tático opaco nas 4 salas (ocultando marinheiros assados e respeitando tripulação viva / Lei L3)'
+  );
+
+  // Nó SOS na fileira inferior do mapa (yMn = 59 -> hb.y >= 375) deve renderizar badge [SOS Xh] acima da boia sem ser suprimido
+  const clMapaSosBase = structuredClone(estSonarUp);
+  clMapaSosBase.meta.faseJogo = 'MAPA';
+  clMapaSosBase.mapaSetorial.relogioSetorHoras = 2;
+  const idxNoBase = clMapaSosBase.mapaSetorial.nos.findIndex((n) => n.id !== clMapaSosBase.mapaSetorial.noAtualId);
+  clMapaSosBase.mapaSetorial.nos[idxNoBase] = {
+    ...clMapaSosBase.mapaSetorial.nos[idxNoBase],
+    tipoNo: 'SOS',
+    xMn: 60,
+    yMn: 59,
+    tPrazoHoras: 7,
+  };
+  const vmMapaSosBase = projetarViewModelWireframe(congelarProfundo(clMapaSosBase));
+  const hbMapaSosBase = obterMapaHitboxesNativo(vmMapaSosBase);
+  const hbNoSosBase = hbMapaSosBase.find((h) => h.idHitbox === `NO_MAPA_${clMapaSosBase.mapaSetorial.nos[idxNoBase].id}`);
+  assert.equal(hbNoSosBase.y + hbNoSosBase.altura + 14 >= 398, true);
+  const rgbaMapaSosBase = rasterizarQuadroRgba960x540(vmMapaSosBase, { tempoSeg: 0.2 }, assetsLancha, hbMapaSosBase, tabLancha);
+  let pxBadgeAcimaBoia = 0;
+  for (let py = hbNoSosBase.y - 13; py <= hbNoSosBase.y - 2; py += 1) {
+    for (let px = hbNoSosBase.x - 14; px <= hbNoSosBase.x + hbNoSosBase.largura + 14; px += 1) {
+      const idx = (py * 960 + px) * 4;
+      if (rgbaMapaSosBase[idx] > 200 && rgbaMapaSosBase[idx + 1] > 140 && rgbaMapaSosBase[idx + 2] < 80) {
+        pxBadgeAcimaBoia += 1;
+      }
+    }
+  }
+  assert.equal(pxBadgeAcimaBoia >= 16, true);
+
+  // 12. Draga Fase 1: zerar 'Casa de Máquinas e Bombas de Porão' (c/ acento) derruba esquiva a 0% + hover LOJA_VENDER_PORAO_0 [MUT-O6-43]
+  const dragaF1Motor = structuredClone(criarEstadoChefeDraga(1));
+  assert.equal(dragaF1Motor.esquivaBasePct, 20);
+  const salaCasaMaqF1 = dragaF1Motor.salasOuOrgaos.find((s) => /M[AÁ]QUINAS/i.test(s.nome));
+  salaCasaMaqF1.integridadeAtual = 0;
+  recalcularSubsistemasAlvoInPlace(dragaF1Motor);
+  assert.equal(
+    dragaF1Motor.esquivaEfetivaPct,
+    0,
+    '[MUT-O6-43] Zerar a integridade da Casa de Máquinas (Sala 6) na Fase 1 da Draga deve derrubar a esquiva efetiva para 0%'
+  );
+
+  const clLojaHoverPorao = structuredClone(estGhostAlfa);
+  clLojaHoverPorao.meta.faseJogo = 'LOJA';
+  clLojaHoverPorao.naveJogador.poraoCarga = [
+    { slotIndex: 0, item: { id: 'GLANDULA_BAIACU', tipo: 'ORGAO', nome: 'Glândula de Baiacu', pesoKg: 5 } },
+    { slotIndex: 1, item: null },
+    { slotIndex: 2, item: null },
+    { slotIndex: 3, item: null },
+  ];
+  const vmLojaPorao = projetarViewModelWireframe(congelarProfundo(clLojaHoverPorao));
+  const hbLojaPorao = obterMapaHitboxesNativo(vmLojaPorao);
+  const rgbaLojaSemHov = rasterizarQuadroRgba960x540(vmLojaPorao, { tempoSeg: 0.2 }, assetsLancha, hbLojaPorao, tabLancha);
+  const rgbaLojaHovP0 = rasterizarQuadroRgba960x540(
+    vmLojaPorao,
+    { tempoSeg: 0.2, hoverHitboxId: 'LOJA_VENDER_PORAO_0' },
+    assetsLancha,
+    hbLojaPorao,
+    tabLancha
+  );
+  let diffRodapeLojaPorao = 0;
+  for (let py = 404; py <= 423; py += 1) {
+    for (let px = 160; px <= 460; px += 1) {
+      const idx = (py * 960 + px) * 4;
+      if (
+        rgbaLojaSemHov[idx] !== rgbaLojaHovP0[idx] ||
+        rgbaLojaSemHov[idx + 1] !== rgbaLojaHovP0[idx + 1] ||
+        rgbaLojaSemHov[idx + 2] !== rgbaLojaHovP0[idx + 2]
+      ) {
+        diffRodapeLojaPorao += 1;
+      }
+    }
+  }
+  assert.equal(diffRodapeLojaPorao >= 40, true);
+
+  console.log(
+    '[N4] Portão 08.14 examinado: Hangar SSOT [7,8,6,6,7], 17 Eventos + Blue Options reais, Carta c/ correntes + cartaRevelada, Ghost 1:1, Corte Lancha, Draga F1 e Biomas S3/S5'
+  );
+});
+
+
 
 
 

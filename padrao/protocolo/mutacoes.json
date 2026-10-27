@@ -1415,7 +1415,7 @@
     },
     {
       "id": "MUT-89",
-      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "arquivo": "src/onda6-ui/renderizador-canvas2d-primitivas.mjs",
       "lei": "N1 / Seção 8.5.C (MUT-O6-04)",
       "descricao": "Renderizador Canvas 2D ignora a queda de 100 px nativos em 2_TOUCHDOWN (parede 2º/3º andar deixa de cruzar LINHA_DAGUA_Y = 330)",
       "trocas": [
@@ -1447,7 +1447,7 @@
     },
     {
       "id": "MUT-91",
-      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "arquivo": "src/onda6-ui/renderizador-canvas2d-primitivas.mjs",
       "lei": "L4 / Seção 5.4 (MUT-O6-06)",
       "descricao": "Atlas de Sprites Nativo dá à COURACA_LIMIAR a asa submersa padrão (44 px) em vez do dobro da largura (88 px)",
       "trocas": [
@@ -1463,7 +1463,7 @@
     },
     {
       "id": "MUT-92",
-      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "arquivo": "src/onda6-ui/interpolador-60fps.mjs",
       "lei": "N1 / L4 (MUT-O6-07)",
       "descricao": "Geometria de encaixe aumenta larguraSlotDuploPx de 36 px para 42 px dentro da câmara de 76 px, causando colisão entre os 2 slots e invasão da parede/válvula",
       "trocas": [
@@ -1479,7 +1479,7 @@
     },
     {
       "id": "MUT-93",
-      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "arquivo": "src/onda6-ui/renderizador-canvas2d-primitivas.mjs",
       "lei": "L4 / L6 (MUT-O6-08)",
       "descricao": "calcularEncaixeDorsalArma suprime o recuo horizontal de -4 px dos tendões no quadro F3_DISPARO_RECUO",
       "trocas": [
@@ -1495,7 +1495,7 @@
     },
     {
       "id": "MUT-94",
-      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "arquivo": "src/onda6-ui/interpolador-60fps.mjs",
       "lei": "N1 / L4 (MUT-O6-09)",
       "descricao": "Geometria do Andar 4 (6 POÇO DA QUILHA, altura útil 24 px) eleva alturaMaxAndar4Px de 22 px para 28 px, invadindo o rótulo duplo da câmara",
       "trocas": [
@@ -1511,7 +1511,7 @@
     },
     {
       "id": "MUT-95",
-      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "arquivo": "src/onda6-ui/hitboxes-layout.mjs",
       "lei": "N1 / L4 (MUT-O6-10)",
       "descricao": "obterMapaHitboxesNativo introduz desvio de +48 px nas hitboxes da grade 960x540, desalinhando os quadrados de ação das câmaras e estourando a borda direita na Draga",
       "trocas": [
@@ -1527,7 +1527,7 @@
     },
     {
       "id": "MUT-96",
-      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "arquivo": "src/onda6-ui/tick-combate-tempo-real.mjs",
       "lei": "L1 / N1 (MUT-O6-11)",
       "descricao": "avancarTickPartidaEmTempoReal suprime o fogo de retorno determinístico das armas e órgãos inimigos contra a bio-nave",
       "trocas": [
@@ -1543,7 +1543,7 @@
     },
     {
       "id": "MUT-97",
-      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "arquivo": "src/onda6-ui/renderizador-hud-tooltips.mjs",
       "lei": "L4 / Seção 8.5.C (MUT-O6-12)",
       "descricao": "renderizarCenaCanvasParaPngBuffer fixa segmentos largos na barra de 24/24 HP da CHEFE_DRAGA, vazando pixels vermelhos para fora da moldura X=956",
       "trocas": [
@@ -1559,7 +1559,7 @@
     },
     {
       "id": "MUT-98",
-      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "arquivo": "src/onda6-ui/interpolador-60fps.mjs",
       "lei": "L4 / L6 (MUT-O6-13)",
       "descricao": "interpolarEstadoVisual60Fps zera fatorCasco na transição sub-tick 60 FPS, congelando o deslizamento vertical do casco entre 1_NO_FOIL e 2_TOUCHDOWN",
       "trocas": [
@@ -1575,7 +1575,7 @@
     },
     {
       "id": "MUT-99",
-      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "arquivo": "src/onda6-ui/tick-combate-tempo-real.mjs",
       "lei": "L1 / L4 (MUT-O6-14)",
       "descricao": "avancarTickPartidaEmTempoReal desativa o limiar de 35% O2 do Reflexo Branquial Simbiótico (GD-1), deixando a tripulação morrer asfixiada silenciosamente aos 38s",
       "trocas": [
@@ -1600,6 +1600,7 @@
           "substituir": "        let margemParaDrenarKg = Math.max(0, aguaTotalAtual - 0);"
         },
         {
+          "arquivo": "src/onda6-ui/tick-combate-tempo-real.mjs",
           "buscar": "      if (!algumaAberta || aguaTotal <= 64.0) {",
           "substituir": "      if (!algumaAberta || aguaTotal <= 0.0) {"
         }
@@ -1611,7 +1612,7 @@
     },
     {
       "id": "MUT-101",
-      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "arquivo": "src/onda6-ui/tick-combate-tempo-real.mjs",
       "lei": "L1 / L6 (MUT-O6-16)",
       "descricao": "avancarTickPartidaEmTempoReal suprime o Protocolo Corta-Fogo + Mina Magnética de superfície do Barco Humano <= 50% HP (GD-3)",
       "trocas": [
@@ -1675,7 +1676,7 @@
     },
     {
       "id": "MUT-105",
-      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "arquivo": "src/onda6-ui/interpolador-60fps.mjs",
       "lei": "L1 / L6 (MUT-O6-17)",
       "descricao": "interpolarEstadoVisual60Fps desativa os waypoints anatômicos dos portais e do Duto Hidráulico Ventral curvo 5<->6, cortando paredes em linha reta",
       "trocas": [
@@ -1704,6 +1705,426 @@
         "tests/04-onda2-combate.test.mjs"
       ],
       "falhaEsperada": "[MUT-106] Marinheiro humano sem escafandro deve afogar a -8.0 HP/s dentro de câmara inundada (> 0 kg H2O) da bio-nave"
+    },
+    {
+      "id": "MUT-107",
+      "arquivo": "src/onda6-ui/persistencia-perfil.mjs",
+      "lei": "N1 / Seção 9.2 (MUT-O6-18)",
+      "descricao": "apagarRunSavePermadeathDisco omite a remoção física de run_save.json do disco em Permadeath (TR_7A_DERROTA_EM_COMBATE), permitindo continuar run morta",
+      "trocas": [
+        {
+          "buscar": "  const ignorarPermadeathMutacao = opcoes.ignorarDelecaoPermadeathDiscoMutacao === true;",
+          "substituir": "  const ignorarPermadeathMutacao = true;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-18] Permadeath (TR_7A_DERROTA_EM_COMBATE) deve apagar fisicamente run_save.json do disco"
+    },
+    {
+      "id": "MUT-108",
+      "arquivo": "src/onda6-ui/assets-hibit.mjs",
+      "lei": "L4 / Seção 5.7.A (MUT-O6-19)",
+      "descricao": "obterPerfilVisualArquetipoInimigo colapsa todos os 8 arquétipos do Bestiário 5.7.A para BARCO_1_LANCHA, destruindo a distinção visual de silhueta e paleta",
+      "trocas": [
+        {
+          "buscar": "    if (VARIANTES_VISUAIS_INIMIGOS_57A[chave]) {\n      return VARIANTES_VISUAIS_INIMIGOS_57A[chave];\n    }",
+          "substituir": "    if (VARIANTES_VISUAIS_INIMIGOS_57A[chave]) {\n      return VARIANTES_VISUAIS_INIMIGOS_57A.BARCO_1_LANCHA;\n    }"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-19] Todos os 8 arquétipos do Bestiário 5.7.A devem ter silhueta/superestrutura/paleta distintas"
+    },
+    {
+      "id": "MUT-109",
+      "arquivo": "src/onda6-ui/audio-maritimo.mjs",
+      "lei": "N1 / Seção 8.5.C (MUT-O6-20)",
+      "descricao": "construirPaisagemSonoraCompleta trava o filtro subaquático master da paisagem sonora em 20000 Hz em vez de cortar em 400 Hz durante 2_TOUCHDOWN",
+      "trocas": [
+        {
+          "buscar": "    filtroSubaquaticoMaster: planoCues85C.filtroSubaquaticoMaster,",
+          "substituir": "    filtroSubaquaticoMaster: { ...planoCues85C.filtroSubaquaticoMaster, frequenciaCorteHz: 20000 },"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-20] Em 2_TOUCHDOWN o filtro subaquático master da paisagem sonora deve cortar em 400 Hz"
+    },
+    {
+      "id": "MUT-110",
+      "arquivo": "src/onda2-combate/tick-sistemas-armas.mjs",
+      "lei": "N1 / Seção 1.6.C + 5.1 (MUT-O6-21)",
+      "descricao": "GRAFOS_BEAM_CANONICOS.DRAGA_F3_5 rompe a adjacência ortogonal 2->3 na Fase 3 da Draga Continental, impedindo a varredura de 3 salas [1,2,3] do Cortador Térmico",
+      "trocas": [
+        {
+          "buscar": "  DRAGA_F3_5: Object.freeze({\n    1: [2, 4],\n    2: [1, 3, 4, 5],",
+          "substituir": "  DRAGA_F3_5: Object.freeze({\n    1: [2, 4],\n    2: [1, 4, 5],"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-21] Cortador Térmico (2 dano/sala, Seção 5.1) deve varrer as 3 salas ortogonais [1,2,3] da Draga Fase 3 (DRAGA_F3_5) causando 6 de dano total ao casco"
+    },
+    {
+      "id": "MUT-111",
+      "arquivo": "src/onda6-ui/tick-combate-tempo-real.mjs",
+      "lei": "L1 / L6 (MUT-O6-22)",
+      "descricao": "avancarTickPartidaEmTempoReal ignora a retenção de salva em modoDisparoManual, disparando armas automaticamente sem esperar [X] Salva",
+      "trocas": [
+        {
+          "buscar": "    if (arma.modoDisparoManual === true && arma.disparoManualAutorizado !== true) {",
+          "substituir": "    if (false && arma.modoDisparoManual === true && arma.disparoManualAutorizado !== true) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-22] Armas em modo MANUAL devem segurar 100% de carga sem disparar sozinhas no tick"
+    },
+    {
+      "id": "MUT-112",
+      "arquivo": "src/onda6-ui/campanha-completa.mjs",
+      "lei": "N1 / Seção 5.6.A (MUT-O6-23)",
+      "descricao": "recalcularHidraulicaNaveImutavel zera nivelBlindagem ao calcular pesoTotalKg, suprimindo os +15 kg por degrau de Placas de Blindagem",
+      "trocas": [
+        {
+          "buscar": "  const pesoTotalKg = calcularPesoTotalNave(nave);",
+          "substituir": "  const pesoTotalKg = calcularPesoTotalNave({ ...nave, nivelBlindagem: 0 });"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-23] Placas de Blindagem Nv.3 devem adicionar exatamente +45 kg (3 x 15 kg) à massa total da bio-nave"
+    },
+    {
+      "id": "MUT-113",
+      "arquivo": "src/onda6-ui/cliente-web.mjs",
+      "lei": "N1 / L6 (MUT-O6-24)",
+      "descricao": "Servidor HTTP suprime o roteamento de ACAO_CAMPANHA em /api/comando, impedindo iniciar campanha do Hangar (INICIO -> MAPA)",
+      "trocas": [
+        {
+          "buscar": "            if (traducao.acaoLocalUi === 'ACAO_CAMPANHA' && traducao.acaoCampanhaUi) {",
+          "substituir": "            if (false && traducao.acaoLocalUi === 'ACAO_CAMPANHA' && traducao.acaoCampanhaUi) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-24] Clicar em HANGAR_INICIAR_RUN no servidor web deve iniciar a campanha e transicionar INICIO -> MAPA"
+    },
+    {
+      "id": "MUT-114",
+      "arquivo": "src/onda6-ui/renderizador-canvas.mjs",
+      "lei": "L4 / L6 (MUT-O6-25)",
+      "descricao": "rasterizarQuadroRgba960x540 omite a renderização do modal OFICINA sobre o Mapa/Loja no Canvas 960x540",
+      "trocas": [
+        {
+          "buscar": "  } else if (modalAtivoRender === \"OFICINA\") {",
+          "substituir": "  } else if (false && modalAtivoRender === \"OFICINA\") {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-25] Modal OFICINA deve desenhar o painel completo sobre o Mapa no Canvas 960x540"
+    },
+    {
+      "id": "MUT-115",
+      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "lei": "L4 / L6 / Seção 5.6.B (MUT-O6-26)",
+      "descricao": "COMPRAR_OU_VENDER_LOJA ignora itensCompradosIds, permitindo comprar infinitas cópias da mesma arma/órgão/tripulante no mesmo nó de Loja",
+      "trocas": [
+        {
+          "buscar": "        if (ehUnicoLoja && novosItensCompradosLoja.includes(item.id)) {",
+          "substituir": "        if (false && ehUnicoLoja && novosItensCompradosLoja.includes(item.id)) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-26] Item único comprado na Loja deve ficar ESGOTADO neste nó"
+    },
+    {
+      "id": "MUT-116",
+      "arquivo": "src/onda6-ui/tick-combate-tempo-real.mjs",
+      "lei": "N1 / Seção 5.5 + 5.7 (MUT-O6-27)",
+      "descricao": "avancarTickPartidaEmTempoReal desativa a regeneração canônica de 2.0s por bolha da Barreira Acústica inimiga quando o sistema ESCUDO está íntegro",
+      "trocas": [
+        {
+          "buscar": "      } else if (bolhasAtu < tetoBolhas && opcoesDebug.desativarRegenBarreiraInimigaMutacao !== true) {",
+          "substituir": "      } else if (false && bolhasAtu < tetoBolhas && opcoesDebug.desativarRegenBarreiraInimigaMutacao !== true) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-27] Barco inimigo com sistema ESCUDO íntegro deve regenerar 1 bolha de Barreira Acústica a cada 2.0s"
+    },
+    {
+      "id": "MUT-117",
+      "arquivo": "src/onda6-ui/despacho-comandos.mjs",
+      "lei": "L1 / L4 / Seção 5.2 (MUT-O6-28)",
+      "descricao": "COMPRAR_OU_VENDER_LOJA destrói silenciosamente os órgãos biológicos enxertados ao vender uma arma equipada na Loja",
+      "trocas": [
+        {
+          "buscar": "          const orgaosNaArma = Array.isArray(armaVendida?.orgaosEnxertados) ? armaVendida.orgaosEnxertados : [];",
+          "substituir": "          const orgaosNaArma = [];"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-28] Vender arma equipada na Loja deve preservar e devolver seus órgãos enxertados ao Porão de Carga"
+    },
+    {
+      "id": "MUT-118",
+      "arquivo": "src/onda6-ui/campanha-completa.mjs",
+      "lei": "N1 / Seção 8.5.B (MUT-O6-29)",
+      "descricao": "executarAcaoCampanhaCompleta permite iniciar nova run com bio-nave ainda bloqueada em profile.json (ignora CARCACA_BLOQUEADA_NO_PERFIL)",
+      "trocas": [
+        {
+          "buscar": "  if (!perfil.carcacasDesbloqueadas?.[idArq] && opcoesPersistencia.ignorarBloqueioCarcaca !== true) {",
+          "substituir": "  if (false && !perfil.carcacasDesbloqueadas?.[idArq] && opcoesPersistencia.ignorarBloqueioCarcaca !== true) {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-29] INICIAR_NOVA_RUN deve rejeitar bio-nave bloqueada no profile.json com CARCACA_BLOQUEADA_NO_PERFIL"
+    },
+    {
+      "id": "MUT-119",
+      "arquivo": "src/onda6-ui/audio-maritimo.mjs",
+      "lei": "L1 / L6 (MUT-O6-30)",
+      "descricao": "extrairSfxMulticamadaDoTick re-emite disparos velhos de eventosVisuaisUltimoTick durante Pausa Tática ou MOUSEMOVE sem avanço de tick",
+      "trocas": [
+        {
+          "buscar": "  const ignorarGateTickMutacao = ultimoResultadoComando?.reemitirEventosEmPausaMutacao === true;",
+          "substituir": "  const ignorarGateTickMutacao = true;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-30] Comandos em Pausa Tática ou MOUSEMOVE sem avanço de tick jamais podem re-tocar disparos antigos de eventosVisuaisUltimoTick"
+    },
+    {
+      "id": "MUT-120",
+      "arquivo": "src/onda6-ui/tick-combate-tempo-real.mjs",
+      "lei": "N1 / Seção 5.5 (MUT-O6-31)",
+      "descricao": "avancarTickPartidaEmTempoReal ignora ultimoPowerSurgeDisparado da Draga Continental, tornando os Power Surges da Fase 2 (Enxame de Drones) e Fase 3 (7 Lasers) meramente cosméticos",
+      "trocas": [
+        {
+          "buscar": "        opcoesDebug.desativarPowerSurgeChefeMutacao !== true &&",
+          "substituir": "        false && opcoesDebug.desativarPowerSurgeChefeMutacao !== true &&"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-31] Power Surges da Draga Continental (Enxame de Drones F2 e 7 Lasers F3) devem causar impacto real em combate em tempo real"
+    },
+    {
+      "id": "MUT-121",
+      "arquivo": "src/onda6-ui/encontros-eventos-campanha.mjs",
+      "lei": "L1 / L4 / Seção 4 (MUT-O6-32)",
+      "descricao": "construirDesfechoEventoCanonicamente zera deltaSucata ao construir o modal EVENTO_DESFECHO, ocultando a recompensa real da escolha narrativa",
+      "trocas": [
+        {
+          "buscar": "  const deltaSucata = opcoesDebug.zerarDeltasDesfechoMutacao === true ? 0 : sucPos - sucAnt;",
+          "substituir": "  const deltaSucata = 0;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-32] construirDesfechoEventoCanonicamente deve preservar os deltas reais de recursos e bônus de recrutamento/carga do Evento"
+    },
+    {
+      "id": "MUT-122",
+      "arquivo": "src/onda2-combate/tick-sistemas-armas.mjs",
+      "lei": "N1 / L1 / Seção 2 + 8.5.A (MUT-O6-33)",
+      "descricao": "sincronizarEnergiaArmasComCamaraArtilharia ignora o orçamento energético e a integridade da Câmara 1 (ART), deixando armas carregarem e dispararem com 0 de energia em Artilharia",
+      "trocas": [
+        {
+          "buscar": "    opcoes.ignorarTetoArtilhariaMutacao === true\n      ? 99\n      : Math.max(0, Math.min(alocArt, Math.max(0, intArt - ionArt)));",
+          "substituir": "    99;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-33] Câmara 1 (ART) sem energia/integridade deve cortar energiaAlocada e zerar progressoRecargaSeg das armas dorsais"
+    },
+    {
+      "id": "MUT-123",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "N1 / L4 (MUT-O6-34)",
+      "descricao": "projetarViewModelWireframe força todos os slots ocupados de caixaArmas para MANUAL ao alternar um único slot individualmente",
+      "trocas": [
+        {
+          "buscar": "    const modoDisparoManual = armaObj\n      ? armaObj.modoDisparoManual !== undefined\n        ? armaObj.modoDisparoManual === true\n        : armaObj.modoDisparo !== undefined\n          ? armaObj.modoDisparo === 'MANUAL'\n          : nave.modoSalvaGlobal === 'MANUAL'\n      : false;",
+          "substituir": "    const modoDisparoManual = Boolean(armaObj);"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-34] Alternar modo MANUAL em um único slot de arma jamais pode marcar os outros slots como MANUAL no ViewModel/HUD"
+    },
+    {
+      "id": "MUT-124",
+      "arquivo": "src/onda6-ui/runtime-navegador.mjs",
+      "lei": "L3 / L4 (MUT-O6-35)",
+      "descricao": "formatarMensagemRejeicaoUi devolve avisoCampanha antigo (ultimoAvisoCampanha) antes do código de erro real, exibindo banners velhos de chegada no toast vermelho de rejeição",
+      "trocas": [
+        {
+          "buscar": "  if (opcoesDebug?.priorizarAvisoVelhoMutacao === true && avisoLimpo) {\n    return avisoLimpo.slice(0, 76);\n  }",
+          "substituir": "  if (avisoLimpo) {\n    return avisoLimpo.slice(0, 76);\n  }"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-35] formatarMensagemRejeicaoUi deve traduzir o código real de rejeição sem vazar ultimoAvisoCampanha antigo no toast de erro"
+    },
+    {
+      "id": "MUT-125",
+      "arquivo": "src/onda6-ui/audio-maritimo.mjs",
+      "lei": "N1 / L1 (MUT-O6-36)",
+      "descricao": "construirPaisagemSonoraCompleta ignora desfechoRun VITORIA_CAMPANHA real em FIM_DE_RUN, tocando a elegia fúnebre de DERROTA (54 BPM) ao vencer a Draga Fase 3",
+      "trocas": [
+        {
+          "buscar": "    estadoAtual.meta?.desfechoRun === 'VITORIA_CAMPANHA' ||\n    Boolean(estadoAtual.meta?.metricasRun?.derrotouDragaFase3) ||",
+          "substituir": "    false ||"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-36] VITORIA_CAMPANHA real em FIM_DE_RUN deve tocar tema luminoso de VITORIA (84 BPM) e Permadeath deve tocar elegia de DERROTA (54 BPM)"
+    },
+    {
+      "id": "MUT-126",
+      "arquivo": "src/onda1-fisica/tick-hidraulica-foil.mjs",
+      "lei": "N1 / Seção 4.5.A (MUT-O6-37)",
+      "descricao": "calcularSustentacaoFoil ignora penalidadeSustentacaoKg imposta por PER_2_VORTICE_CORRENTEZA (-40 kg / -20 kg), anulando o efeito hidrodinâmico do evento de perigo",
+      "trocas": [
+        {
+          "buscar": "  const penalidadeEvento = Math.max(0.0, Number(naveJogador.penalidadeSustentacaoKg ?? 0.0));",
+          "substituir": "  const penalidadeEvento = 0.0;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-37] PER_2_VORTICE_CORRENTEZA (Opção A) deve subtrair 40 kg da sustentação do Foil (260 -> 220 kg) e derrubar Carcaça Alfa (225 kg) em Touchdown"
+    },
+    {
+      "id": "MUT-127",
+      "arquivo": "src/onda6-ui/encontros-eventos-campanha.mjs",
+      "lei": "N1 / Seção 4.5.B (MUT-O6-38)",
+      "descricao": "aplicarRegrasSaquePosCombateCampanha ignora o corte anti-farming em nós engolidos pela Frota Corporativa (FROTA_PRINCIPAL_CORPORACAO), pagando saque integral de Sucata/Biomassa",
+      "trocas": [
+        {
+          "buscar": "  if (mod?.origemCombate === 'FROTA_PRINCIPAL_CORPORACAO') {",
+          "substituir": "  if (false && mod?.origemCombate === 'FROTA_PRINCIPAL_CORPORACAO') {"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-38] Nó engolido pela Frota Corporativa deve impor saque anti-farming (0 Sucata, 0 Biomassa, 1 Combustível)"
+    },
+    {
+      "id": "MUT-128",
+      "arquivo": "src/onda6-ui/encontros-eventos-campanha.mjs",
+      "lei": "N1 / Seção 4.5.C (MUT-O6-39)",
+      "descricao": "construirEventoResumoCanonico45A hardcoda bloqueada: false na Opção Azul [B] em vez de avaliar kitCumpreRequisitoBlueOption contra o kit real da bio-nave",
+      "trocas": [
+        {
+          "buscar": "        bloqueada: !cumpreBlue,",
+          "substituir": "        bloqueada: false,"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-39] Carcaça Alfa inicial (0 Blue Options na Matriz 4.5.C) deve projetar bloqueada: true nas 17 opções [B] da tela EVENTO"
+    },
+    {
+      "id": "MUT-129",
+      "arquivo": "src/onda6-ui/encontros-eventos-campanha.mjs",
+      "lei": "N1 / UX Mapa (MUT-O6-40)",
+      "descricao": "construirTelemetriaMapaSetorial deixa alcancavel hardcoded em false nos nós da Carta Hidrográfica, cegando as hitboxes NO_MAPA e tooltips de salto",
+      "trocas": [
+        {
+          "buscar": "    const alcancavel = !ehAtual && saidasFallback.has(n.id);",
+          "substituir": "    const alcancavel = false;"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-40] Mapa setorial deve expor nós adjacentes com metadados.alcancavel === true nas hitboxes"
+    },
+    {
+      "id": "MUT-130",
+      "arquivo": "src/onda6-ui/runtime-navegador.mjs",
+      "lei": "N1 / UX Ghost Preview (MUT-O6-41)",
+      "descricao": "enriquecerGhostPreviewCliente ignora mapaGhostPorHitbox SSOT e usa aproximação legada -130 kg em SISTEMA_SIF, acusando falsa QUEDA NO MAR na Carcaça Alfa (225 kg / 260 kg)",
+      "trocas": [
+        {
+          "buscar": "  if (\n    opcoesDebug?.usarGhostAproximadoLegadoMutacao !== true &&\n    ts.mapaGhostPorHitbox &&\n    ts.mapaGhostPorHitbox[idHitboxHover]\n  ) {",
+          "substituir": "  if (\n    false &&\n    opcoesDebug?.usarGhostAproximadoLegadoMutacao !== true &&\n    ts.mapaGhostPorHitbox &&\n    ts.mapaGhostPorHitbox[idHitboxHover]\n  ) {"
+        },
+        {
+          "buscar": "    const deltaSif = opcoesDebug?.usarGhostAproximadoLegadoMutacao === true ? 130 : 30;\n    const novaBarraSif = Math.max(0, barrasSifAtu - 1);\n    const sustSif =\n      opcoesDebug?.usarGhostAproximadoLegadoMutacao === true",
+          "substituir": "    const deltaSif = 130;\n    const novaBarraSif = Math.max(0, barrasSifAtu - 1);\n    const sustSif =\n      true"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-41] Ghost Preview client-side em SISTEMA_SIF na Carcaça Alfa (225 kg / 260 kg) deve projetar 230 kg estável no Foil (1:1 com calcularGhostPreviewTermometro)"
+    },
+    {
+      "id": "MUT-131",
+      "arquivo": "src/onda6-ui/renderizador-alvo-inimigo.mjs",
+      "lei": "L3 / UX Cutaway Lancha (MUT-O6-42)",
+      "descricao": "renderizador-alvo-inimigo omite o corte tático opaco de salas em BARCO_1_LANCHA (!sprBestiario), vazando marinheiros assados estáticos sob Águas Turvas / Tinta ou com 0 tripulantes",
+      "trocas": [
+        {
+          "buscar": "      const desenharCorteSalaBarco = !ehMonstroAlvo && (Boolean(sprBestiario) || opcoes.omitirCorteLanchaMutacao !== true);",
+          "substituir": "      const desenharCorteSalaBarco = !ehMonstroAlvo && Boolean(sprBestiario);"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-42] BARCO_1_LANCHA deve desenhar corte tático opaco nas 4 salas (ocultando marinheiros assados e respeitando tripulação viva / Lei L3)"
+    },
+    {
+      "id": "MUT-132",
+      "arquivo": "src/onda6-ui/tick-combate-tempo-real.mjs",
+      "lei": "N1 / Seção 5.5 Draga F1 (MUT-O6-43)",
+      "descricao": "recalcularSubsistemasAlvoInPlace usa regex sem acento /MAQUINAS/i e ignora 'Casa de Máquinas e Bombas de Porão' (Sala 6) na Fase 1 da Draga Continental, mantendo 20% de esquiva com a sala destruída",
+      "trocas": [
+        {
+          "buscar": "  const salaMotor = salas.find((s) => /MOTOR|M[AÁ]QUINAS|PROPULS[AÃ]O|HIDROJATO|REATOR|BROCA/i.test(s.nome ?? ''));",
+          "substituir": "  const salaMotor = salas.find((s) => /MOTOR|MAQUINAS|PROPULSAO|HIDROJATO|REATOR|BROCA/i.test(s.nome ?? ''));"
+        }
+      ],
+      "testes": [
+        "tests/08-onda6-ui-juncao.test.mjs"
+      ],
+      "falhaEsperada": "[MUT-O6-43] Zerar a integridade da Casa de Máquinas (Sala 6) na Fase 1 da Draga deve derrubar a esquiva efetiva para 0%"
     }
   ]
 }

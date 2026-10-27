@@ -127,8 +127,12 @@ export function calcularSustentacaoFoil(naveJogador) {
   const sustentacaoSifao = barrasSifao * CONSTANTES_FISICA_HIDRAULICA.EMPUXO_POR_BARRA_SIFAO_KG;
   const aguaInterna = calcularAguaInternaNormalTotalKg(naveJogador);
   const cavitacao = calcularPenalidadeCavitacaoKg(aguaInterna);
+  const penalidadeEvento = Math.max(0.0, Number(naveJogador.penalidadeSustentacaoKg ?? 0.0));
 
-  return Math.max(0.0, arredondar4(sustentacaoMastroBase + bonusArquitetura + sustentacaoSifao - cavitacao));
+  return Math.max(
+    0.0,
+    arredondar4(sustentacaoMastroBase + bonusArquitetura + sustentacaoSifao - cavitacao - penalidadeEvento)
+  );
 }
 
 /**

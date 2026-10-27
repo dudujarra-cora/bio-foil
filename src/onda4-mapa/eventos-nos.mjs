@@ -568,6 +568,7 @@ export function resolverVisitaNoMapa({
     paridadeSeed: paridade,
     combateObrigatorio: levaACombate,
     danoCasco: ramoA.danoCasco ?? 0,
+    recompensaOpcaoA: ramoA,
     moedaGerada: moeda,
     opcoesDisponiveis,
   });
