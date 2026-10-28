@@ -23,5 +23,10 @@ jobs:
           git config --global user.email ci@bio-foil.invalid
           git config --global user.name "CI Bio-Foil"
           git config --global init.defaultBranch main
+      - name: Instalar ffmpeg no runner Ubuntu 26 para codificação Ogg Vorbis real
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          fi
       - name: Portões OBRIGATORIO (mesmo script do pre-push)
         run: sh scripts/hooks/pre-push
