@@ -163,7 +163,7 @@ Para cumprir a **Lei N5 ("Um dono por arquivo compartilhado")** e a **Lei N6 ("O
 
 ```text
 ./
-├── 01..09_*.md                          # [Onda 0] 9 Volumes Canônicos do GDD (Congelados)
+├── 01..10_*.md                          # [Onda 0] 10 Volumes Canônicos do GDD (Congelados)
 ├── .github/workflows/portoes.yml        # [Onda 0] CI no servidor: roda o pre-push; a main protegida exige verde
 ├── package.json                         # [Onda 0] Fixa Node >=22.22 <23 (engines) — sem dependências
 ├── padrao/protocolo/
@@ -233,7 +233,8 @@ Para cumprir a **Lei N5 ("Um dono por arquivo compartilhado")** e a **Lei N6 ("O
     ├── 06-onda4-mapa.test.mjs           # [Onda 4] Portão 100 Seeds + Relógio/Deriva (MUT-O4-01..04)
     ├── 07-onda5-catalogo-chefe.test.mjs # [Onda 5] Portão 5 Naves + Chefe 3 Fases (MUT-O5-01..04)
     ├── 08-onda6-ui-juncao.test.mjs      # [Onda 6] Portão Ponta a Ponta UI <-> Motor
-    └── 09-mutacoes-reais.test.mjs       # [Onda 0] Re-executa todas as mutações de mutacoes.json (B6)
+    ├── 09-mutacoes-reais.test.mjs       # [Onda 0] Re-executa todas as mutações de mutacoes.json (B6)
+    └── 10-portao-audio-cpp20-steam.test.mjs # [Onda 0] Portão Áudio C++20/WASM, 6 Barramentos, 18 Lacunas Steam e Catraca N2
 ```
 
 ---

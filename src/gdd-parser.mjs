@@ -11,6 +11,7 @@ export const CADEIA_CANONICA_GDD = Object.freeze([
   '07_plano_mestre_de_testes_14_leis.md',
   '08_contrato_estado_e_arquitetura_modulos.md',
   '09_economia_bestiario_e_comandos.md',
+  '10_arquitetura_audio_procedural_cpp20_steam.md',
 ]);
 
 export const CADEIA_CANONICA_TESTES = Object.freeze([
@@ -23,6 +24,7 @@ export const CADEIA_CANONICA_TESTES = Object.freeze([
   '07-onda5-catalogo-chefe.test.mjs',
   '08-onda6-ui-juncao.test.mjs',
   '09-mutacoes-reais.test.mjs',
+  '10-portao-audio-cpp20-steam.test.mjs',
 ]);
 
 export const CADEIA_CANONICA_SRC = Object.freeze([
@@ -1408,6 +1410,218 @@ export function extrairConsolidacaoVolume09(conteudoVol09) {
     algoritmoHash,
     vetorTesteHash,
     temContraAuditoria9Completa,
+  });
+}
+
+/**
+ * Extrai e audita o Volume 10 (Arquitetura de Áudio Procedural C++20/WASM, 6 Barramentos, Eventos e 18 Lacunas Steam):
+ *  - 10.1: Invariantes Musicais, Descida Modal e os 6 Gêneros Procedurais (G0..G5);
+ *  - 10.2: Arquitetura C++20 Dual-Layer (CAMADA_1_FORJA_OFFLINE + CAMADA_2_RUNTIME_WASM);
+ *  - 10.3: Os 6 Barramentos de Prioridade (BUS_0..BUS_5), Oclusão Dividida, Ducking Cirúrgico e 3 Leis de Foley/VO;
+ *  - 10.4: Os 11 Eventos Acústicos Complementares (EVT_AUD_01..11);
+ *  - 10.5: Os 3 Perfis Acústicos, Contrato JSON preferenciasAudio e as 18 Lacunas Comerciais Steam (LAC_01..LAC_18).
+ * Valor ausente vira null/NaN (Lei L3).
+ */
+export function extrairArquiteturaAudioVolume10(conteudoVol10) {
+  const secao101 = conteudoVol10.split('## 10.1.')[1]?.split('## 10.2.')[0] ?? '';
+  const secao102 = conteudoVol10.split('## 10.2.')[1]?.split('## 10.3.')[0] ?? '';
+  const secao103 = conteudoVol10.split('## 10.3.')[1]?.split('## 10.4.')[0] ?? '';
+  const secao104 = conteudoVol10.split('## 10.4.')[1]?.split('## 10.5.')[0] ?? '';
+  const secao105 = conteudoVol10.split('## 10.5.')[1]?.split('# CONTRA-AUDITORIA')[0] ?? '';
+  const secaoContra10 = conteudoVol10.split('# CONTRA-AUDITORIA #10')[1] ?? '';
+
+  const s101Norm = normalizarTexto(secao101);
+  const extrairNum = (regex) => {
+    const m = s101Norm.match(regex);
+    return m ? Number(m[1]) : NaN;
+  };
+
+  const arcoModal = [];
+  for (const linha of secao101.split('\n')) {
+    const mArco = normalizarTexto(linha).match(
+      /Setores\s+(\d+)\.\.(\d+)[^:]*:\s*(G_DORICO|FS_FRIGIO|F_LOCRIO)\s*\([^=]*=\s*([\d.]+)\s*Hz/
+    );
+    if (mArco) {
+      arcoModal.push({
+        setorMin: Number(mArco[1]),
+        setorMax: Number(mArco[2]),
+        modo: mArco[3],
+        freqFundamentalHz: Number(mArco[4]),
+      });
+    }
+  }
+
+  const parametrosMusicais = {
+    swingMinPct: extrairNum(/SWING_SEMICOLCHEIA_MIN_PCT:\s*(\d+(?:\.\d+)?)%/),
+    swingMaxPct: extrairNum(/SWING_SEMICOLCHEIA_MAX_PCT:\s*(\d+(?:\.\d+)?)%/),
+    subMinHz: extrairNum(/SUB_GRAVE_FUNDAMENTAL_MIN_HZ:\s*(\d+(?:\.\d+)?)\s*Hz/),
+    subMaxHz: extrairNum(/SUB_GRAVE_FUNDAMENTAL_MAX_HZ:\s*(\d+(?:\.\d+)?)\s*Hz/),
+    correlacaoMonoSubMin: extrairNum(/CORRELACAO_MONO_SUB_MIN\s*>=\s*(\d+(?:\.\d+)?)/),
+    schmittHistereseDelta: extrairNum(/SCHMITT_HISTERESE_DELTA:\s*(?:\\pm\s*|\+-\s*)?(\d+(?:\.\d+)?)/),
+    holdMinimoCompassos: extrairNum(/HOLD_MINIMO_COMPASSOS:\s*(\d+)/),
+    corteRaveMinBpm: extrairNum(/CORTE_RAVE_PROIBIDO_MIN_BPM:\s*(\d+)\s*BPM/),
+    corteRaveMaxBpm: extrairNum(/CORTE_RAVE_PROIBIDO_MAX_BPM:\s*(\d+)\s*BPM/),
+    arcoModal,
+  };
+
+  const generos = [];
+  for (const linha of secao101.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID do Gênero') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 6) {
+        generos.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          nome: normalizarTexto(cols[1]),
+          bpm: Number(cols[2].replace(/`/g, '').trim()),
+          modoBase: cols[3].replace(/`/g, '').trim(),
+          fasesPermitidas: cols[4]
+            .replace(/`/g, '')
+            .split(',')
+            .map((f) => f.trim())
+            .filter(Boolean),
+          sintesePrincipal: normalizarTexto(cols[5]),
+        });
+      }
+    }
+  }
+
+  const camadasCpp20 = [];
+  for (const linha of secao102.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID da Camada') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 5) {
+        camadasCpp20.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          binarioAlvo: cols[1].replace(/`/g, '').trim(),
+          taxaAmostragem: normalizarTexto(cols[2]),
+          orcamentoCritico: normalizarTexto(cols[3]),
+          responsabilidade: normalizarTexto(cols[4]),
+        });
+      }
+    }
+  }
+
+  const barramentos = [];
+  const leisSfxVo = [];
+  for (const linha of secao103.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID do Barramento') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 6) {
+        barramentos.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          prioridade: Number(cols[1].replace(/`/g, '').trim()),
+          trimNominalDb: Number(cols[2].replace(/`/g, '').trim()),
+          corteNoFoilHz: Number(cols[3].replace(/`/g, '').trim()),
+          corteSubmersoHz: Number(cols[4].replace(/`/g, '').trim()),
+          regraOclusaoDucking: normalizarTexto(cols[5]),
+        });
+      }
+    }
+    const mLei = linha.match(/^\s*\d+\.\s+`(LEI_SFX_\d_[A-Z0-9_]+)`:\s+(.+)$/);
+    if (mLei) {
+      leisSfxVo.push({
+        id: mLei[1],
+        descricao: normalizarTexto(mLei[2]),
+      });
+    }
+  }
+
+  const eventosComplementares = [];
+  for (const linha of secao104.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID do Evento') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 5) {
+        eventosComplementares.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          barramento: cols[1].replace(/`/g, '').trim(),
+          gatilho: normalizarTexto(cols[2]),
+          parametroAcustico: normalizarTexto(cols[3]),
+          cruzamentoGdd: normalizarTexto(cols[4]),
+        });
+      }
+    }
+  }
+
+  const blocoPerfis = secao105.split('### Tabela 10.5.A')[1]?.split('### Contrato Canônico')[0] ?? '';
+  const perfisAcusticos = [];
+  for (const linha of blocoPerfis.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| ID do Perfil') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 5) {
+        perfisAcusticos.push({
+          id: cols[0].replace(/`/g, '').trim(),
+          alvoLufs: Number(cols[1].replace(/`/g, '').trim()),
+          lraMaxLu: Number(cols[2].replace(/`/g, '').trim()),
+          truePeakMaxDbtp: Number(cols[3].replace(/`/g, '').trim()),
+          processamento: normalizarTexto(cols[4]),
+        });
+      }
+    }
+  }
+
+  const matchJsonPref = secao105.match(/```json\n([\s\S]*?)\n```/);
+  if (!matchJsonPref) {
+    throw new Error('[Vol 10] Bloco JSON de preferenciasAudio não encontrado na Seção 10.5');
+  }
+  const preferenciasAudioPadrao = JSON.parse(matchJsonPref[1]);
+
+  const blocoLacunas = secao105.split('### Tabela 10.5.B')[1] ?? '';
+  const lacunasSteam = [];
+  for (const linha of blocoLacunas.split('\n')) {
+    if (
+      linha.startsWith('| ') &&
+      !linha.startsWith('| Código') &&
+      !linha.startsWith('| :---:') &&
+      !linha.startsWith('| :---')
+    ) {
+      const cols = linha.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cols.length >= 4) {
+        lacunasSteam.push({
+          codigo: cols[0].replace(/`/g, '').trim(),
+          eixo: normalizarTexto(cols[1]),
+          problemaAuditado: normalizarTexto(cols[2]),
+          invarianteFechamento: normalizarTexto(cols[3]),
+        });
+      }
+    }
+  }
+
+  const temContraAuditoria10Completa =
+    /1\.\s+\*\*Há risco do filtro subaquático/.test(secaoContra10) &&
+    /2\.\s+\*\*A memória RAM e o tamanho de disco/.test(secaoContra10) &&
+    /3\.\s+\*\*O que este documento especifica/.test(secaoContra10);
+
+  return clonarProfundoCongelado({
+    parametrosMusicais,
+    generos,
+    camadasCpp20,
+    barramentos,
+    leisSfxVo,
+    eventosComplementares,
+    perfisAcusticos,
+    preferenciasAudioPadrao,
+    lacunasSteam,
+    temContraAuditoria10Completa,
   });
 }
 

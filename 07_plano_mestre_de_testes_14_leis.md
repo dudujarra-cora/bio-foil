@@ -137,6 +137,17 @@ Nenhuma peça entra no repositório sem seu teste real correspondente:
 
 ---
 
+## 7.5. Portão de Arquitetura de Áudio Procedural C++20/WASM e Paisagem Comercial Steam (`Volume 10` / `tests/10-portao-audio-cpp20-steam.test.mjs`)
+
+Para blindar a transição da síntese marítima inicial para a arquitetura comercial **C++20 Dual-Layer (`biofoil_forge_cli` offline + `libbiofoil_audio_rt.wasm` em tempo real)** especificada no **Volume 10 (`10_arquitetura_audio_procedural_cpp20_steam.md`)**, o portão dedicado `tests/10-portao-audio-cpp20-steam.test.mjs` impõe:
+
+1. **Extração Completa e Contadores Explícitos (`L4`, `L5`, `N4`):** Examina os `6` gêneros procedurais (`G0..G5`, `90..137 BPM`, proibição explícita `142..155 BPM`), as `2` camadas C++20, os `6` barramentos de prioridade (`BUS_0..BUS_5`), as `3` leis estritas de Foley/UI/VO, os `11` eventos complementares (`EVT_AUD_01..11`), os `3` perfis acústicos (`ESTUDIO`, `STEAM_DECK`, `NOTURNO`), os `6` faders logarítmicos em `preferenciasAudio` e as `18` lacunas comerciais Steam (`LAC_01..LAC_18`).
+2. **Junção Transversal (`N1`):** Cruza os estados subaquáticos contra a Matriz $5 \times 8$ (`Vol. 06`), `BUS_0_SURVIVAL_CUES` contra os `8 Cues` (`Vol. 08`), gatilhos biológicos/armas/chefe contra os catálogos (`Vols. 01 e 05`) e sobrevivência de `preferenciasAudio` em `profile.json` contra as transições terminais `TR_7A`, `TR_7B` e `TR_7C` (`Vol. 09`).
+3. **Oráculos Matemáticos e DSP Reais (`L1`, `L2`, `L3`):** Executa em `src/oraculos-referencia.mjs` os cálculos exatos de orçamento RAM PCM (`101 stems -> 581.76 MB` reprovado vs. Pool LRU `<= 64 MB`), histerese de Schmitt (`±0.08`, `8 compassos`), oclusão dividida dos 6 barramentos (`BUS_0` e `BUS_4` com bypass `20000 Hz`, `BUS_2` pressurizado `14000 Hz`, `BUS_3` submerso `380 Hz`, *ducking* `Bell -6.5 dB @ 950 Hz` preservando sub `45 Hz`), calibração `HDR Audio` (`-23.5 LUFS` em jogo e harmônicos `2x/3x` no `STEAM_DECK`), *wrap* `exactFrameCount` sem clique de *pre-skip* e auditoria `L3` de CSP WASM/Worklet.
+4. **Lista-Catraca Executável (`Lei N2` + `Lei N6`):** Mantém `8` sondas ativas (`CAT-AUD-01..08`) inspecionando os módulos reais de `src/` sem mocks, garantindo que cada item pendente da implementação do produto dispare alerta imediato assim que for codificado para promoção a asserção definitiva.
+
+---
+
 # CONTRA-AUDITORIA #7 (Auditoria do Plano Mestre de Testes)
 
 1. **Existe algum cálculo dos Passos 1 a 6 que ficou sem Onda correspondente no Plano?**

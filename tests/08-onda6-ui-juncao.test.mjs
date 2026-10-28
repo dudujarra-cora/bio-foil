@@ -1743,8 +1743,8 @@ test('[PORTÃO 08.5 | Animação 4-Frames + Encaixes Câmara/Dorso + Cobertura 1
 
   // 6. Validação direta L4 de 100% das constantes canônicas exportadas pelos módulos do repositório (Regra #7)
   assert.equal(SISTEMAS_BARRA_INFERIOR_CANONICOS.length, 8);
-  assert.equal(CADEIA_CANONICA_GDD.length, 9);
-  assert.equal(CADEIA_CANONICA_TESTES.length, 9);
+  assert.equal(CADEIA_CANONICA_GDD.length, 10);
+  assert.equal(CADEIA_CANONICA_TESTES.length, 10);
   assert.equal(CADEIA_CANONICA_SCRIPTS.length >= 2, true);
   assert.equal(CADEIA_CANONICA_PROTOCOLO.length >= 2, true);
   assert.equal(CADEIA_CANONICA_RAIZ_OUTROS.includes('package.json'), true);

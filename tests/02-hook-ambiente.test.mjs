@@ -479,7 +479,7 @@ test('MCP para Testes e Jogo Bio-Foil (L1/L2/L3/L4/L6/N4): 12 ferramentas, 4 rec
   const inspOk = inspecionarCodigo14Leis({ diretorioRaiz: DIRETORIO_RAIZ, response_format: 'json' });
   assert.equal(inspOk.isError, false);
   assert.equal(inspOk.structuredContent.status, 'APROVADO');
-  assert.equal(inspOk.structuredContent.arquivosTesteExaminadosN4, 9);
+  assert.equal(inspOk.structuredContent.arquivosTesteExaminadosN4, 10);
   assert.equal(inspOk.structuredContent.arquivosCodigoTestadosN4, 44);
   assert.ok(inspOk.structuredContent.funcoesExportadasTestadasN4 >= 200);
 

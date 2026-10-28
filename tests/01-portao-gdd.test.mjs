@@ -104,12 +104,12 @@ const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url))
  */
 const LISTA_CATRACA = Object.freeze([]);
 
-test('Portão L5 + N4: aplica a cadeia canônica inteira (01..09) na ordem e valida tripwire de diretório', () => {
+test('Portão L5 + N4: aplica a cadeia canônica inteira (01..10) na ordem e valida tripwire de diretório', () => {
   const resultado = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
 
   console.log(`[N4] Arquivos .md examinados na cadeia canônica: ${resultado.arquivosExaminados}`);
   assert.ok(resultado.arquivosExaminados > 0, '[N4] Zero arquivos examinados deve reprovar');
-  assert.equal(resultado.arquivosExaminados, 9, 'Deve examinar exatamente os 9 volumes canônicos (01..09)');
+  assert.equal(resultado.arquivosExaminados, 10, 'Deve examinar exatamente os 10 volumes canônicos (01..10)');
 
   assert.deepEqual(resultado.cadeiaDeclarada, [
     '01_matematica_base_e_auditoria.md',
@@ -121,6 +121,7 @@ test('Portão L5 + N4: aplica a cadeia canônica inteira (01..09) na ordem e val
     '07_plano_mestre_de_testes_14_leis.md',
     '08_contrato_estado_e_arquitetura_modulos.md',
     '09_economia_bestiario_e_comandos.md',
+    '10_arquitetura_audio_procedural_cpp20_steam.md',
   ]);
 
   const vol07 = resultado.volumes[6].conteudo;
@@ -1676,7 +1677,7 @@ test('Junção N1 + L4 + N5: audita a Consolidação do Vol. 09 (5 Pilares x Ár
   for (const e of arvore) {
     const pasta = e.caminho.match(/onda(\d)-/);
     if (pasta) assert.equal(e.onda, Number(pasta[1]), `Arquivo ${e.caminho} está na pasta da Onda ${pasta[1]} mas declara Onda ${e.onda}`);
-    if (e.caminho !== '01..09_*.md') {
+    if (e.caminho !== '01..10_*.md') {
       const arqAbs = path.join(DIRETORIO_RAIZ, e.caminho);
       assert.equal(fs.existsSync(arqAbs), true, `Arquivo ${e.caminho} declarado na Árvore 8.3 não existe no disco`);
       if (e.caminho !== 'tests/01-portao-gdd.test.mjs') {

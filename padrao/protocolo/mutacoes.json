@@ -2125,6 +2125,198 @@
         "tests/08-onda6-ui-juncao.test.mjs"
       ],
       "falhaEsperada": "[MUT-O6-43] Zerar a integridade da Casa de Máquinas (Sala 6) na Fase 1 da Draga deve derrubar a esquiva efetiva para 0%"
+    },
+    {
+      "id": "MUT-133",
+      "arquivo": "10_arquitetura_audio_procedural_cpp20_steam.md",
+      "lei": "L4 / Seção 10.1 (Anti-Rave)",
+      "descricao": "G5_INDUSTRIAL_HARDGROOVE no Vol. 10 sobe de 137 BPM para 145 BPM, invadindo a faixa proibida de fadiga cognitiva (142..155 BPM)",
+      "trocas": [
+        {
+          "buscar": "| `G5_INDUSTRIAL_HARDGROOVE` | Industrial Hardgroove Chefe (*Stef Mendesidis / Blawan*) | `137` |",
+          "substituir": "| `G5_INDUSTRIAL_HARDGROOVE` | Industrial Hardgroove Chefe (*Stef Mendesidis / Blawan*) | `145` |"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[Vol. 10] Gênero G5_INDUSTRIAL_HARDGROOVE (145 BPM) invadiu a faixa proibida >= 142 BPM"
+    },
+    {
+      "id": "MUT-134",
+      "arquivo": "10_arquitetura_audio_procedural_cpp20_steam.md",
+      "lei": "N1 / L4 (Seção 10.3 x 8.5.C)",
+      "descricao": "Corte submerso de BUS_1_MUSIC na Tabela 10.3.A muda de 400 Hz para 650 Hz, quebrando a paridade com a Seção 8.5.C do Vol. 08",
+      "trocas": [
+        {
+          "buscar": "| `BUS_1_MUSIC` | `1` | `-7.5` | `20000` | `400` |",
+          "substituir": "| `BUS_1_MUSIC` | `1` | `-7.5` | `20000` | `650` |"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[Vol. 10] BUS_1_MUSIC submerso deve cortar exatamente em 400 Hz (paridade Seção 8.5.C)"
+    },
+    {
+      "id": "MUT-135",
+      "arquivo": "10_arquitetura_audio_procedural_cpp20_steam.md",
+      "lei": "N1 / L5 (Seção 10.4 x Vol. 01)",
+      "descricao": "EVT_AUD_06_ESPECIAIS_4_ESPECIES omite CARANGUEJO na Tabela 10.4.A, deixando 1 das 4 espécies do Vol. 01 sem foley dedicado",
+      "trocas": [
+        {
+          "buscar": "Foley orgânico dedicado para cada uma das `4 espécies` (`POLVO, ARRAIA, BAIACU, CARANGUEJO`)",
+          "substituir": "Foley orgânico dedicado para cada uma das `4 espécies` (`POLVO, ARRAIA, BAIACU`)"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[N1 Vol.10 x Vol.01] Espécie CARANGUEJO ausente em EVT_AUD_06_ESPECIAIS_4_ESPECIES"
+    },
+    {
+      "id": "MUT-136",
+      "arquivo": "src/oraculos-referencia.mjs",
+      "lei": "L1 / L4 (LAC_02 RAM PCM)",
+      "descricao": "calcularOrcamentoRamPcmAudioLru multiplica por 2 bytes (Int16) em vez de 4 bytes (Float32 WebAudio), subestimando a bomba de 581.76 MB",
+      "trocas": [
+        {
+          "buscar": "  const bytesPorStem = duracaoMediaSeg * sampleRateHz * canais * 4;",
+          "substituir": "  const bytesPorStem = duracaoMediaSeg * sampleRateHz * canais * 2;"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[LAC_02] 101 stems Float32 (4 bytes) a 48 kHz consomem exatos 581.760.000 bytes de RAM PCM"
+    },
+    {
+      "id": "MUT-137",
+      "arquivo": "src/oraculos-referencia.mjs",
+      "lei": "L1 / Seção 10.1 (Schmitt Hold)",
+      "descricao": "avaliarDiretorMusicalSchmitt ignora holdMinimoCompassos (8 compassos) ao de-escalar, gerando thrashing prematuro de trilhas",
+      "trocas": [
+        {
+          "buscar": "    if (compassosNoEstadoAtual < holdMinimoCompassos) {",
+          "substituir": "    if (false && compassosNoEstadoAtual < holdMinimoCompassos) {"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[MusicalDirector] De-escalada antes de 8 compassos deve ser bloqueada contra thrashing"
+    },
+    {
+      "id": "MUT-138",
+      "arquivo": "src/oraculos-referencia.mjs",
+      "lei": "L3 (LAC_14 Segurança Sobrevivência)",
+      "descricao": "converterSliderAudioParaGanhoDbELinear suprime o alerta L3 quando o jogador reduz alertasUi abaixo de 20%",
+      "trocas": [
+        {
+          "buscar": "    categoriaSlider === 'alertasUi' && num < 20",
+          "substituir": "    categoriaSlider === 'alertasUi' && num < 0"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[L3] Slider alertasUi abaixo de 20% deve emitir alerta explícito de segurança"
+    },
+    {
+      "id": "MUT-139",
+      "arquivo": "src/oraculos-referencia.mjs",
+      "lei": "L1 / L4 (LAC_13 Steam Deck)",
+      "descricao": "calcularMixagemPlataformaHdrAudio omite os harmônicos 2x/3x (87.30 e 130.95 Hz) de fundamental ausente no perfil STEAM_DECK",
+      "trocas": [
+        {
+          "buscar": "    perfilDinamico === 'STEAM_DECK'",
+          "substituir": "    perfilDinamico === 'PERFIL_NUNCA'"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[LAC_13] Perfil STEAM_DECK deve injetar 2x e 3x harmônicos (87.30 e 130.95 Hz) de fundamental ausente"
+    },
+    {
+      "id": "MUT-140",
+      "arquivo": "src/oraculos-referencia.mjs",
+      "lei": "N1 / LEI_SFX_1_OCLUSAO_DIVIDIDA",
+      "descricao": "resolverRoteamentoOclusao6Barramentos aplica low-pass de 400 Hz em BUS_0_SURVIVAL_CUES durante Touchdown, abafando os 8 cues de sobrevivência",
+      "trocas": [
+        {
+          "buscar": "      BUS_0_SURVIVAL_CUES: {\n        prioridade: 0,\n        corteLowPassHz: 20000,",
+          "substituir": "      BUS_0_SURVIVAL_CUES: {\n        prioridade: 0,\n        corteLowPassHz: submersoPleno ? 400 : 20000,"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[N1 Vol.10 x Vol.06] BUS_0_SURVIVAL_CUES jamais pode sofrer oclusão em 2_TOUCHDOWN"
+    },
+    {
+      "id": "MUT-141",
+      "arquivo": "src/oraculos-referencia.mjs",
+      "lei": "L1 / L4 (LAC_17 Loop Opus)",
+      "descricao": "calcularWrapLoopSampleAccurate ignora preSkipFrames (312 amostras) do codec Opus, reintroduzindo clique na virada do loop",
+      "trocas": [
+        {
+          "buscar": "  const frameBufferDecodificado = preSkipFrames + offsetUtil;",
+          "substituir": "  const frameBufferDecodificado = offsetUtil;"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[LAC_17] Wrap sample-accurate deve somar preSkipFrames (312) do codec Opus evitando clique"
+    },
+    {
+      "id": "MUT-142",
+      "arquivo": "src/oraculos-referencia.mjs",
+      "lei": "L3 (LAC_01 CSP AudioWorklet)",
+      "descricao": "auditarPoliticaCspAudioWasm omite o marcador BLOQUEIO_WORKER_SRC quando default-src none bloqueia o carregamento do AudioWorklet",
+      "trocas": [
+        {
+          "buscar": "  else if (!permiteWorklet) status = 'BLOQUEIO_WORKER_SRC';",
+          "substituir": "  else if (false && !permiteWorklet) status = 'BLOQUEIO_WORKER_SRC';"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[LAC_01 / L3] CSP sem worker-src self deve acusar BLOQUEIO_WORKER_SRC explícito"
+    },
+    {
+      "id": "MUT-143",
+      "arquivo": "src/oraculos-referencia.mjs",
+      "lei": "L1 / XAG 104 (LAC_15)",
+      "descricao": "mesclarPreferenciasAudioNoPerfilImunePermadeath não ativa ALERTAS_CRITICOS automaticamente quando o jogador silencia o áudio (mudo=true)",
+      "trocas": [
+        {
+          "buscar": "    audioSilenciado && basePref.legendasTaticasDirecionais === 'DESLIGADO'",
+          "substituir": "    false && audioSilenciado && basePref.legendasTaticasDirecionais === 'DESLIGADO'"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[XAG 104] Silenciar o jogo com legendas desligadas deve auto-ativar ALERTAS_CRITICOS"
+    },
+    {
+      "id": "MUT-144",
+      "arquivo": "tests/10-portao-audio-cpp20-steam.test.mjs",
+      "lei": "N2 / N6 (Lista-Catraca)",
+      "descricao": "Item CAT-AUD-03 resolvido continua esquecido dentro de LISTA_CATRACA_AUDIO_CPP20 sem ser promovido a asserção definitiva",
+      "trocas": [
+        {
+          "buscar": "      return !wasmExiste;",
+          "substituir": "      return false;"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[N2 CATRACA] O item CAT-AUD-03"
     }
   ]
 }

@@ -719,3 +719,408 @@ export function calcularHash32StreamDeterministico(seedPartida, dominio, ...coor
   }
   return h >>> 0;
 }
+
+/**
+ * Oráculo puro do Volume 10 (Seção 10.5 / LAC_02): calcula o consumo exato de RAM PCM Float32 (4 bytes/amostra)
+ * do catálogo completo vs. Pool LRU por Zona Acústica, emitindo canal explícito L3 de orçamento.
+ */
+export function calcularOrcamentoRamPcmAudioLru({
+  totalStemsCatalogo = 101,
+  duracaoMediaSeg = 15,
+  sampleRateHz = 48000,
+  canais = 2,
+  stemsZonaAtiva = 6,
+  stemsProximaZona = 4,
+  bytesOneShotsFixos = 8 * 1000 * 1000,
+  tetoOrcamentoMb = 64,
+}) {
+  if (totalStemsCatalogo <= 0 || duracaoMediaSeg <= 0 || sampleRateHz <= 0 || canais <= 0) {
+    throw new Error('[AUDIO LRU FALHOU] Parâmetros de catálogo PCM devem ser estritamente positivos');
+  }
+  const bytesPorStem = duracaoMediaSeg * sampleRateHz * canais * 4;
+  const ramCatalogoCompletoBytes = totalStemsCatalogo * bytesPorStem;
+  const ramResidenteLruBytes = (stemsZonaAtiva + stemsProximaZona) * bytesPorStem + bytesOneShotsFixos;
+  const ramCatalogoCompletoMb = Math.round((ramCatalogoCompletoBytes / 1_000_000) * 100) / 100;
+  const ramResidenteLruMb = Math.round((ramResidenteLruBytes / 1_000_000) * 100) / 100;
+  const dentroOrcamento = ramResidenteLruMb <= tetoOrcamentoMb;
+
+  return clonarProfundoCongelado({
+    bytesPorStem,
+    ramCatalogoCompletoBytes,
+    ramCatalogoCompletoMb,
+    ramResidenteLruBytes,
+    ramResidenteLruMb,
+    tetoOrcamentoMb,
+    statusOrcamento: dentroOrcamento ? 'DENTRO_ORCAMENTO_LRU' : 'ESTOURO_ORCAMENTO_LRU',
+  });
+}
+
+/**
+ * Oráculo puro do Volume 10 (Seção 10.1): avalia o MusicalDirector com histerese de Schmitt (±0.08)
+ * e retenção mínima de 8 compassos antes de de-escalar (salvo override imediato de Chefe / Fim de Run).
+ */
+export function avaliarDiretorMusicalSchmitt({
+  generoAtual,
+  generoSubida,
+  generoDescida,
+  tensaoAtual0a1,
+  limiarTransicao0a1 = 0.5,
+  histereseDelta = 0.08,
+  compassosNoEstadoAtual = 0,
+  holdMinimoCompassos = 8,
+  overrideImediatoGenero = null,
+}) {
+  if (!generoAtual) {
+    throw new Error('[DIRETOR MUSICAL FALHOU] generoAtual obrigatório');
+  }
+  if (overrideImediatoGenero) {
+    return clonarProfundoCongelado({
+      generoResultante: overrideImediatoGenero,
+      trocouGenero: overrideImediatoGenero !== generoAtual,
+      motivoTransicao: 'OVERRIDE_IMEDIATO_PRIORITARIO',
+    });
+  }
+  const tetoSubida = Math.round((limiarTransicao0a1 + histereseDelta) * 10000) / 10000;
+  const pisoDescida = Math.round((limiarTransicao0a1 - histereseDelta) * 10000) / 10000;
+
+  if (generoSubida && tensaoAtual0a1 >= tetoSubida) {
+    return clonarProfundoCongelado({
+      generoResultante: generoSubida,
+      trocouGenero: generoSubida !== generoAtual,
+      motivoTransicao: 'ESCALADA_ACIMA_SCHMITT',
+    });
+  }
+  if (generoDescida && tensaoAtual0a1 <= pisoDescida) {
+    if (compassosNoEstadoAtual < holdMinimoCompassos) {
+      return clonarProfundoCongelado({
+        generoResultante: generoAtual,
+        trocouGenero: false,
+        motivoTransicao: 'BLOQUEADO_HOLD_MINIMO_COMPASSOS',
+      });
+    }
+    return clonarProfundoCongelado({
+      generoResultante: generoDescida,
+      trocouGenero: generoDescida !== generoAtual,
+      motivoTransicao: 'DE_ESCALADA_APOS_HOLD',
+    });
+  }
+  return clonarProfundoCongelado({
+    generoResultante: generoAtual,
+    trocouGenero: false,
+    motivoTransicao: 'MANTIDO_ZONA_MORTA_SCHMITT',
+  });
+}
+
+/**
+ * Oráculo puro do Volume 10 (Seção 10.5 / LAC_14): converte slider perceptual (0..100%)
+ * em escala logarítmica dB (-60..0 dB, 0% -> -Infinity) e emite aviso L3 se alertasUi < 20%.
+ */
+export function converterSliderAudioParaGanhoDbELinear(valorPct, categoriaSlider = 'master') {
+  const num = Number(valorPct);
+  if (!Number.isFinite(num) || num < 0 || num > 100) {
+    throw new Error(`[SLIDER AUDIO FALHOU] Valor fora de 0..100: ${valorPct}`);
+  }
+  const avisoSeguranca =
+    categoriaSlider === 'alertasUi' && num < 20
+      ? 'ALERTA_SOBREVIVENCIA_ABAIXO_20PCT'
+      : 'NIVEL_SEGURO';
+
+  if (num === 0) {
+    return clonarProfundoCongelado({
+      valorPct: 0,
+      ganhoDb: -Infinity,
+      ganhoLinear: 0,
+      avisoSeguranca,
+    });
+  }
+  const ganhoDbBruto = Math.round(-60 * (1 - num / 100) * 1000) / 1000;
+  const ganhoDb = ganhoDbBruto === 0 ? 0 : ganhoDbBruto;
+  const ganhoLinear = Math.round(Math.pow(10, ganhoDb / 20) * 1_000_000) / 1_000_000;
+  return clonarProfundoCongelado({
+    valorPct: num,
+    ganhoDb,
+    ganhoLinear,
+    avisoSeguranca,
+  });
+}
+
+/**
+ * Oráculo puro do Volume 10 (Seção 10.5 / LAC_12 e LAC_13): calcula calibração LUFS em jogo,
+ * compressão da janela deslizante HDR Audio (8 dB) e os 3 perfis acústicos (ESTUDIO, STEAM_DECK, NOTURNO).
+ */
+export function calcularMixagemPlataformaHdrAudio({
+  stemMusicaLufs = -16.0,
+  trimMusicaDb = -7.5,
+  picoTransienteBus0Db = 0.0,
+  nivelEntradaBus5Db = -9.0,
+  janelaHdrDb = 8.0,
+  perfilDinamico = 'ESTUDIO',
+  freqSubFundamentalHz = 43.65,
+}) {
+  const perfis = {
+    ESTUDIO: { alvoIntegradoLufs: -23.0, lraMaxLu: 14.0, truePeakMaxDbtp: -1.0, highPassSaidaHz: 20 },
+    STEAM_DECK: { alvoIntegradoLufs: -18.0, lraMaxLu: 8.0, truePeakMaxDbtp: -1.0, highPassSaidaHz: 20 },
+    NOTURNO: { alvoIntegradoLufs: -24.0, lraMaxLu: 5.0, truePeakMaxDbtp: -2.0, highPassSaidaHz: 65 },
+  };
+  const cfg = perfis[perfilDinamico];
+  if (!cfg) {
+    throw new Error(`[HDR AUDIO FALHOU] Perfil acústico desconhecido: "${perfilDinamico}"`);
+  }
+
+  const loudnessMusicaEmJogoLufs = Math.round((stemMusicaLufs + trimMusicaDb) * 100) / 100;
+  const pisoJanelaHdrDb = picoTransienteBus0Db - janelaHdrDb;
+  const reducaoHdrBus5Db =
+    nivelEntradaBus5Db > pisoJanelaHdrDb
+      ? Math.round((nivelEntradaBus5Db - pisoJanelaHdrDb) * 100) / 100
+      : 0;
+  const harmonicosFundamentalAusenteHz =
+    perfilDinamico === 'STEAM_DECK'
+      ? [
+          Math.round(freqSubFundamentalHz * 2 * 100) / 100,
+          Math.round(freqSubFundamentalHz * 3 * 100) / 100,
+        ]
+      : [];
+
+  return clonarProfundoCongelado({
+    perfilDinamico,
+    loudnessMusicaEmJogoLufs,
+    alvoIntegradoLufs: cfg.alvoIntegradoLufs,
+    lraMaxLu: cfg.lraMaxLu,
+    truePeakMaxDbtp: cfg.truePeakMaxDbtp,
+    highPassSaidaHz: cfg.highPassSaidaHz,
+    reducaoHdrBus5Db,
+    harmonicosFundamentalAusenteHz,
+  });
+}
+
+/**
+ * Oráculo puro do Volume 10 (Seção 10.3 / LEI_SFX_1_OCLUSAO_DIVIDIDA e LAC_16):
+ * resolve os cortes de oclusão física e ducking cirúrgico (Bell EQ 950 Hz -6.5 dB preservando sub 45 Hz)
+ * nos 6 barramentos para os 5 estados físicos da nave.
+ */
+export function resolverRoteamentoOclusao6Barramentos({
+  estadoFisico = '1_NO_FOIL',
+  progressoSpoolUp0a1 = 0.0,
+  pausaTaticaAtiva = false,
+  cueSobrevivenciaAtivo = false,
+  confortoAntiTinnitus = false,
+}) {
+  const estadosValidos = new Set([
+    '1_NO_FOIL',
+    '2_TOUCHDOWN',
+    '3_SPOOL_UP',
+    '4_FURTIVO_AR',
+    '5_FURTIVO_AGUA',
+  ]);
+  if (!estadosValidos.has(estadoFisico)) {
+    throw new Error(`[OCLUSAO 6 BARRAMENTOS FALHOU] Estado físico inválido: "${estadoFisico}"`);
+  }
+  const pSpool = Math.max(0, Math.min(1, Number(progressoSpoolUp0a1)));
+  const submersoPleno = estadoFisico === '2_TOUCHDOWN' || estadoFisico === '5_FURTIVO_AGUA';
+  const duckBell = cueSobrevivenciaAtivo ? -6.5 : 0.0;
+
+  let corteMusicaHz = 20000;
+  if (submersoPleno) {
+    corteMusicaHz = 400;
+  } else if (estadoFisico === '3_SPOOL_UP') {
+    corteMusicaHz = Math.round(400 * Math.pow(20000 / 400, pSpool));
+  } else if (estadoFisico === '4_FURTIVO_AR') {
+    corteMusicaHz = pausaTaticaAtiva ? 900 : 7200;
+  } else if (pausaTaticaAtiva) {
+    corteMusicaHz = 900;
+  }
+
+  const corteExteriorHz = submersoPleno
+    ? 380
+    : estadoFisico === '3_SPOOL_UP'
+      ? Math.round(380 * Math.pow(18000 / 380, pSpool))
+      : 18000;
+  const corteHydroHz = submersoPleno
+    ? 420
+    : estadoFisico === '3_SPOOL_UP'
+      ? Math.round(420 * Math.pow(16000 / 420, pSpool))
+      : 16000;
+  const corteCabineHz = submersoPleno || estadoFisico === '3_SPOOL_UP' ? 14000 : 20000;
+
+  return clonarProfundoCongelado({
+    estadoFisico,
+    tetoNotchTinnitusHz: confortoAntiTinnitus ? 3200 : null,
+    barramentos: {
+      BUS_0_SURVIVAL_CUES: {
+        prioridade: 0,
+        corteLowPassHz: 20000,
+        duckingBell950HzDb: 0.0,
+        bypassSubmersoTotal: true,
+      },
+      BUS_1_MUSIC: {
+        prioridade: 1,
+        corteLowPassHz: corteMusicaHz,
+        duckingBell950HzDb: duckBell,
+        ganhoSub45HzDb: 0.0,
+        bypassSubmersoTotal: false,
+      },
+      BUS_2_INTERIOR_CABIN: {
+        prioridade: 2,
+        corteLowPassHz: corteCabineHz,
+        duckingBell950HzDb: duckBell,
+        earlyReflectionsCascoAtivas: submersoPleno || estadoFisico === '3_SPOOL_UP',
+        bypassSubmersoTotal: false,
+      },
+      BUS_3_EXTERIOR_SEA: {
+        prioridade: 3,
+        corteLowPassHz: corteExteriorHz,
+        duckingBell950HzDb: duckBell,
+        bypassSubmersoTotal: false,
+      },
+      BUS_4_UI: {
+        prioridade: 4,
+        corteLowPassHz: 20000,
+        duckingBell950HzDb: 0.0,
+        bypassSubmersoTotal: true,
+      },
+      BUS_5_HYDRO_BED: {
+        prioridade: 5,
+        corteLowPassHz: corteHydroHz,
+        duckingBell950HzDb: duckBell,
+        bypassSubmersoTotal: false,
+      },
+    },
+  });
+}
+
+/**
+ * Oráculo puro do Volume 10 (Seções 10.2, 10.4 e LAC_04 / LAC_11 / LAC_17):
+ * calcula o ponteiro sample-accurate de loop compensando preSkipFrames (ex.: 312 amostras Opus),
+ * valida seamDelta === 0 e quantiza o disparo de Stingers na próxima subdivisão de 1/4 de compasso.
+ */
+export function calcularWrapLoopSampleAccurate({
+  indiceAmostraGlobal,
+  exactFrameCount,
+  preSkipFrames = 0,
+  seamDeltaMedido = 0,
+  bpm = 125,
+  sampleRateHz = 48000,
+}) {
+  if (exactFrameCount <= 0 || bpm <= 0 || sampleRateHz < 24000 || sampleRateHz > 96000) {
+    throw new Error('[LOOP SAMPLE-ACCURATE FALHOU] Parâmetros fora dos limites acústicos suportados');
+  }
+  const offsetUtil = ((indiceAmostraGlobal % exactFrameCount) + exactFrameCount) % exactFrameCount;
+  const frameBufferDecodificado = preSkipFrames + offsetUtil;
+  const loopSemClique = Math.abs(seamDeltaMedido) <= 1e-6;
+  const amostrasPorQuartoCompasso = Math.round((60 / bpm) * sampleRateHz);
+  const restoQuarto = ((indiceAmostraGlobal % amostrasPorQuartoCompasso) + amostrasPorQuartoCompasso) % amostrasPorQuartoCompasso;
+  const proximoDisparoStingerFrame =
+    restoQuarto === 0
+      ? indiceAmostraGlobal
+      : indiceAmostraGlobal + (amostrasPorQuartoCompasso - restoQuarto);
+
+  return clonarProfundoCongelado({
+    frameBufferDecodificado,
+    offsetUtil,
+    loopSemClique,
+    amostrasPorQuartoCompasso,
+    proximoDisparoStingerFrame,
+  });
+}
+
+/**
+ * Oráculo puro do Volume 10 (LAC_01): audita um header Content-Security-Policy real e retorna
+ * canal explícito L3 distinguindo aptidão WASM/Worklet de bloqueio de compilação ou de worker-src.
+ */
+export function auditarPoliticaCspAudioWasm(cabecalhoCsp) {
+  const texto = String(cabecalhoCsp ?? '').trim();
+  const diretivas = {};
+  for (const parte of texto.split(';')) {
+    const tokens = parte.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length > 0) {
+      diretivas[tokens[0].toLowerCase()] = tokens.slice(1);
+    }
+  }
+  const scriptSrc = diretivas['script-src'] ?? diretivas['default-src'] ?? [];
+  const workerSrc = diretivas['worker-src'] ?? diretivas['child-src'] ?? diretivas['default-src'] ?? [];
+
+  const permiteWasm = scriptSrc.includes("'wasm-unsafe-eval'") || scriptSrc.includes("'unsafe-eval'");
+  const permiteWorklet = workerSrc.includes("'self'");
+
+  let status = 'CSP_APTA_WASM_WORKLET';
+  if (!permiteWasm) status = 'BLOQUEIO_WASM_UNSAFE_EVAL';
+  else if (!permiteWorklet) status = 'BLOQUEIO_WORKER_SRC';
+
+  return clonarProfundoCongelado({
+    status,
+    permiteWasm,
+    permiteWorklet,
+  });
+}
+
+/**
+ * Oráculo puro do Volume 10 (Seção 10.5 / LAC_14 e LAC_15 — Leis L2 e XAG 104):
+ * mescla preferenciasAudio em um perfil clonado/congelado sem mutar a entrada, preservando-as
+ * intactas mesmo em transições de Permadeath (TR_7A/7B/7C) e auto-ativando legendas no mudo.
+ */
+export function mesclarPreferenciasAudioNoPerfilImunePermadeath(
+  perfilAtual,
+  patchPreferencias = {},
+  idTransicao = null
+) {
+  const padrao = {
+    master: 85,
+    musica: 80,
+    sfxCombate: 90,
+    cabineTripulacao: 85,
+    ambienteMaritimo: 75,
+    alertasUi: 100,
+    mudo: false,
+    perfilDinamico: 'ESTUDIO',
+    saidaMono: false,
+    silenciarSemFoco: true,
+    legendasTaticasDirecionais: 'ALERTAS_CRITICOS',
+    confortoAntiTinnitus: false,
+  };
+  const basePref = {
+    ...padrao,
+    ...(perfilAtual?.preferenciasAudio ?? {}),
+    ...(patchPreferencias ?? {}),
+  };
+  const chavesSliders = [
+    'master',
+    'musica',
+    'sfxCombate',
+    'cabineTripulacao',
+    'ambienteMaritimo',
+    'alertasUi',
+  ];
+  for (const chave of chavesSliders) {
+    const v = Number(basePref[chave]);
+    if (!Number.isFinite(v)) {
+      throw new Error(`[PERFIL AUDIO FALHOU] Slider inválido "${chave}": ${basePref[chave]}`);
+    }
+    basePref[chave] = Math.max(0, Math.min(100, Math.round(v)));
+  }
+  basePref.mudo = Boolean(basePref.mudo);
+  basePref.saidaMono = Boolean(basePref.saidaMono);
+  basePref.silenciarSemFoco = Boolean(basePref.silenciarSemFoco);
+  basePref.confortoAntiTinnitus = Boolean(basePref.confortoAntiTinnitus);
+
+  const audioSilenciado = basePref.mudo === true || basePref.master === 0;
+  const legendasEfetivas =
+    audioSilenciado && basePref.legendasTaticasDirecionais === 'DESLIGADO'
+      ? 'ALERTAS_CRITICOS'
+      : basePref.legendasTaticasDirecionais;
+
+  const transicoesPermadeath = new Set([
+    'TR_7A_DERROTA_EM_COMBATE',
+    'TR_7B_VITORIA_FINAL',
+    'TR_7C_DERROTA_EM_EVENTO',
+  ]);
+
+  return clonarProfundoCongelado({
+    ...perfilAtual,
+    preferenciasAudio: basePref,
+    telemetriaAcessibilidadeAudio: {
+      legendasEfetivas,
+      runSaveApagadoPermadeath: transicoesPermadeath.has(idTransicao),
+      perfilPreservadoPosPermadeath: true,
+    },
+  });
+}
