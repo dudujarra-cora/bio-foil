@@ -1072,6 +1072,28 @@ test('[PORTÃO 10.4 | Pilar 4 Steam >= 9.0/10] i18n PT-BR/EN-US c/ Zero Truncame
         'Depot Steam deve copiar libnode adjacente para runtime/node/lib resolver @rpath autonomamente'
       );
     }
+    const dirNodeSharedTmp = path.join(dirSteamTmp, 'node-shared-prefix');
+    const binSharedTmp = path.join(dirNodeSharedTmp, 'bin', 'node');
+    const libSharedTmp = path.join(dirNodeSharedTmp, 'lib', 'libnode.so.127');
+    fs.mkdirSync(path.dirname(binSharedTmp), { recursive: true });
+    fs.mkdirSync(path.dirname(libSharedTmp), { recursive: true });
+    fs.copyFileSync(fs.realpathSync(process.execPath), binSharedTmp);
+    fs.chmodSync(binSharedTmp, 0o755);
+    fs.writeFileSync(libSharedTmp, Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00]));
+    const dirDepotSharedOut = path.join(dirSteamTmp, 'depot-stage-shared');
+    empacotarDepotSteamAutocontido({
+      diretorioRaiz: DIRETORIO_RAIZ,
+      diretorioSaida: dirDepotSharedOut,
+      incluirRuntimeNode: true,
+      caminhoBinarioNode: binSharedTmp,
+      compilarHostNativoMac: false,
+    });
+    assert.equal(
+      fs.existsSync(path.join(dirDepotSharedOut, 'runtime', 'node', 'lib')) &&
+        fs.readdirSync(path.join(dirDepotSharedOut, 'runtime', 'node', 'lib')).some((n) => /^libnode\b/.test(n)),
+      true,
+      'Depot Steam deve copiar libnode adjacente para runtime/node/lib resolver @rpath autonomamente'
+    );
     const execDepotNode = spawnSync(binDepotNodeAbs, ['-e', 'process.stdout.write("DEPOT_NODE_OK")'], { encoding: 'utf8' });
     assert.equal(execDepotNode.status, 0, 'Binário Node do depot deve executar autonomamente com @rpath/libnode resolvido');
     assert.equal(execDepotNode.stdout, 'DEPOT_NODE_OK');
