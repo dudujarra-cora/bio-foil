@@ -2445,6 +2445,22 @@
         "tests/11-onda7-steam-comercial.test.mjs"
       ],
       "falhaEsperada": "IA Difícil deve priorizar Câmara 4 (Glândula de Bolhas) na bionave real quando há barreira ativa"
+    },
+    {
+      "id": "MUT-153",
+      "arquivo": "src/onda7-steam/steamworks-desktop-host.mjs",
+      "lei": "L1 / L6 / Onda 7 Pilar 4 (MUT-O7-09)",
+      "descricao": "empacotarDepotSteamAutocontido omite a cópia de libnode adjacente para runtime/node/lib, quebrando a execução autônoma via @rpath do binário Node empacotado",
+      "trocas": [
+        {
+          "buscar": "            if (/^libnode\\b.*\\.(dylib|so(\\.\\d+)*)$/.test(nomeLib)) {",
+          "substituir": "            if (false && /^libnode\\b.*\\.(dylib|so(\\.\\d+)*)$/.test(nomeLib)) {"
+        }
+      ],
+      "testes": [
+        "tests/11-onda7-steam-comercial.test.mjs"
+      ],
+      "falhaEsperada": "Depot Steam deve copiar libnode adjacente para runtime/node/lib resolver @rpath autonomamente"
     }
   ]
 }

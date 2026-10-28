@@ -1056,7 +1056,25 @@ test('[PORTÃO 10.4 | Pilar 4 Steam >= 9.0/10] i18n PT-BR/EN-US c/ Zero Truncame
     assert.equal(relDepot.ok, true);
     assert.equal(relDepot.appId, 2894510);
     assert.equal(relDepot.possuiBinarioExecutavelAutocontido, true);
-    assert.equal(fs.existsSync(path.join(dirDepotOut, relDepot.caminhoBinarioRuntime)), true);
+    const binDepotNodeAbs = path.join(dirDepotOut, relDepot.caminhoBinarioRuntime);
+    assert.equal(fs.existsSync(binDepotNodeAbs), true);
+    assert.notEqual(
+      fs.statSync(binDepotNodeAbs).ino,
+      fs.statSync(fs.realpathSync(process.execPath)).ino,
+      'Binário Node do depot deve ser cópia isolada (nunca hardlink APFS sobre process.execPath)'
+    );
+    const dirHostNodeLib = path.resolve(path.dirname(fs.realpathSync(process.execPath)), '..', 'lib');
+    if (fs.existsSync(dirHostNodeLib) && fs.readdirSync(dirHostNodeLib).some((n) => /^libnode\b/.test(n))) {
+      assert.equal(
+        fs.existsSync(path.join(dirDepotOut, 'runtime', 'node', 'lib')) &&
+          fs.readdirSync(path.join(dirDepotOut, 'runtime', 'node', 'lib')).some((n) => /^libnode\b/.test(n)),
+        true,
+        'Depot Steam deve copiar libnode adjacente para runtime/node/lib resolver @rpath autonomamente'
+      );
+    }
+    const execDepotNode = spawnSync(binDepotNodeAbs, ['-e', 'process.stdout.write("DEPOT_NODE_OK")'], { encoding: 'utf8' });
+    assert.equal(execDepotNode.status, 0, 'Binário Node do depot deve executar autonomamente com @rpath/libnode resolvido');
+    assert.equal(execDepotNode.stdout, 'DEPOT_NODE_OK');
     assert.equal(fs.existsSync(path.join(dirDepotOut, 'src', 'onda7-steam', 'steamworks-desktop-host.mjs')), true);
     assert.equal(fs.existsSync(path.join(dirDepotOut, 'assets', 'audio', 'music_zone1_explore.ogg')), true);
     assert.equal(fs.existsSync(path.join(dirDepotOut, 'tests')), false, 'Depot stage não pode incluir tests/');

@@ -495,23 +495,35 @@ export function empacotarDepotSteamAutocontido(opcoes = {}) {
   if (opcoes.incluirRuntimeNode !== false) {
     const execOrig = opcoes.caminhoBinarioNode ?? process.execPath;
     if (execOrig && fs.existsSync(execOrig)) {
-      const ehWin = process.platform === 'win32' || String(execOrig).toLowerCase().endsWith('.exe');
+      const execReal = fs.realpathSync(execOrig);
+      const ehWin = process.platform === 'win32' || String(execReal).toLowerCase().endsWith('.exe');
       const relRuntime = ehWin ? path.join('runtime', 'node', 'node.exe') : path.join('runtime', 'node', 'bin', 'node');
       const destRuntime = path.join(pastaDestino, relRuntime);
       fs.mkdirSync(path.dirname(destRuntime), { recursive: true });
       if (fs.existsSync(destRuntime)) {
         fs.unlinkSync(destRuntime);
       }
-      try {
-        fs.linkSync(execOrig, destRuntime);
-      } catch {
-        fs.copyFileSync(execOrig, destRuntime);
-      }
+      // Nunca usar fs.linkSync sobre process.execPath: no APFS/XNU um hardlink altera o cache
+      // de caminho do vnode e quebra a resolução de @rpath/libnode.*.dylib em processos concorrentes.
+      fs.copyFileSync(execReal, destRuntime);
       if (!ehWin) {
         try {
           fs.chmodSync(destRuntime, 0o755);
         } catch {
           // filesystem sem chmod POSIX
+        }
+        const dirLibOrig = path.resolve(path.dirname(execReal), '..', 'lib');
+        if (fs.existsSync(dirLibOrig)) {
+          const dirLibDest = path.join(pastaDestino, 'runtime', 'node', 'lib');
+          for (const nomeLib of fs.readdirSync(dirLibOrig)) {
+            if (/^libnode\b.*\.(dylib|so(\.\d+)*)$/.test(nomeLib)) {
+              fs.mkdirSync(dirLibDest, { recursive: true });
+              const origLib = path.join(dirLibOrig, nomeLib);
+              const destLib = path.join(dirLibDest, nomeLib);
+              fs.copyFileSync(fs.realpathSync(origLib), destLib);
+              totalArquivosCopiados += 1;
+            }
+          }
         }
       }
       binarioRuntimeEmpacotado = true;
