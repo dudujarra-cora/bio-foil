@@ -2557,6 +2557,22 @@
         "tests/10-portao-audio-cpp20-steam.test.mjs"
       ],
       "falhaEsperada": "[CAT-AUD-08] Silenciar áudio com legendas DESLIGADO deve auto-ativar ALERTAS_CRITICOS no ViewModel (XAG 104)"
+    },
+    {
+      "id": "MUT-160",
+      "arquivo": "scripts/rodar-mutacoes.mjs",
+      "lei": "L1 / L6 / CI Zero-Copy Assets",
+      "descricao": "copiarProjeto desativa o hardlink zero-copy em assets/, voltando a duplicar fisicamente os binários imutáveis de áudio/arte a cada mutação",
+      "trocas": [
+        {
+          "buscar": "    const subEmAssets = emAssets || entrada.name === 'assets';",
+          "substituir": "    const subEmAssets = false;"
+        }
+      ],
+      "testes": [
+        "tests/02-hook-ambiente.test.mjs"
+      ],
+      "falhaEsperada": "copiarProjeto deve criar hardlink zero-copy em assets/ no mesmo filesystem"
     }
   ]
 }

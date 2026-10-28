@@ -1097,6 +1097,28 @@ test('MCP para Testes e Jogo Bio-Foil (L1/L2/L3/L4/L6/N4): 12 ferramentas, 4 rec
   try {
     copiarProjeto(DIRETORIO_RAIZ, tmp);
 
+    // 0. copiarProjeto usa hardlink zero-copy em assets/ no mesmo filesystem e copia isolada nos demais arquivos
+    const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'ftl-mut-link-'));
+    try {
+      copiarProjeto(tmp, tmp2);
+      const inoAssetOrig = fs.statSync(path.join(tmp, 'assets', 'audio', 'foley_sonar_ping_buoy.ogg')).ino;
+      const inoAssetLink = fs.statSync(path.join(tmp2, 'assets', 'audio', 'foley_sonar_ping_buoy.ogg')).ino;
+      assert.equal(
+        inoAssetLink === inoAssetOrig,
+        true,
+        'copiarProjeto deve criar hardlink zero-copy em assets/ no mesmo filesystem'
+      );
+      const inoPkgOrig = fs.statSync(path.join(tmp, 'package.json')).ino;
+      const inoPkgCopia = fs.statSync(path.join(tmp2, 'package.json')).ino;
+      assert.equal(
+        inoPkgCopia !== inoPkgOrig,
+        true,
+        'copiarProjeto deve manter copia independente fora de assets/ para isolamento das mutacoes'
+      );
+    } finally {
+      fs.rmSync(tmp2, { recursive: true, force: true });
+    }
+
     // 1. renderizarBlocoMd, extrairBlocoMd e carregarMutacoes
     const muts = carregarMutacoes(tmp);
     const bloco = renderizarBlocoMd(muts.slice(0, 1), [

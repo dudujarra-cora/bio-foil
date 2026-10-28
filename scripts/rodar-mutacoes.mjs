@@ -33,15 +33,24 @@ function ambienteSemGit() {
   return env;
 }
 
-export function copiarProjeto(origem, destino) {
+export function copiarProjeto(origem, destino, emAssets = false) {
   for (const entrada of fs.readdirSync(origem, { withFileTypes: true })) {
     if (entrada.name === '.git' || entrada.name === 'node_modules' || entrada.name === '.worktrees') continue;
     const de = path.join(origem, entrada.name);
     const para = path.join(destino, entrada.name);
+    const subEmAssets = emAssets || entrada.name === 'assets';
     if (entrada.isDirectory()) {
       fs.mkdirSync(para, { recursive: true });
-      copiarProjeto(de, para);
+      copiarProjeto(de, para, subEmAssets);
     } else if (entrada.isFile()) {
+      if (subEmAssets) {
+        try {
+          fs.linkSync(de, para);
+          continue;
+        } catch {
+          // fallback para copia integral quando origem e destino estao em filesystems distintos (EXDEV)
+        }
+      }
       fs.copyFileSync(de, para);
       fs.chmodSync(para, fs.statSync(de).mode);
     }
@@ -119,10 +128,10 @@ async function executarLoteMutacoesParalelo(raiz, mutacoes, concorrenciaMax) {
   let proximoIndice = 0;
   let ativos = 0;
 
-  const limiteEfetivo = Math.max(
-    1,
-    Math.min(concorrenciaMax ?? Math.min(6, Math.max(2, Math.floor(os.availableParallelism() / 2))), total)
-  );
+  const paralelismoDisponivel = os.availableParallelism();
+  const trabalhadoresPadrao =
+    paralelismoDisponivel <= 4 ? paralelismoDisponivel : Math.floor(paralelismoDisponivel / 2);
+  const limiteEfetivo = Math.max(1, Math.min(concorrenciaMax ?? Math.min(6, Math.max(2, trabalhadoresPadrao)), total));
 
   const esperarFolgaCarga = async () => {
     while (ativos >= 2 && os.loadavg()[0] >= 14.5) {
