@@ -2304,19 +2304,19 @@
     },
     {
       "id": "MUT-144",
-      "arquivo": "tests/10-portao-audio-cpp20-steam.test.mjs",
-      "lei": "N2 / N6 (Lista-Catraca)",
-      "descricao": "Item CAT-AUD-03 resolvido continua esquecido dentro de LISTA_CATRACA_AUDIO_CPP20 sem ser promovido a asserção definitiva",
+      "arquivo": "src/onda6-ui/cliente-web.mjs",
+      "lei": "L3 / CAT-AUD-01 (CSP AudioWorklet WASM)",
+      "descricao": "cliente-web.mjs omite 'wasm-unsafe-eval' no cabeçalho Content-Security-Policy HTTP, bloqueando a instanciação de libbiofoil_audio_rt.wasm no AudioWorklet",
       "trocas": [
         {
-          "buscar": "      return !wasmExiste;",
-          "substituir": "      return false;"
+          "buscar": "      \"default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'; base-uri 'none'\",",
+          "substituir": "      \"default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'; base-uri 'none'\","
         }
       ],
       "testes": [
         "tests/10-portao-audio-cpp20-steam.test.mjs"
       ],
-      "falhaEsperada": "[N2 CATRACA] O item CAT-AUD-03"
+      "falhaEsperada": "[CAT-AUD-01] CSP HTTP de cliente-web.mjs deve autorizar wasm-unsafe-eval e worker-src self do AudioWorklet"
     },
     {
       "id": "MUT-145",
@@ -2461,6 +2461,102 @@
         "tests/11-onda7-steam-comercial.test.mjs"
       ],
       "falhaEsperada": "Depot Steam deve copiar libnode adjacente para runtime/node/lib resolver @rpath autonomamente"
+    },
+    {
+      "id": "MUT-154",
+      "arquivo": "src/onda6-ui/persistencia-perfil.mjs",
+      "lei": "N1 / L6 / CAT-AUD-02 (Permadeath Audio)",
+      "descricao": "atualizarPerfilComMetricasRun sobrescreve preferenciasAudio com os padrões de fábrica em vez de preservar os 6 faders e flags customizadas do jogador",
+      "trocas": [
+        {
+          "buscar": "  const preferenciasAudio = normalizarPreferenciasAudioPerfil(\n    perfilAtual.preferenciasAudio,\n    contextoMetricas.preferenciasAudio ?? null\n  );",
+          "substituir": "  const preferenciasAudio = { ...PREFERENCIAS_AUDIO_CANONICAS_VOL10 };"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[CAT-AUD-02] atualizarPerfilComMetricasRun deve preservar preferenciasAudio customizadas do jogador"
+    },
+    {
+      "id": "MUT-155",
+      "arquivo": "src/onda6-ui/sintetizador-webaudio-cliente.mjs",
+      "lei": "L1 / L4 / CAT-AUD-04 (Pool LRU 64 MB)",
+      "descricao": "registrarZonaAcusticaLru desativa o laço de evicção LRU, deixando a RAM PCM residente ultrapassar o orçamento máximo de 64 MB",
+      "trocas": [
+        {
+          "buscar": "    while (\n      poolZonasAcusticasLru.size > 0 &&\n      BYTES_ONESHOTS_FIXOS_CLIENTE + calcularBytesZonasLru() + bytesPcm > TETO_POOL_LRU_BYTES_CLIENTE\n    ) {",
+          "substituir": "    while (\n      false &&\n      poolZonasAcusticasLru.size > 0 &&\n      BYTES_ONESHOTS_FIXOS_CLIENTE + calcularBytesZonasLru() + bytesPcm > TETO_POOL_LRU_BYTES_CLIENTE\n    ) {"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[CAT-AUD-04] Pool LRU do motor WebAudio jamais pode ultrapassar o teto de 64 MB de RAM PCM"
+    },
+    {
+      "id": "MUT-156",
+      "arquivo": "src/onda6-ui/runtime-navegador.mjs",
+      "lei": "L1 / L6 / CAT-AUD-05 (Auto-Pausa Alt-Tab)",
+      "descricao": "visibilitychange ignora o combate ativo ao perder foco (Alt-Tab / Steam Overlay), deixando a bionave apanhar em segundo plano sem Pausa Tática",
+      "trocas": [
+        {
+          "buscar": "        if (vmVis?.faseJogo === 'COMBATE' && !vmVis?.modalCampanhaAtivo && !contextoUi.pausaTaticaAtiva) {\n          contextoUi = { ...contextoUi, pausaTaticaAtiva: true };",
+          "substituir": "        if (false && vmVis?.faseJogo === 'COMBATE' && !vmVis?.modalCampanhaAtivo && !contextoUi.pausaTaticaAtiva) {\n          contextoUi = { ...contextoUi, pausaTaticaAtiva: true };"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[CAT-AUD-05] Perder foco (Alt-Tab / Overlay) em COMBATE ativo deve ativar Pausa Tática imediatamente"
+    },
+    {
+      "id": "MUT-157",
+      "arquivo": "src/onda6-ui/audio-maritimo.mjs",
+      "lei": "N1 / LEI_SFX_2 / CAT-AUD-06 (Zero Reúso Bélico em UI)",
+      "descricao": "extrairSfxMulticamadaDoTick volta a mapear COMANDOS_SFX_TATICOS_MIRA (MOVER_TRIPULANTE / MIRAR_ARMA) para SFX_DISPARO_ACUSTICO_ESPORO, violando LEI_SFX_2",
+      "trocas": [
+        {
+          "buscar": "    } else if (COMANDOS_SFX_TATICOS_MIRA.has(cmdTipo)) {\n      adicionar('SFX_BARREIRA_BOLHA', 0, 0.15);",
+          "substituir": "    } else if (COMANDOS_SFX_TATICOS_MIRA.has(cmdTipo)) {\n      adicionar('SFX_DISPARO_ACUSTICO_ESPORO', 0, 0.15);"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[CAT-AUD-06 / LEI_SFX_2] Comando de UI/navegação MOVER_TRIPULANTE jamais pode reutilizar disparo bélico"
+    },
+    {
+      "id": "MUT-158",
+      "arquivo": "src/onda6-ui/sintetizador-webaudio-cliente.mjs",
+      "lei": "L1 / L4 / CAT-AUD-07 (Conforto Anti-Tinnitus 3200 Hz)",
+      "descricao": "obterEstadoAcusticoVol10 ignora confortoAntiTinnitusAtivo e mantém o teto agudo em 20000 Hz em vez de limitá-lo a 3200 Hz",
+      "trocas": [
+        {
+          "buscar": "      tetoAntiTinnitusHz: confortoAntiTinnitusAtivo ? 3200 : 20000,",
+          "substituir": "      tetoAntiTinnitusHz: 20000,"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[CAT-AUD-07] definirConfortoAntiTinnitus(true) deve cravar teto em 3200 Hz protegendo ouvidos sensíveis"
+    },
+    {
+      "id": "MUT-159",
+      "arquivo": "src/onda6-ui/presenter-wireframe.mjs",
+      "lei": "L1 / XAG 104 / CAT-AUD-08 (Legendas Direcionais no Mudo)",
+      "descricao": "projetarViewModelWireframe não auto-ativa ALERTAS_CRITICOS quando o áudio está silenciado e legendasTaticasDirecionais está em DESLIGADO",
+      "trocas": [
+        {
+          "buscar": "  const modoLegendasTaticasEfetivo =\n    audioMutadoVm && modoLegendasBruto === 'DESLIGADO' ? 'ALERTAS_CRITICOS' : modoLegendasBruto;",
+          "substituir": "  const modoLegendasTaticasEfetivo = modoLegendasBruto;"
+        }
+      ],
+      "testes": [
+        "tests/10-portao-audio-cpp20-steam.test.mjs"
+      ],
+      "falhaEsperada": "[CAT-AUD-08] Silenciar áudio com legendas DESLIGADO deve auto-ativar ALERTAS_CRITICOS no ViewModel (XAG 104)"
     }
   ]
 }

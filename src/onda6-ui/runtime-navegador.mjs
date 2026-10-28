@@ -961,6 +961,9 @@ export function iniciarRuntimeDomBiofoil(docExplicito, winExplicito, estadoInici
         salaAlvoAbordagemId: contextoUi.salaAlvoAbordagemId,
         avisoToastTexto,
         cursorGamepad960,
+        exibirLegendasTaticasDirecionais: Boolean(
+          vm.audioMutado || vm.modoLegendasTaticasEfetivo === 'COMPLETO'
+        ),
       },
       assetsRgba,
       hbs,
@@ -1493,6 +1496,55 @@ export function iniciarRuntimeDomBiofoil(docExplicito, winExplicito, estadoInici
   if (typeof win.addEventListener === 'function') {
     win.addEventListener('resize', () => {
       aplicarViewportDisplaySteamAtual(false);
+    });
+  }
+  let silenciadoPorPerdaDeFoco = false;
+  function resolverSilenciarSemFocoAtivo(vm) {
+    if (typeof vm?.preferenciasAudio?.silenciarSemFoco === 'boolean') {
+      return vm.preferenciasAudio.silenciarSemFoco;
+    }
+    if (typeof vm?.configuracoesSteam?.silenciarSemFoco === 'boolean') {
+      return vm.configuracoesSteam.silenciarSemFoco;
+    }
+    return true;
+  }
+  if (typeof doc.addEventListener === 'function') {
+    doc.addEventListener('visibilitychange', () => {
+      const oculto = Boolean(doc.hidden || doc.visibilityState === 'hidden');
+      const vmVis = estadoRt.viewModel;
+      if (oculto) {
+        if (vmVis?.faseJogo === 'COMBATE' && !vmVis?.modalCampanhaAtivo && !contextoUi.pausaTaticaAtiva) {
+          contextoUi = { ...contextoUi, pausaTaticaAtiva: true };
+          if (typeof motorAudio.definirPausaTatica === 'function') {
+            motorAudio.definirPausaTatica(true);
+          }
+        }
+        if (resolverSilenciarSemFocoAtivo(vmVis)) {
+          if (!motorAudio.estaMudo()) {
+            motorAudio.alternarMudo();
+            silenciadoPorPerdaDeFoco = true;
+          }
+          if (vmVis?.edicaoComercialSteam) {
+            sincronizarAudioResposta(
+              {
+                ...estadoRt,
+                viewModel: { ...vmVis, audioMutado: true },
+              },
+              false
+            );
+          }
+        } else if (vmVis?.edicaoComercialSteam) {
+          sincronizarAudioResposta(estadoRt, false);
+        }
+      } else if (silenciadoPorPerdaDeFoco) {
+        silenciadoPorPerdaDeFoco = false;
+        if (motorAudio.estaMudo() && !vmVis?.audioMutado) {
+          motorAudio.alternarMudo();
+        }
+        if (vmVis?.edicaoComercialSteam) {
+          sincronizarAudioResposta(estadoRt, false);
+        }
+      }
     });
   }
   canvas.addEventListener('click', (ev) => {

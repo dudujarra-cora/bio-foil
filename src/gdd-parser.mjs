@@ -57,6 +57,7 @@ export const CADEIA_CANONICA_ONDAS_SRC = Object.freeze([
   'onda6-ui/geometria-layout-960.mjs',
   'onda6-ui/hitboxes-layout.mjs',
   'onda6-ui/interpolador-60fps.mjs',
+  'onda6-ui/libbiofoil_audio_rt.wasm',
   'onda6-ui/persistencia-perfil.mjs',
   'onda6-ui/presenter-wireframe.mjs',
   'onda6-ui/primitivas-raster-rgba.mjs',

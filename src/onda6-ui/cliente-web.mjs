@@ -111,9 +111,95 @@ const MAPA_FONTES_ESM_ONDA7 = (() => {
   return Object.freeze(mapa);
 })();
 
+const BINARIO_WASM_AUDIO_RT = fs.readFileSync(new URL('./libbiofoil_audio_rt.wasm', import.meta.url));
+
+const CODIGO_WORKLET_AUDIO_CPP20 = `class BiofoilAudioWorkletProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this._inst = null;
+    this._inOffset = 0;
+    this._outOffset = 0;
+    this._maxFrames = 128;
+    this.port.onmessage = (ev) => {
+      const msg = ev && ev.data ? ev.data : {};
+      if (msg.tipo === 'INIT_WASM' && msg.wasmBytes) {
+        WebAssembly.instantiate(msg.wasmBytes, {}).then((res) => {
+          const inst = res.instance || res;
+          if (inst.exports._initialize) inst.exports._initialize();
+          inst.exports.biofoil_rt_init(sampleRate || 48000);
+          this._inOffset = inst.exports.biofoil_rt_get_input_ptr();
+          this._outOffset = inst.exports.biofoil_rt_get_output_ptr();
+          this._maxFrames = inst.exports.biofoil_rt_get_max_block_frames() || 1024;
+          this._inst = inst;
+          this.port.postMessage({ tipo: 'WASM_PRONTO', zona: inst.exports.biofoil_rt_get_active_zone() });
+        }).catch(() => {});
+      } else if (this._inst) {
+        const ex = this._inst.exports;
+        if (msg.tipo === 'TELEMETRIA') {
+          ex.biofoil_rt_push_telemetry(
+            Number(msg.hullPct ?? 1),
+            Number(msg.waterKg ?? 0),
+            Number(msg.cavitMarginKg ?? 100),
+            Number(msg.foilState ?? 1),
+            Number(msg.enemyArchetype ?? 0),
+            Number(msg.bossPhase ?? 0),
+            msg.oceanBoil ? 1 : 0,
+            msg.salvo ? 1 : 0
+          );
+        } else if (msg.tipo === 'SPOOL_PROGRESS') {
+          ex.biofoil_rt_set_spool_progress(Number(msg.progress01 ?? 1));
+        } else if (msg.tipo === 'PREFERENCIAS') {
+          ex.biofoil_rt_set_preferences(
+            Number(msg.perfilCodigo ?? 0),
+            msg.saidaMono ? 1 : 0,
+            msg.confortoAntiTinnitus ? 1 : 0
+          );
+        } else if (msg.tipo === 'SONAR') {
+          ex.biofoil_rt_trigger_sonar(Number(msg.intensidade ?? 0.75));
+        }
+      }
+    };
+  }
+  process(inputs, outputs) {
+    const out = outputs[0];
+    if (!out || out.length === 0) return true;
+    const outL = out[0];
+    const outR = out.length > 1 ? out[1] : out[0];
+    const n = outL.length;
+    const inp = inputs[0];
+    const inL = inp && inp.length > 0 ? inp[0] : null;
+    const inR = inp && inp.length > 1 ? inp[1] : inL;
+    if (!this._inst || n > this._maxFrames) {
+      for (let i = 0; i < n; i += 1) {
+        outL[i] = inL ? inL[i] : 0;
+        outR[i] = inR ? inR[i] : 0;
+      }
+      return true;
+    }
+    const mem = this._inst.exports.memory.buffer;
+    const inView = new Float32Array(mem, this._inOffset, n * 2);
+    for (let i = 0; i < n; i += 1) {
+      inView[2 * i] = inL ? inL[i] : 0;
+      inView[2 * i + 1] = inR ? inR[i] : 0;
+    }
+    this._inst.exports.biofoil_rt_process_scratch_block(n);
+    const outView = new Float32Array(this._inst.exports.memory.buffer, this._outOffset, n * 2);
+    for (let i = 0; i < n; i += 1) {
+      outL[i] = outView[2 * i];
+      outR[i] = outView[2 * i + 1];
+    }
+    return true;
+  }
+}
+registerProcessor('biofoil-audio-cpp20', BiofoilAudioWorkletProcessor);
+`;
+
 const SET_MODULOS_SRC_SIMULACAO_BROWSER = new Set(
   [...CADEIA_CANONICA_SRC, ...CADEIA_CANONICA_ONDAS_SRC].filter(
-    (m) => m !== 'onda6-ui/cliente-web.mjs' && m !== 'onda7-steam/steamworks-desktop-host.mjs'
+    (m) =>
+      m.endsWith('.mjs') &&
+      m !== 'onda6-ui/cliente-web.mjs' &&
+      m !== 'onda7-steam/steamworks-desktop-host.mjs'
   )
 );
 
@@ -570,7 +656,7 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
 
   const cabecalhosSeguranca = {
     'Content-Security-Policy':
-      "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'; base-uri 'none'",
+      "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'; base-uri 'none'",
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
@@ -667,6 +753,20 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
         return;
       }
       const nomeModulo = urlLimpa.slice('/onda6-ui/'.length);
+      if (nomeModulo === 'libbiofoil_audio_rt.wasm') {
+        res.writeHead(200, {
+          ...cabecalhosSeguranca,
+          'Content-Type': 'application/wasm',
+          'Content-Length': String(BINARIO_WASM_AUDIO_RT.length),
+        });
+        res.end(BINARIO_WASM_AUDIO_RT);
+        return;
+      }
+      if (nomeModulo === 'worklet-audio-cpp20.js') {
+        res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/javascript; charset=utf-8' });
+        res.end(CODIGO_WORKLET_AUDIO_CPP20);
+        return;
+      }
       if (Object.prototype.hasOwnProperty.call(MAPA_FONTES_ESM_PUROS, nomeModulo)) {
         res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/javascript; charset=utf-8' });
         res.end(MAPA_FONTES_ESM_PUROS[nomeModulo]);

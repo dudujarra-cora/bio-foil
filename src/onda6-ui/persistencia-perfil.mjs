@@ -10,8 +10,34 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { clonarProfundoCongelado } from '../gdd-parser.mjs';
-import { avaliarPredicadoDesbloqueio } from '../oraculos-referencia.mjs';
+import {
+  avaliarPredicadoDesbloqueio,
+  mesclarPreferenciasAudioNoPerfilImunePermadeath,
+} from '../oraculos-referencia.mjs';
 import { aplicarTransicaoCicloPartida } from '../onda4-mapa/ciclo-partida.mjs';
+
+export const PREFERENCIAS_AUDIO_CANONICAS_VOL10 = Object.freeze({
+  master: 85,
+  musica: 80,
+  sfxCombate: 90,
+  cabineTripulacao: 85,
+  ambienteMaritimo: 75,
+  alertasUi: 100,
+  mudo: false,
+  perfilDinamico: 'ESTUDIO',
+  saidaMono: false,
+  silenciarSemFoco: true,
+  legendasTaticasDirecionais: 'ALERTAS_CRITICOS',
+  confortoAntiTinnitus: false,
+});
+
+function normalizarPreferenciasAudioPerfil(preferenciasCandidatas, patchOpcional = null) {
+  const mesclado = mesclarPreferenciasAudioNoPerfilImunePermadeath(
+    { preferenciasAudio: preferenciasCandidatas ?? PREFERENCIAS_AUDIO_CANONICAS_VOL10 },
+    patchOpcional ?? {}
+  );
+  return mesclado.preferenciasAudio;
+}
 
 export const CARCACAS_PERFIL_85B = Object.freeze([
   Object.freeze({
@@ -65,6 +91,7 @@ export function criarPerfilInicial() {
       barcosCapturadosTotal: 0,
       orgaosExtraidosTotal: 0,
     },
+    preferenciasAudio: { ...PREFERENCIAS_AUDIO_CANONICAS_VOL10 },
   });
 }
 
@@ -126,11 +153,16 @@ export function atualizarPerfilComMetricasRun(perfilAtual, contextoMetricas = {}
       : undefined;
   const configSteamPerfil =
     contextoMetricas.configuracoesSteam ?? perfilAtual.configuracoesSteam ?? undefined;
+  const preferenciasAudio = normalizarPreferenciasAudioPerfil(
+    perfilAtual.preferenciasAudio,
+    contextoMetricas.preferenciasAudio ?? null
+  );
 
   return clonarProfundoCongelado({
     ...perfilAtual,
     carcacasDesbloqueadas: novasCarcacas,
     estatisticasGlobais,
+    preferenciasAudio,
     ...(conquistasMescladas !== undefined ? { conquistasSteamDesbloqueadas: conquistasMescladas } : {}),
     ...(layoutsBMesclados !== undefined ? { layoutsTipoBDesbloqueados: layoutsBMesclados } : {}),
     ...(configSteamPerfil !== undefined ? { configuracoesSteam: configSteamPerfil } : {}),
@@ -228,6 +260,7 @@ export function salvarPerfilDisco(perfil, opcoes = {}) {
       barcosCapturadosTotal: Math.max(0, Math.floor(Number(perfil.estatisticasGlobais?.barcosCapturadosTotal ?? 0))),
       orgaosExtraidosTotal: Math.max(0, Math.floor(Number(perfil.estatisticasGlobais?.orgaosExtraidosTotal ?? 0))),
     },
+    preferenciasAudio: normalizarPreferenciasAudioPerfil(perfil.preferenciasAudio),
     ...(Array.isArray(perfil.conquistasSteamDesbloqueadas)
       ? { conquistasSteamDesbloqueadas: [...new Set(perfil.conquistasSteamDesbloqueadas.map(String))] }
       : {}),
@@ -284,6 +317,7 @@ export function carregarPerfilDisco(opcoes = {}) {
         barcosCapturadosTotal: Math.max(0, Math.floor(Number(bruto?.estatisticasGlobais?.barcosCapturadosTotal ?? 0))),
         orgaosExtraidosTotal: Math.max(0, Math.floor(Number(bruto?.estatisticasGlobais?.orgaosExtraidosTotal ?? 0))),
       },
+      preferenciasAudio: normalizarPreferenciasAudioPerfil(bruto?.preferenciasAudio),
       ...(Array.isArray(bruto?.conquistasSteamDesbloqueadas)
         ? { conquistasSteamDesbloqueadas: [...new Set(bruto.conquistasSteamDesbloqueadas.map(String))] }
         : {}),

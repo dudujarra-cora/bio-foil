@@ -1671,7 +1671,7 @@ test('[PORTÃO 10.4 | Pilar 4 Steam >= 9.0/10] i18n PT-BR/EN-US c/ Zero Truncame
 
   // Regra #7 Global: 100% dos arquivos e funções exportadas testados diretamente!
   const relRegra7 = verificarRegraTestesParaTudo(DIRETORIO_RAIZ);
-  assert.equal(relRegra7.arquivosCodigoExaminados, 57);
+  assert.equal(relRegra7.arquivosCodigoExaminados, 58);
   assert.ok(relRegra7.totalFuncoesExportadasExaminadas >= 316);
 
   console.log(`[N4] Pilar 4 Produto Steam verificado: 100 eventos PT/EN 0-truncamento, 24 conquistas, 6 lições tutorial, E2E live MANTA_VOLT_B e ${relRegra7.totalFuncoesExportadasExaminadas} funções cobertas`);

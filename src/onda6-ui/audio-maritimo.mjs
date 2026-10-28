@@ -214,13 +214,13 @@ export function extrairSfxMulticamadaDoTick(estadoAnterior, estadoAtual, ultimoR
     } else if (COMANDOS_SFX_BIOELETRICOS.has(cmdTipo)) {
       adicionar('SFX_BARREIRA_BOLHA', 0, -0.2);
     } else if (COMANDOS_SFX_TATICOS_MIRA.has(cmdTipo)) {
-      adicionar('SFX_DISPARO_ACUSTICO_ESPORO', 0, 0.15);
+      adicionar('SFX_BARREIRA_BOLHA', 0, 0.15);
     } else if (cmdTipo === 'DISPARAR_SALVA_MANUAL') {
       adicionar('SFX_DISPARO_ARPAO_CABO', 0, -0.15);
     } else if (COMANDOS_SFX_FORJA_CAMPANHA.has(cmdTipo)) {
       adicionar('SFX_FORJA_DIGESTAO_LOJA', 0, 0.0);
     } else if (COMANDOS_SFX_PROPULSAO_TRAVESSIA.has(cmdTipo)) {
-      adicionar('SFX_DISPARO_TORPEDO_ABISSAL', 0, 0.12);
+      adicionar('SFX_VALVULA_DUTO_HIDRAULICO', 0, 0.12);
     }
   } else if (
     ultimoResultadoComando?.aceito === false ||
@@ -274,6 +274,235 @@ export function extrairSfxMulticamadaDoTick(estadoAnterior, estadoAtual, ultimoR
   }
 
   return clonarProfundoCongelado(sfxDisparados);
+}
+
+function extrairEventosComplementaresVol10(estadoAnterior, estadoAtual, ultimoResultadoComando, bpmEfetivoTrilha) {
+  const eventos = [];
+  const naveAtu = estadoAtual?.naveJogador ?? {};
+  const naveAnt = estadoAnterior?.naveJogador ?? null;
+  const mesmoRef = estadoAnterior === estadoAtual;
+  const cmdTipo =
+    ultimoResultadoComando?.comandoExecutado?.tipo ??
+    ultimoResultadoComando?.acaoCampanhaExecutada?.tipoAcao ??
+    null;
+
+  // EVT_AUD_01 & EVT_AUD_02: Arma pronta por slot (0..3) e Salva Completa Pronta
+  const slotsAtu = Array.isArray(naveAtu.armasAtivas) ? naveAtu.armasAtivas : [];
+  const slotsAnt = Array.isArray(naveAnt?.armasAtivas) ? naveAnt.armasAtivas : [];
+  let manuaisAtivas = 0;
+  let manuaisProntasAtu = 0;
+  let manuaisProntasAnt = 0;
+  for (let i = 0; i < slotsAtu.length; i += 1) {
+    const rawAtu = slotsAtu[i]?.arma !== undefined ? slotsAtu[i].arma : slotsAtu[i];
+    if (!rawAtu) continue;
+    const rawAnt = slotsAnt[i]?.arma !== undefined ? slotsAnt[i]?.arma : slotsAnt[i];
+    const tRecAtu = Math.max(0.1, Number(rawAtu.tempoRecargaBaseSeg ?? rawAtu.recargaSeg ?? 9));
+    const tRecAnt = Math.max(0.1, Number(rawAnt?.tempoRecargaBaseSeg ?? rawAnt?.recargaSeg ?? tRecAtu));
+    const prontaAtu = Number(rawAtu.progressoRecargaSeg ?? 0) >= tRecAtu;
+    const prontaAnt = rawAnt ? Number(rawAnt.progressoRecargaSeg ?? 0) >= tRecAnt : false;
+    if (prontaAtu && (!estadoAnterior || (!mesmoRef && !prontaAnt))) {
+      eventos.push({
+        id: 'EVT_AUD_01_ARMA_PRONTA_SLOT',
+        barramento: 'BUS_0_SURVIVAL_CUES',
+        slotIndex: i,
+        chassiId: String(rawAtu.chassiId ?? rawAtu.id ?? 'EMISSOR_ACUSTICO_I'),
+        duracaoMs: 90,
+      });
+    }
+    const ehMan =
+      rawAtu.modoDisparoManual !== undefined
+        ? rawAtu.modoDisparoManual === true
+        : rawAtu.modoDisparo === 'MANUAL' || naveAtu.modoSalvaGlobal === 'MANUAL';
+    if (ehMan) {
+      manuaisAtivas += 1;
+      if (prontaAtu) manuaisProntasAtu += 1;
+      if (prontaAnt) manuaisProntasAnt += 1;
+    }
+  }
+  if (
+    manuaisAtivas > 0 &&
+    manuaisProntasAtu === manuaisAtivas &&
+    (!estadoAnterior || (!mesmoRef && manuaisProntasAnt < manuaisAtivas))
+  ) {
+    eventos.push({
+      id: 'EVT_AUD_02_SALVA_COMPLETA_PRONTA',
+      barramento: 'BUS_0_SURVIVAL_CUES',
+      totalArmasSalva: manuaisAtivas,
+      duracaoMs: 140,
+    });
+  }
+
+  // EVT_AUD_03: SALTO_FUGA pronto (progressoFugaSeg >= 20.0 ou cargaSaltoPct >= 100)
+  const saltoProntoAtu =
+    Number(naveAtu.progressoFugaSeg ?? 0) >= 20.0 || Number(naveAtu.cargaSaltoPct ?? 0) >= 100;
+  const saltoProntoAnt = naveAnt
+    ? Number(naveAnt.progressoFugaSeg ?? 0) >= 20.0 || Number(naveAnt.cargaSaltoPct ?? 0) >= 100
+    : false;
+  if (saltoProntoAtu && (!estadoAnterior || (!mesmoRef && !saltoProntoAnt))) {
+    eventos.push({
+      id: 'EVT_AUD_03_SALTO_FUGA_PRONTO',
+      barramento: 'BUS_0_SURVIVAL_CUES',
+      pan: 0.0,
+    });
+  }
+
+  // EVT_AUD_04: Alvo inimigo em fuga (pan +0.40)
+  const alvoAtu = estadoAtual?.alvoCombate ?? null;
+  if (
+    alvoAtu &&
+    alvoAtu.ativo !== false &&
+    (Boolean(alvoAtu.emFuga) ||
+      Number(alvoAtu.progressoFugaSeg ?? alvoAtu.progressoFugaInimigoSeg ?? 0) > 0)
+  ) {
+    eventos.push({
+      id: 'EVT_AUD_04_INIMIGO_EM_FUGA',
+      barramento: 'BUS_3_EXTERIOR_SEA',
+      pan: 0.4,
+    });
+  }
+
+  // EVT_AUD_05: Morte de tripulante aliado (hpAtual > 0 -> <= 0 ou removido de tripulacao viva)
+  if (naveAnt && !mesmoRef) {
+    const vivosAnt = (naveAnt.tripulacao ?? []).filter((t) => Number(t.hpAtual ?? 0) > 0);
+    const mapaAtu = new Map((naveAtu.tripulacao ?? []).map((t) => [t.id, t]));
+    const mortosNoTick = vivosAnt.filter((tAnt) => {
+      const tAtu = mapaAtu.get(tAnt.id);
+      return !tAtu || Number(tAtu.hpAtual ?? 0) <= 0;
+    });
+    if (mortosNoTick.length > 0) {
+      eventos.push({
+        id: 'EVT_AUD_05_MORTE_TRIPULANTE_ALIADO',
+        barramento: 'BUS_0_SURVIVAL_CUES',
+        tripulanteId: mortosNoTick[0].id,
+        especie: mortosNoTick[0].especie ?? 'POLVO',
+        falhaBatidaCardiaca: 1,
+      });
+    }
+  }
+
+  // EVT_AUD_06: Especiais das 4 espécies (POLVO, ARRAIA, BAIACU, CARANGUEJO)
+  if (ultimoResultadoComando?.aceito && cmdTipo) {
+    const mapaEspecialCmd = {
+      ATIVAR_TINTA_FURTIVA: 'POLVO',
+      ATIVAR_PULSO_ENZIMAS: 'ARRAIA',
+      ATIVAR_BAIACU: 'BAIACU',
+      ATIVAR_PINCA_CARANGUEJO: 'CARANGUEJO',
+    };
+    if (mapaEspecialCmd[cmdTipo]) {
+      eventos.push({
+        id: 'EVT_AUD_06_ESPECIAIS_4_ESPECIES',
+        barramento: 'BUS_2_INTERIOR_CABIN',
+        especie: mapaEspecialCmd[cmdTipo],
+        comando: cmdTipo,
+      });
+    }
+  }
+
+  // EVT_AUD_07 & EVT_AUD_08: Loops sustentados de rombo pressurizado (não vedado por Baiacu) e curto/reparo
+  const camarasAtu = Array.isArray(naveAtu.camaras) ? naveAtu.camaras : [];
+  const tripAtu = Array.isArray(naveAtu.tripulacao) ? naveAtu.tripulacao : [];
+  for (const cam of camarasAtu) {
+    const temRombo = Boolean(cam.brechaAtiva || cam.arrombouCasco) || Number(cam.rombosCasco ?? 0) > 0;
+    const vedadoPorBaiacu = tripAtu.some(
+      (t) =>
+        t.localizacao === 'NAVE_JOGADOR' &&
+        t.camaraAtualId === cam.id &&
+        Number(t.hpAtual ?? 0) > 0 &&
+        t.especie === 'BAIACU' &&
+        Boolean(t.inflado)
+    );
+    if (temRombo && !vedadoPorBaiacu) {
+      eventos.push({
+        id: 'EVT_AUD_07_LOOP_ROMBO_PRESSURIZADO',
+        barramento: 'BUS_2_INTERIOR_CABIN',
+        camaraId: cam.id,
+        fadeOutMs: 60,
+      });
+    }
+    const maxB = Number(cam.barrasNivelMax ?? cam.nivelMaxBarras ?? cam.nivelMax ?? 0);
+    const intB = Number(cam.barrasIntegridade ?? cam.integridade ?? maxB);
+    const alguemReparando =
+      (temRombo || intB < maxB) &&
+      tripAtu.some(
+        (t) =>
+          t.localizacao === 'NAVE_JOGADOR' &&
+          t.camaraAtualId === cam.id &&
+          Number(t.hpAtual ?? 0) > 0 &&
+          !t.inflado
+      );
+    if (Boolean(cam.curtoCircuitoAtivo) || alguemReparando) {
+      const progReparo0a1 = maxB > 0 ? Number(Math.max(0, Math.min(1, intB / maxB)).toFixed(3)) : 1;
+      eventos.push({
+        id: 'EVT_AUD_08_LOOP_CURTO_E_REPARO',
+        barramento: 'BUS_2_INTERIOR_CABIN',
+        camaraId: cam.id,
+        curtoAtivo: Boolean(cam.curtoCircuitoAtivo),
+        progressoReparo0a1: progReparo0a1,
+      });
+    }
+  }
+
+  // EVT_AUD_09: Varredura de Beam Ortogonal (3 salas)
+  const evVisAtu = estadoAtual?.meta?.eventosVisuaisUltimoTick ?? [];
+  const disparouBeam =
+    (!mesmoRef && evVisAtu.some((ev) => ev.tipo === 'FEIXE_JOGADOR')) ||
+    (ultimoResultadoComando?.aceito && cmdTipo === 'TRACAR_BEAM');
+  if (disparouBeam) {
+    eventos.push({
+      id: 'EVT_AUD_09_VARREDURA_BEAM_ORTOGONAL',
+      barramento: 'BUS_3_EXTERIOR_SEA',
+      salasVarridas: 3,
+      pan: 0.22,
+    });
+  }
+
+  // EVT_AUD_10: 6 Stingers Quantizados em 1/4 de compasso
+  if (!mesmoRef && estadoAnterior) {
+    const faseDragaAnt = Number(estadoAnterior?.alvoCombate?.faseChefe ?? 0);
+    const faseDragaAtu = Number(estadoAtual?.alvoCombate?.faseChefe ?? 0);
+    let subtipoStinger = null;
+    if (faseDragaAnt === 1 && faseDragaAtu === 2) subtipoStinger = 'DRAGA_F1_PARA_F2';
+    else if (faseDragaAnt === 2 && faseDragaAtu === 3) subtipoStinger = 'DRAGA_F2_PARA_F3';
+    else if (!estadoAnterior?.meta?.saquePendente && estadoAtual?.meta?.saquePendente) subtipoStinger = 'VITORIA_COMBATE';
+    else if (
+      (estadoAtual?.meta?.metricasRun?.novosDesbloqueiosNestaRun?.length ?? 0) >
+      (estadoAnterior?.meta?.metricasRun?.novosDesbloqueiosNestaRun?.length ?? 0)
+    ) {
+      subtipoStinger = 'DESBLOQUEIO_CARCACA';
+    } else if (estadoAtual?.meta?.origemCombate === 'FROTA_PRINCIPAL_CORPORACAO' && estadoAnterior?.meta?.faseJogo !== 'COMBATE') {
+      subtipoStinger = 'EMBOSCADA_FROTA';
+    } else if (Boolean(estadoAtual?.meta?.ultimoSosSalvo) && !estadoAnterior?.meta?.ultimoSosSalvo) {
+      subtipoStinger = 'SOS_SALVO';
+    }
+    if (subtipoStinger) {
+      eventos.push({
+        id: 'EVT_AUD_10_SEIS_STINGERS_QUANTIZADOS',
+        barramento: 'BUS_1_MUSIC',
+        subtipoStinger,
+        quantizacaoCompasso: '1/4',
+        bpmReferencia: bpmEfetivoTrilha,
+      });
+    }
+  }
+
+  // EVT_AUD_11: Arcos Finais Fechados (Vitória vs Permadeath sem loop infinito)
+  const faseJogoAtu = estadoAtual?.meta?.faseJogo ?? 'COMBATE';
+  if (faseJogoAtu === 'FIM_DE_RUN') {
+    const vitoriaFinal =
+      estadoAtual?.meta?.desfechoRun === 'VITORIA_CAMPANHA' ||
+      Boolean(estadoAtual?.meta?.metricasRun?.derrotouDragaFase3) ||
+      Boolean(estadoAtual?.campanha?.vitoria) ||
+      estadoAtual?.meta?.resultadoRun === 'VITORIA';
+    eventos.push({
+      id: 'EVT_AUD_11_ARCOS_FINAIS_FECHADOS',
+      barramento: 'BUS_1_MUSIC',
+      arcoId: vitoriaFinal ? 'T1_VITORIA_LIDIO_84BPM' : 'T2_PERMADEATH_FRIGIO_54BPM',
+      transicaoCiclo: vitoriaFinal ? 'TR_7B_VITORIA_FINAL' : 'TR_7A_DERROTA_EM_COMBATE',
+      loopContinuo: false,
+    });
+  }
+
+  return eventos;
 }
 
 /**
@@ -369,6 +598,12 @@ export function construirPaisagemSonoraCompleta(
   const seqAudio = opcoesAudio.seqAudio !== undefined ? String(opcoesAudio.seqAudio) : '';
 
   const atenTrilhaPausa = pausaTaticaAtiva ? 0.58 : 1.0;
+  const eventosComplementaresVol10 = extrairEventosComplementaresVol10(
+    estadoAnterior,
+    estadoAtual,
+    ultimoResultadoComando,
+    bpmEfetivoTrilha
+  );
 
   return clonarProfundoCongelado({
     mudo,
@@ -381,6 +616,7 @@ export function construirPaisagemSonoraCompleta(
     planoTatico85C: planoCues85C,
     camadasAmbiente,
     sfxMulticamada,
+    eventosComplementaresVol10,
     assinaturaLoteSfx: seqAudio && sfxMulticamada.length > 0 ? `${seqAudio}:${sfxMulticamada.length}` : '',
     trilhaAdaptativa: {
       idEstado: trilha.id,

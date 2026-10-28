@@ -480,11 +480,11 @@ test('MCP para Testes e Jogo Bio-Foil (L1/L2/L3/L4/L6/N4): 12 ferramentas, 4 rec
   assert.equal(inspOk.isError, false);
   assert.equal(inspOk.structuredContent.status, 'APROVADO');
   assert.equal(inspOk.structuredContent.arquivosTesteExaminadosN4, 11);
-  assert.equal(inspOk.structuredContent.arquivosCodigoTestadosN4, 57);
+  assert.equal(inspOk.structuredContent.arquivosCodigoTestadosN4, 58);
   assert.ok(inspOk.structuredContent.funcoesExportadasTestadasN4 >= 200);
 
   const relatorioTudo = verificarRegraTestesParaTudo(DIRETORIO_RAIZ);
-  assert.equal(relatorioTudo.arquivosCodigoExaminados, 57);
+  assert.equal(relatorioTudo.arquivosCodigoExaminados, 58);
   assert.equal(Object.isFrozen(clonarProfundoCongelado({ ok: true })), true);
   assert.equal(fs.existsSync(path.join(DIRETORIO_RAIZ, 'scripts', 'auditar-frente.sh')), true);
   assert.equal(typeof iniciarTransporteStdio, 'function');

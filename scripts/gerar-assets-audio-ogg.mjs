@@ -10,6 +10,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -19,6 +20,102 @@ import {
 } from '../src/onda7-steam/motor-audio-ogg-foley.mjs';
 
 const TAXA_AMOSTRAGEM = 44100;
+
+function resolverBinarioSistema(candidatos) {
+  for (const cand of candidatos) {
+    if (!cand.includes('/') || fs.existsSync(cand)) {
+      return cand;
+    }
+  }
+  return candidatos[candidatos.length - 1];
+}
+
+function codificarWav24BitParaOgg(caminhoWav, caminhoSaidaOgg, ffmpegBin = '/opt/homebrew/bin/ffmpeg') {
+  fs.mkdirSync(path.dirname(caminhoSaidaOgg), { recursive: true });
+  const bin = fs.existsSync(ffmpegBin) ? ffmpegBin : 'ffmpeg';
+  const res = spawnSync(
+    bin,
+    [
+      '-nostdin',
+      '-loglevel', 'error',
+      '-y',
+      '-i', caminhoWav,
+      '-ar', String(TAXA_AMOSTRAGEM),
+      '-ac', '2',
+      '-strict', '-2',
+      '-c:a', 'vorbis',
+      '-q:a', '6',
+      caminhoSaidaOgg,
+    ],
+    { stdio: ['ignore', 'ignore', 'pipe'], timeout: 60000 }
+  );
+  if (res.error) {
+    throw new Error(`Erro ao executar ffmpeg em ${caminhoSaidaOgg}: ${res.error.message}`);
+  }
+  if (res.status !== 0) {
+    throw new Error(`Falha ao codificar WAV C++20 ${caminhoSaidaOgg}: ${res.stderr?.toString() ?? res.status}`);
+  }
+  return fs.statSync(caminhoSaidaOgg).size;
+}
+
+function renderizarTrilhasMusicaisCpp20ParaOgg(diretorioDestino, ffmpegBin = '/opt/homebrew/bin/ffmpeg') {
+  const raizRepo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const pastaAudioCpp = path.join(raizRepo, 'steam-desktop', 'audio-cpp');
+  if (!fs.existsSync(path.join(pastaAudioCpp, 'CMakeLists.txt'))) {
+    return null;
+  }
+
+  const cmakeBin = resolverBinarioSistema(['/opt/homebrew/bin/cmake', '/usr/local/bin/cmake', 'cmake']);
+  const ninjaBin = resolverBinarioSistema(['/opt/homebrew/bin/ninja', '/usr/local/bin/ninja', 'ninja']);
+  const dirBuildCpp = path.join(os.tmpdir(), 'biofoil-audio-forge-cpp20');
+  const binForge = path.join(dirBuildCpp, process.platform === 'win32' ? 'biofoil_forge_cli.exe' : 'biofoil_forge_cli');
+
+  if (!fs.existsSync(binForge)) {
+    fs.mkdirSync(dirBuildCpp, { recursive: true });
+    const cfg = spawnSync(
+      cmakeBin,
+      ['-S', pastaAudioCpp, '-B', dirBuildCpp, '-G', 'Ninja', `-DCMAKE_MAKE_PROGRAM=${ninjaBin}`, '-DCMAKE_BUILD_TYPE=Release'],
+      { stdio: ['ignore', 'ignore', 'pipe'], timeout: 120000 }
+    );
+    if (cfg.status !== 0) {
+      return null;
+    }
+    const bld = spawnSync(
+      cmakeBin,
+      ['--build', dirBuildCpp, '--target', 'biofoil_forge_cli'],
+      { stdio: ['ignore', 'ignore', 'pipe'], timeout: 180000 }
+    );
+    if (bld.status !== 0 || !fs.existsSync(binForge)) {
+      return null;
+    }
+  }
+
+  const dirWavTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'biofoil-cpp20-wav-'));
+  try {
+    const execForge = spawnSync(binForge, ['--steam-tracks', dirWavTmp], {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: 300000,
+    });
+    if (execForge.status !== 0) {
+      throw new Error(`Falha em biofoil_forge_cli --steam-tracks: ${execForge.stderr?.toString() ?? execForge.status}`);
+    }
+
+    const geradasCpp = new Map();
+    for (const [id, meta] of Object.entries(MANIFESTO_TRILHAS_OGG_STEAM)) {
+      if (id.startsWith('AMBIENCIA_')) continue;
+      const wavPath = path.join(dirWavTmp, `${id}.wav`);
+      if (!fs.existsSync(wavPath)) {
+        throw new Error(`WAV C++20 ausente para trilha ${id}: ${wavPath}`);
+      }
+      const outPath = path.join(diretorioDestino, meta.arquivo);
+      const bytes = codificarWav24BitParaOgg(wavPath, outPath, ffmpegBin);
+      geradasCpp.set(id, bytes);
+    }
+    return geradasCpp;
+  } finally {
+    fs.rmSync(dirWavTmp, { recursive: true, force: true });
+  }
+}
 
 function midiParaHz(midi) {
   return 440 * Math.pow(2, (midi - 69) / 12);
@@ -1182,7 +1279,16 @@ export function gerarAssetsAudioOggSteam(diretorioDestino, opcoes = {}) {
     AMBIENCIA_SETOR_8: () => sintetizarAmbienciaHidrofone(escalaDuracao === 1.0 ? 64 : Math.max(4, 64 * escalaDuracao), 8),
   };
 
+  const mapaTrilhasCpp20 =
+    escalaDuracao === 1.0 && opcoes.usarMotorCpp20 !== false
+      ? renderizarTrilhasMusicaisCpp20ParaOgg(diretorioDestino, opcoes.ffmpegBin)
+      : null;
+
   for (const [id, meta] of Object.entries(MANIFESTO_TRILHAS_OGG_STEAM)) {
+    if (mapaTrilhasCpp20 && mapaTrilhasCpp20.has(id)) {
+      gerados.push({ id, tipo: 'MUSICA', arquivo: meta.arquivo, bytes: mapaTrilhasCpp20.get(id), motor: 'CPP20_BS1770' });
+      continue;
+    }
     const { esq, dir } = receitasTrilhas[id]();
     const outPath = path.join(diretorioDestino, meta.arquivo);
     const bytes = codificarPcmStereoParaOgg(esq, dir, outPath, opcoes.ffmpegBin);

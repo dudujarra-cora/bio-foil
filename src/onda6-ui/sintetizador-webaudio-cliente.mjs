@@ -299,10 +299,90 @@ export function criarMotorAudioMaritimoCliente(ambienteExplicito) {
   let bpmCoracao = 62;
   let ultimoAssinaturaLoteSfx = '';
 
+  const PERFIS_ACUSTICOS_VOL10_CLIENTE = Object.freeze({
+    ESTUDIO: Object.freeze({
+      id: 'ESTUDIO',
+      codigoWasm: 0,
+      alvoLufs: -23.0,
+      lraMaxLu: 14.0,
+      truePeakMaxDbtp: -1.0,
+      highPassSaidaHz: 20,
+      harmonicosDeckHz: Object.freeze([]),
+      thresholdCompDb: -18,
+      ratioComp: 2.5,
+    }),
+    STEAM_DECK: Object.freeze({
+      id: 'STEAM_DECK',
+      codigoWasm: 1,
+      alvoLufs: -18.0,
+      lraMaxLu: 8.0,
+      truePeakMaxDbtp: -1.0,
+      highPassSaidaHz: 55,
+      harmonicosDeckHz: Object.freeze([87.3, 130.95]),
+      thresholdCompDb: -22,
+      ratioComp: 4.5,
+    }),
+    NOTURNO: Object.freeze({
+      id: 'NOTURNO',
+      codigoWasm: 2,
+      alvoLufs: -24.0,
+      lraMaxLu: 5.0,
+      truePeakMaxDbtp: -2.0,
+      highPassSaidaHz: 65,
+      harmonicosDeckHz: Object.freeze([]),
+      thresholdCompDb: -28,
+      ratioComp: 8.0,
+    }),
+  });
+
+  const TETO_POOL_LRU_BYTES_CLIENTE = 64_000_000;
+  const BYTES_ONESHOTS_FIXOS_CLIENTE = 8_000_000;
+  const poolZonasAcusticasLru = new Map([
+    [
+      'G0_AMBIENT_DUB',
+      Object.freeze({
+        zonaId: 'G0_AMBIENT_DUB',
+        bytesPcm: 12_288_000,
+        exactFrameCount: 768_000,
+        preSkipFrames: 312,
+        seamDeltaMedido: 0.0,
+      }),
+    ],
+  ]);
+  let eviccoesPoolLruCliente = 0;
+
+  let perfilAcusticoAtual = 'ESTUDIO';
+  let saidaMonoAtiva = false;
+  let confortoAntiTinnitusAtivo = false;
+  let filtroHighPassPerfil = null;
+  let wasmRtInstancia = null;
+  let noWorkletAudioCpp20 = null;
+
+  function sincronizarPreferenciasWasm() {
+    const spec = PERFIS_ACUSTICOS_VOL10_CLIENTE[perfilAcusticoAtual];
+    if (wasmRtInstancia && wasmRtInstancia.exports && typeof wasmRtInstancia.exports.biofoil_rt_set_preferences === 'function') {
+      wasmRtInstancia.exports.biofoil_rt_set_preferences(
+        spec.codigoWasm,
+        saidaMonoAtiva ? 1 : 0,
+        confortoAntiTinnitusAtivo ? 1 : 0
+      );
+    }
+    if (noWorkletAudioCpp20 && noWorkletAudioCpp20.port && typeof noWorkletAudioCpp20.port.postMessage === 'function') {
+      noWorkletAudioCpp20.port.postMessage({
+        tipo: 'PREFERENCIAS',
+        perfil: spec.codigoWasm,
+        mono: saidaMonoAtiva ? 1 : 0,
+        antiTinnitus: confortoAntiTinnitusAtivo ? 1 : 0,
+      });
+    }
+  }
+
   function calcularCorteEfetivoHz() {
-    if (estadoFisicoAtual !== '1_NO_FOIL') return Math.min(400, fcPlanoBaseHz);
-    if (pausaTaticaAtiva) return Math.min(900, fcPlanoBaseHz);
-    return fcPlanoBaseHz;
+    let fc = fcPlanoBaseHz;
+    if (estadoFisicoAtual !== '1_NO_FOIL') fc = Math.min(400, fc);
+    else if (pausaTaticaAtiva) fc = Math.min(900, fc);
+    if (confortoAntiTinnitusAtivo) fc = Math.min(3200, fc);
+    return fc;
   }
 
   function garantirGrafo() {
@@ -408,7 +488,7 @@ export function criarMotorAudioMaritimoCliente(ambienteExplicito) {
     let pannerSfx = null;
     if (typeof ctx.createStereoPanner === 'function') {
       pannerSfx = ctx.createStereoPanner();
-      const panLimpo = Math.max(-1, Math.min(1, Number(panValor) || 0));
+      const panLimpo = saidaMonoAtiva ? 0 : Math.max(-1, Math.min(1, Number(panValor) || 0));
       if (pannerSfx.pan && typeof pannerSfx.pan.setValueAtTime === 'function') {
         pannerSfx.pan.setValueAtTime(panLimpo, t0);
       } else if (pannerSfx.pan) {
@@ -648,7 +728,11 @@ export function criarMotorAudioMaritimoCliente(ambienteExplicito) {
     oscB.type = modoFimDeRunAtual === 'DERROTA' ? 'sine' : trilha.formaBaixo;
     oscB.frequency.setValueAtTime(trilha.notasBaixoHz[idx] * escalaTomTrilhaAtual, tStep);
     fltB.type = 'lowpass';
-    fltB.frequency.setValueAtTime(modoFimDeRunAtual === 'DERROTA' ? 240 : idx % 8 === 0 ? 440 : 320, tStep);
+    const boostHarmonicoDeckHz = perfilAcusticoAtual === 'STEAM_DECK' ? 180 : 0;
+    fltB.frequency.setValueAtTime(
+      (modoFimDeRunAtual === 'DERROTA' ? 240 : idx % 8 === 0 ? 440 : 320) + boostHarmonicoDeckHz,
+      tStep
+    );
     gB.gain.setValueAtTime(0.0001, tStep);
     gB.gain.linearRampToValueAtTime(trilha.ganhoBaixo * 0.76 * acentoBaixo * atenPausa, tStep + 0.012);
     gB.gain.exponentialRampToValueAtTime(0.0001, tStep + durStep);
@@ -859,6 +943,294 @@ export function criarMotorAudioMaritimoCliente(ambienteExplicito) {
     return volume;
   }
 
+  function calcularBytesZonasLru() {
+    let soma = 0;
+    for (const z of poolZonasAcusticasLru.values()) {
+      soma += z.bytesPcm;
+    }
+    return soma;
+  }
+
+  function obterTelemetriaCacheLruMb() {
+    const ramResidenteBytes = BYTES_ONESHOTS_FIXOS_CLIENTE + calcularBytesZonasLru();
+    return Object.freeze({
+      ramResidenteBytes,
+      ramResidenteMb: Number((ramResidenteBytes / 1_000_000).toFixed(2)),
+      tetoOrcamentoMb: 64,
+      zonasResidentes: Object.freeze(Array.from(poolZonasAcusticasLru.keys())),
+      totalZonasResidentes: poolZonasAcusticasLru.size,
+      eviccoesRealizadas: eviccoesPoolLruCliente,
+      statusOrcamento:
+        ramResidenteBytes <= TETO_POOL_LRU_BYTES_CLIENTE ? 'DENTRO_ORCAMENTO_LRU' : 'ESTOURO_ORCAMENTO_LRU',
+      manifestoLoops: Object.freeze(Array.from(poolZonasAcusticasLru.values())),
+    });
+  }
+
+  function registrarZonaAcusticaLru(zonaId, metadados = {}) {
+    const id = String(zonaId ?? '').trim();
+    if (!id) {
+      throw new Error('[POOL LRU AUDIO INVALIDO] zonaId obrigatorio.');
+    }
+    const exactFrameCount = Math.max(1, Math.floor(Number(metadados.exactFrameCount ?? 720_000)));
+    const preSkipFrames = Math.max(0, Math.floor(Number(metadados.preSkipFrames ?? 312)));
+    const canais = Math.max(1, Math.floor(Number(metadados.canais ?? 2)));
+    const bytesPcm = Math.max(
+      4,
+      Math.floor(Number(metadados.bytesPcm ?? exactFrameCount * canais * 4))
+    );
+    const seamDeltaMedido = Math.max(0, Number(metadados.seamDeltaMedido ?? 0.0));
+    if (BYTES_ONESHOTS_FIXOS_CLIENTE + bytesPcm > TETO_POOL_LRU_BYTES_CLIENTE) {
+      throw new Error(
+        `[ESTOURO_UNITARIO_POOL_LRU_64MB] Zona ${id} (${bytesPcm} bytes) excede teto de 64 MB.`
+      );
+    }
+    if (poolZonasAcusticasLru.has(id)) {
+      poolZonasAcusticasLru.delete(id);
+    }
+    while (
+      poolZonasAcusticasLru.size > 0 &&
+      BYTES_ONESHOTS_FIXOS_CLIENTE + calcularBytesZonasLru() + bytesPcm > TETO_POOL_LRU_BYTES_CLIENTE
+    ) {
+      const maisAntiga = poolZonasAcusticasLru.keys().next().value;
+      if (maisAntiga === undefined) break;
+      poolZonasAcusticasLru.delete(maisAntiga);
+      eviccoesPoolLruCliente += 1;
+    }
+    poolZonasAcusticasLru.set(
+      id,
+      Object.freeze({
+        zonaId: id,
+        bytesPcm,
+        exactFrameCount,
+        preSkipFrames,
+        seamDeltaMedido,
+      })
+    );
+    return obterTelemetriaCacheLruMb();
+  }
+
+  function calcularPonteiroLoopZona(zonaId, indiceAmostraGlobal, bpm = 125, sampleRateHz = 48000) {
+    const meta = poolZonasAcusticasLru.get(String(zonaId ?? '')) || {
+      exactFrameCount: 368_640,
+      preSkipFrames: 312,
+      seamDeltaMedido: 0.0,
+    };
+    const exact = meta.exactFrameCount;
+    const idx = Math.floor(Number(indiceAmostraGlobal ?? 0));
+    const offsetUtil = ((idx % exact) + exact) % exact;
+    const amostrasPorQuartoCompasso = Math.max(1, Math.round((60 / Math.max(40, Number(bpm) || 125)) * sampleRateHz));
+    return Object.freeze({
+      zonaId: String(zonaId ?? ''),
+      offsetUtil,
+      frameBufferDecodificado: meta.preSkipFrames + offsetUtil,
+      loopSemClique: meta.seamDeltaMedido <= 0.0005,
+      amostrasPorQuartoCompasso,
+    });
+  }
+
+  function obterEstadoAcusticoVol10() {
+    const spec = PERFIS_ACUSTICOS_VOL10_CLIENTE[perfilAcusticoAtual];
+    return Object.freeze({
+      perfilDinamico: perfilAcusticoAtual,
+      alvoLufs: spec.alvoLufs,
+      lraMaxLu: spec.lraMaxLu,
+      truePeakMaxDbtp: spec.truePeakMaxDbtp,
+      highPassSaidaHz: spec.highPassSaidaHz,
+      harmonicosFundamentalAusenteHz: spec.harmonicosDeckHz,
+      saidaMono: saidaMonoAtiva,
+      confortoAntiTinnitus: confortoAntiTinnitusAtivo,
+      tetoAntiTinnitusHz: confortoAntiTinnitusAtivo ? 3200 : 20000,
+    });
+  }
+
+  function definirPerfilAcustico(perfil) {
+    const chave = String(perfil ?? '');
+    const spec = PERFIS_ACUSTICOS_VOL10_CLIENTE[chave];
+    if (!spec) {
+      throw new Error(
+        `[PERFIL ACUSTICO INVALIDO] "${chave}" — use ESTUDIO, STEAM_DECK ou NOTURNO.`
+      );
+    }
+    perfilAcusticoAtual = chave;
+    if (ctx && compressor) {
+      if (compressor.threshold && typeof compressor.threshold.setTargetAtTime === 'function') {
+        compressor.threshold.setTargetAtTime(spec.thresholdCompDb, ctx.currentTime, 0.05);
+      } else if (compressor.threshold) {
+        compressor.threshold.value = spec.thresholdCompDb;
+      }
+      if (compressor.ratio && typeof compressor.ratio.setTargetAtTime === 'function') {
+        compressor.ratio.setTargetAtTime(spec.ratioComp, ctx.currentTime, 0.05);
+      } else if (compressor.ratio) {
+        compressor.ratio.value = spec.ratioComp;
+      }
+    }
+    if (ctx && typeof ctx.createBiquadFilter === 'function') {
+      if (!filtroHighPassPerfil) {
+        filtroHighPassPerfil = ctx.createBiquadFilter();
+        filtroHighPassPerfil.type = 'highpass';
+      }
+      if (filtroHighPassPerfil.frequency && typeof filtroHighPassPerfil.frequency.setTargetAtTime === 'function') {
+        filtroHighPassPerfil.frequency.setTargetAtTime(spec.highPassSaidaHz, ctx.currentTime, 0.05);
+      } else if (filtroHighPassPerfil.frequency) {
+        filtroHighPassPerfil.frequency.value = spec.highPassSaidaHz;
+      }
+    }
+    sincronizarPreferenciasWasm();
+    return obterEstadoAcusticoVol10();
+  }
+
+  function definirSaidaMono(ativo) {
+    if (typeof ativo !== 'boolean') {
+      throw new Error('[SAIDA MONO INVALIDA] Esperado booleano.');
+    }
+    saidaMonoAtiva = ativo;
+    if (ctx && ctx.destination) {
+      try {
+        ctx.destination.channelCount = ativo ? 1 : 2;
+      } catch {
+        // Destino de hardware fixo
+      }
+    }
+    sincronizarPreferenciasWasm();
+    return obterEstadoAcusticoVol10();
+  }
+
+  function definirConfortoAntiTinnitus(ativo) {
+    if (typeof ativo !== 'boolean') {
+      throw new Error('[ANTI-TINNITUS INVALIDO] Esperado booleano.');
+    }
+    confortoAntiTinnitusAtivo = ativo;
+    if (ctx && filtroMaster) {
+      filtroMaster.frequency.setTargetAtTime(calcularCorteEfetivoHz(), ctx.currentTime, 0.05);
+    }
+    sincronizarPreferenciasWasm();
+    return obterEstadoAcusticoVol10();
+  }
+
+  function obterEstadoWasmRt() {
+    if (!wasmRtInstancia || !wasmRtInstancia.exports) {
+      return Object.freeze({
+        conectado: false,
+        workletConectado: Boolean(noWorkletAudioCpp20),
+        zonaAtiva: 0,
+        corteHidroHz: calcularCorteEfetivoHz(),
+        duckingDb: 0,
+        cortesBarramentosHz: Object.freeze([20000, 20000, 20000, 18000, 20000, 16000]),
+      });
+    }
+    const ex = wasmRtInstancia.exports;
+    const cortes = [];
+    for (let b = 0; b < 6; b += 1) {
+      cortes.push(Number(ex.biofoil_rt_get_bus_cutoff_hz(b).toFixed(2)));
+    }
+    return Object.freeze({
+      conectado: true,
+      workletConectado: Boolean(noWorkletAudioCpp20),
+      zonaAtiva: ex.biofoil_rt_get_active_zone(),
+      corteHidroHz: Number(ex.biofoil_rt_get_hydro_cutoff_hz().toFixed(2)),
+      duckingDb: Number(ex.biofoil_rt_get_ducking_db().toFixed(3)),
+      cortesBarramentosHz: Object.freeze(cortes),
+    });
+  }
+
+  async function conectarWorkletWasm(bytesOuModuloWasm, opcoesWorklet = {}) {
+    let fonte = bytesOuModuloWasm;
+    if (!fonte && typeof escopoGlobal.fetch === 'function') {
+      const resp = await escopoGlobal.fetch(opcoesWorklet.wasmUrl || '/onda6-ui/libbiofoil_audio_rt.wasm');
+      if (!resp.ok) {
+        throw new Error(`[FALHA_FETCH_WASM_AUDIO] HTTP ${resp.status}`);
+      }
+      fonte = await resp.arrayBuffer();
+    }
+    if (!fonte) {
+      throw new Error('[WASM_AUDIO_FONTE_AUSENTE] Forneca bytes/Module ou ambiente com fetch.');
+    }
+    const instRes = await WebAssembly.instantiate(fonte, {});
+    const inst = instRes.instance || instRes;
+    if (typeof inst.exports._initialize === 'function') {
+      inst.exports._initialize();
+    }
+    const sr = Number(opcoesWorklet.sampleRate || ctx?.sampleRate || 48000);
+    inst.exports.biofoil_rt_init(sr);
+    wasmRtInstancia = inst;
+    sincronizarPreferenciasWasm();
+
+    if (
+      ctx &&
+      ctx.audioWorklet &&
+      typeof ctx.audioWorklet.addModule === 'function' &&
+      typeof escopoGlobal.AudioWorkletNode === 'function'
+    ) {
+      await ctx.audioWorklet.addModule(opcoesWorklet.workletUrl || '/onda6-ui/worklet-audio-cpp20.js');
+      noWorkletAudioCpp20 = new escopoGlobal.AudioWorkletNode(ctx, 'biofoil-audio-cpp20', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+      });
+      if (noWorkletAudioCpp20.port && typeof noWorkletAudioCpp20.port.postMessage === 'function') {
+        noWorkletAudioCpp20.port.postMessage({ tipo: 'INIT_WASM', wasmBytes: fonte });
+      }
+    }
+    return obterEstadoWasmRt();
+  }
+
+  function empurrarTelemetriaWasmRt(telemetria = {}) {
+    if (!wasmRtInstancia || !wasmRtInstancia.exports) {
+      throw new Error('[WASM_AUDIO_RT_NAO_CONECTADO] Conecte libbiofoil_audio_rt.wasm antes de empurrar telemetria.');
+    }
+    const ex = wasmRtInstancia.exports;
+    ex.biofoil_rt_push_telemetry(
+      Number(telemetria.hullIntegrityPct ?? 1.0),
+      Number(telemetria.floodedWaterKg ?? 100.0),
+      Number(telemetria.cavitationMarginKg ?? 37.5),
+      Number(telemetria.foilState ?? 1),
+      Number(telemetria.enemyArchetype ?? 0),
+      Number(telemetria.bossPhase ?? 0),
+      telemetria.oceanBoilWarning ? 1 : 0,
+      telemetria.weaponSalvoTriggered ? 1 : 0
+    );
+    if (telemetria.spoolProgress01 !== undefined) {
+      ex.biofoil_rt_set_spool_progress(Number(telemetria.spoolProgress01));
+    }
+    if (telemetria.sonarIntensity01 !== undefined && Number(telemetria.sonarIntensity01) > 0) {
+      ex.biofoil_rt_trigger_sonar(Number(telemetria.sonarIntensity01));
+    }
+    return obterEstadoWasmRt();
+  }
+
+  function processarBlocoWasmRt(entradaIntercaladaFloat32 = null, numFrames = 128) {
+    if (!wasmRtInstancia || !wasmRtInstancia.exports) {
+      throw new Error('[WASM_AUDIO_RT_NAO_CONECTADO] Conecte libbiofoil_audio_rt.wasm antes de processar bloco.');
+    }
+    const ex = wasmRtInstancia.exports;
+    const maxFrames = ex.biofoil_rt_get_max_block_frames() || 1024;
+    const frames = Math.max(1, Math.min(maxFrames, Math.floor(Number(numFrames) || 128)));
+    const ptrIn = ex.biofoil_rt_get_input_ptr();
+    const ptrOut = ex.biofoil_rt_get_output_ptr();
+    const memIn = new Float32Array(ex.memory.buffer, ptrIn, frames * 2);
+    if (entradaIntercaladaFloat32 && entradaIntercaladaFloat32.length > 0) {
+      const lim = Math.min(memIn.length, entradaIntercaladaFloat32.length);
+      for (let i = 0; i < lim; i += 1) {
+        memIn[i] = entradaIntercaladaFloat32[i];
+      }
+      for (let i = lim; i < memIn.length; i += 1) {
+        memIn[i] = 0;
+      }
+    } else {
+      memIn.fill(0);
+    }
+    ex.biofoil_rt_process_scratch_block(frames);
+    const memOut = new Float32Array(ex.memory.buffer, ptrOut, frames * 2);
+    const copiaSaida = new Float32Array(frames * 2);
+    copiaSaida.set(memOut);
+    const estadoAtualWasm = obterEstadoWasmRt();
+    return Object.freeze({
+      framesProcessados: frames,
+      amostrasSaida: copiaSaida,
+      ...estadoAtualWasm,
+    });
+  }
+
   return {
     garantirGrafo,
     garantirContextoAtivo: garantirGrafo,
@@ -872,5 +1244,16 @@ export function criarMotorAudioMaritimoCliente(ambienteExplicito) {
     ajustarVolume,
     estaMudo: () => mudo,
     obterVolume: () => volume,
+    obterTelemetriaCacheLruMb,
+    registrarZonaAcusticaLru,
+    calcularPonteiroLoopZona,
+    definirPerfilAcustico,
+    definirSaidaMono,
+    definirConfortoAntiTinnitus,
+    obterEstadoAcusticoVol10,
+    conectarWorkletWasm,
+    empurrarTelemetriaWasmRt,
+    processarBlocoWasmRt,
+    obterEstadoWasmRt,
   };
 }

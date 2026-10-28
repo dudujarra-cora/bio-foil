@@ -290,7 +290,10 @@ const FOLEYS_IMPACTO_DUCKING = new Set([
  */
 export function criarMotorAudioOggFoleySteam(opcoes = {}) {
   const baseUrl = String(opcoes.baseUrl ?? '/assets/audio').replace(/\/$/, '');
+  const TETO_POOL_LRU_OGG_BYTES = 56_000_000;
+  const BYTES_ONESHOTS_FIXOS_OGG = 8_000_000;
   const buffersDecodificados = new Map();
+  let eviccoesLruOgg = 0;
   const historicoFoleyDisparados = [];
   let totalCliquesUiDisparados = 0;
   let ctxAudio = null;
@@ -339,9 +342,72 @@ export function criarMotorAudioOggFoleySteam(opcoes = {}) {
     return ctxAudio;
   }
 
+  function estimarBytesBufferOgg(buf) {
+    if (!buf || typeof buf !== 'object') return 384_000;
+    const frames = Math.max(1, Number(buf.length ?? 48_000));
+    const canais = Math.max(1, Number(buf.numberOfChannels ?? 2));
+    return frames * canais * 4;
+  }
+
+  function calcularBytesBuffersOgg() {
+    let soma = 0;
+    for (const buf of buffersDecodificados.values()) {
+      soma += estimarBytesBufferOgg(buf);
+    }
+    return soma;
+  }
+
+  function inserirBufferComEviccaoLruOgg(nomeArquivo, audioBuf) {
+    const bytesNovo = estimarBytesBufferOgg(audioBuf);
+    if (buffersDecodificados.has(nomeArquivo)) {
+      buffersDecodificados.delete(nomeArquivo);
+    }
+    const arquivosEmUso = new Set([
+      MANIFESTO_TRILHAS_OGG_STEAM[fontesMusicaAtivas.exploreKey]?.arquivo ?? null,
+      MANIFESTO_TRILHAS_OGG_STEAM[fontesMusicaAtivas.combatKey]?.arquivo ?? null,
+      MANIFESTO_TRILHAS_OGG_STEAM[fontesMusicaAtivas.ambKey]?.arquivo ?? null,
+    ]);
+    while (
+      buffersDecodificados.size > 0 &&
+      calcularBytesBuffersOgg() + bytesNovo > TETO_POOL_LRU_OGG_BYTES
+    ) {
+      let candidato = null;
+      for (const chave of buffersDecodificados.keys()) {
+        if (!arquivosEmUso.has(chave)) {
+          candidato = chave;
+          break;
+        }
+      }
+      if (candidato === null) {
+        candidato = buffersDecodificados.keys().next().value;
+      }
+      if (candidato === undefined) break;
+      buffersDecodificados.delete(candidato);
+      eviccoesLruOgg += 1;
+    }
+    buffersDecodificados.set(nomeArquivo, audioBuf);
+    return audioBuf;
+  }
+
+  function obterTelemetriaCacheLruMb() {
+    const ramResidenteBytes = BYTES_ONESHOTS_FIXOS_OGG + calcularBytesBuffersOgg();
+    return Object.freeze({
+      ramResidenteBytes,
+      ramResidenteMb: Number((ramResidenteBytes / 1_000_000).toFixed(2)),
+      tetoOrcamentoMb: 64,
+      buffersCarregados: buffersDecodificados.size,
+      eviccoesRealizadas: eviccoesLruOgg,
+      statusOrcamento:
+        ramResidenteBytes <= 64_000_000 ? 'DENTRO_ORCAMENTO_LRU' : 'ESTOURO_ORCAMENTO_LRU',
+    });
+  }
+
   async function carregarBufferOgg(nomeArquivo) {
     if (buffersDecodificados.has(nomeArquivo)) {
-      return buffersDecodificados.get(nomeArquivo);
+      const existente = buffersDecodificados.get(nomeArquivo);
+      buffersDecodificados.delete(nomeArquivo);
+      buffersDecodificados.set(nomeArquivo, existente);
+      return existente;
     }
     const ctx = garantirGrafoWebAudio();
     if (!ctx || typeof globalThis.fetch !== 'function') return null;
@@ -350,8 +416,7 @@ export function criarMotorAudioOggFoleySteam(opcoes = {}) {
       if (!resp.ok) return null;
       const arr = await resp.arrayBuffer();
       const audioBuf = await ctx.decodeAudioData(arr);
-      buffersDecodificados.set(nomeArquivo, audioBuf);
-      return audioBuf;
+      return inserirBufferComEviccaoLruOgg(nomeArquivo, audioBuf);
     } catch {
       return null;
     }
@@ -577,5 +642,7 @@ export function criarMotorAudioOggFoleySteam(opcoes = {}) {
     dispararFoley,
     dispararCliqueUiCurto,
     obterEstadoInstantaneo,
+    obterTelemetriaCacheLruMb,
+    registrarBufferDecodificadoLru: inserirBufferComEviccaoLruOgg,
   });
 }

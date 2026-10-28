@@ -932,6 +932,29 @@ export function renderizarTooltipContextualEAvisoToast(ctx) {
     txt(x0Toast + 8, yToast + 4, rotToast, YELLOW, 7);
   }
 
+  // Legendas Táticas Direcionais (< / > / <>) XAG 104 (auto-ativas em mudo ou quando habilitadas)
+  const deveExibirLegendasDirecionais =
+    (opcoes.exibirLegendasTaticasDirecionais === true || Boolean(viewModel.audioMutado)) &&
+    !modalAtivoRender &&
+    !viewModel.modalSteamAtivo &&
+    Array.isArray(viewModel.legendasTaticasDirecionais) &&
+    viewModel.legendasTaticasDirecionais.length > 0;
+  if (deveExibirLegendasDirecionais) {
+    const textoLegDir = viewModel.legendasTaticasDirecionais
+      .slice(0, 2)
+      .map((l) => String(l.rotulo ?? ''))
+      .filter(Boolean)
+      .join('  ')
+      .slice(0, 56);
+    if (textoLegDir) {
+      const largLeg = Math.min(430, Math.max(140, textoLegDir.length * 7 + 16));
+      const x0Leg = Math.max(158, Math.min(W - largLeg - 8, Math.round(548 - largLeg / 2)));
+      const y0Leg = 411;
+      chanfradoBezel(x0Leg, y0Leg, x0Leg + largLeg, y0Leg + 14, [6, 16, 24, 244], CYAN, 2, YELLOW);
+      txt(x0Leg + 8, y0Leg + 4, textoLegDir, YELLOW, 7);
+    }
+  }
+
   // Tooltip Contextual Origin-Aware
   const modoSalvaGlobal = String(viewModel.modoSalvaGlobal ?? 'AUTOMATICO');
   const deveMostrarTooltip =

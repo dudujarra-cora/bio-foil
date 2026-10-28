@@ -1245,6 +1245,99 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
     });
 
   const edicaoComercialSteam = Boolean(estado.meta?.edicaoComercialSteam);
+  const preferenciasAudioVm =
+    estado.perfilJogador?.preferenciasAudio ??
+    estado.perfilEterno?.preferenciasAudio ??
+    estado.meta?.preferenciasAudio ??
+    null;
+  const audioMutadoVm = Boolean(
+    estado.meta?.audioMutado ||
+      estado.meta?.configuracoesSteam?.mudoTotal ||
+      preferenciasAudioVm?.mudo
+  );
+  const modoLegendasBruto = String(
+    preferenciasAudioVm?.legendasTaticasDirecionais ??
+      estado.meta?.configuracoesSteam?.legendasTaticasDirecionais ??
+      'ALERTAS_CRITICOS'
+  );
+  const modoLegendasTaticasEfetivo =
+    audioMutadoVm && modoLegendasBruto === 'DESLIGADO' ? 'ALERTAS_CRITICOS' : modoLegendasBruto;
+  const legendasTaticasDirecionais = [];
+  if (modoLegendasTaticasEfetivo !== 'DESLIGADO') {
+    if (camaras.some((c) => c.brechaAtiva)) {
+      legendasTaticasDirecionais.push({
+        id: 'LEG_BRECHA_CASCO',
+        direcao: '<',
+        rotulo: ehIdiomaEnVm ? '< [HULL BREACH!]' : '< [ROMBO CASCO!]',
+        severidade: 'CRITICA',
+      });
+    }
+    if (aguaTotalKg < 62.5 && emNoFoil) {
+      legendasTaticasDirecionais.push({
+        id: 'LEG_CAVITACAO_FOIL',
+        direcao: '<',
+        rotulo: ehIdiomaEnVm ? '< [CAVITATION!]' : '< [CAVITACAO!]',
+        severidade: 'CRITICA',
+      });
+    }
+    if (menorOxigenioOcupadoPct <= 35) {
+      legendasTaticasDirecionais.push({
+        id: 'LEG_HIPOXIA_CABINE',
+        direcao: '<',
+        rotulo: ehIdiomaEnVm ? '< [LOW O2!]' : '< [HIPOXIA O2!]',
+        severidade: 'CRITICA',
+      });
+    }
+    if (
+      Number(estado.alvoCombate?.alarmeFervuraAtivoSeg ?? estado.alvoCombate?.alarmeFervuraSeg ?? 0) > 0 ||
+      Number(estado.alvoCombate?.fervuraAtivaSeg ?? 0) > 0
+    ) {
+      legendasTaticasDirecionais.push({
+        id: 'LEG_FERVURA_OCEANO',
+        direcao: '<>',
+        rotulo: ehIdiomaEnVm ? '<> [BOILING SEA!]' : '<> [MAR EM FERVURA!]',
+        severidade: 'CRITICA',
+      });
+    }
+    if (
+      estado.alvoCombate &&
+      estado.alvoCombate.ativo !== false &&
+      (Boolean(estado.alvoCombate.emFuga) ||
+        Number(estado.alvoCombate.progressoFugaSeg ?? estado.alvoCombate.progressoFugaInimigoSeg ?? 0) > 0)
+    ) {
+      legendasTaticasDirecionais.push({
+        id: 'LEG_INIMIGO_FUGA',
+        direcao: '>',
+        rotulo: ehIdiomaEnVm ? '[ENEMY FLEEING!] >' : '[INIMIGO FUGINDO!] >',
+        severidade: 'CRITICA',
+      });
+    }
+    const evTickLeg = estado.meta?.eventosVisuaisUltimoTick ?? estado.eventosVisuaisUltimoTick ?? [];
+    if (
+      (modoLegendasTaticasEfetivo === 'COMPLETO' || audioMutadoVm) &&
+      evTickLeg.some(
+        (ev) =>
+          ev.tipo === 'DISPARO_INIMIGO' ||
+          ev.tipo === 'SOBRECARGA_DRAGA' ||
+          ev.tipo === 'POWER_SURGE_DRAGA'
+      )
+    ) {
+      legendasTaticasDirecionais.push({
+        id: 'LEG_DISPARO_HOSTIL',
+        direcao: '>',
+        rotulo: ehIdiomaEnVm ? '[HOSTILE SALVO!] >' : '[DISPARO HOSTIL!] >',
+        severidade: 'ALERTA',
+      });
+    }
+    if (modoLegendasTaticasEfetivo === 'COMPLETO' && camaras.some((c) => c.curtoCircuitoAtivo)) {
+      legendasTaticasDirecionais.push({
+        id: 'LEG_CURTO_ELETRICO',
+        direcao: '<',
+        rotulo: ehIdiomaEnVm ? '< [SHORT CIRCUIT]' : '< [CURTO ELETRICO]',
+        severidade: 'ALERTA',
+      });
+    }
+  }
   const layoutIdResolvido =
     estado.meta?.layoutId ??
     nave.layoutId ??
@@ -1308,7 +1401,10 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
     faseJogo: faseJogoAtual,
     modoCampanhaCompleta,
     modalCampanhaAtivo,
-    audioMutado: Boolean(estado.meta?.audioMutado),
+    audioMutado: audioMutadoVm,
+    preferenciasAudio: preferenciasAudioVm,
+    modoLegendasTaticasEfetivo,
+    legendasTaticasDirecionais: legendasTaticasDirecionais.slice(0, 3),
     setorAtual: setorAtualVm,
     nomeBioma: nomeBiomaVm,
     ultimoAvisoCampanha: (() => {

@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  clonarProfundoCongelado,
   carregarCadeiaCanonicaGdd,
   extrairTripulacaoVolume01,
   extrairCatalogoVolume05,
@@ -30,111 +32,36 @@ import {
 
 import { criarEstadoInicialPartida } from '../src/onda1-fisica/estado-inicial.mjs';
 import { iniciarServidorClienteWebBiofoil } from '../src/onda6-ui/cliente-web.mjs';
-import { criarPerfilInicial } from '../src/onda6-ui/persistencia-perfil.mjs';
+import {
+  PREFERENCIAS_AUDIO_CANONICAS_VOL10,
+  criarPerfilInicial,
+  atualizarPerfilComMetricasRun,
+  salvarPerfilDisco,
+  carregarPerfilDisco,
+  salvarRunSaveDisco,
+  carregarRunSaveDisco,
+  apagarRunSavePermadeathDisco,
+} from '../src/onda6-ui/persistencia-perfil.mjs';
 import { projetarViewModelWireframe } from '../src/onda6-ui/presenter-wireframe.mjs';
-import { construirPaisagemSonoraCompleta } from '../src/onda6-ui/audio-maritimo.mjs';
+import {
+  extrairSfxMulticamadaDoTick,
+  construirPaisagemSonoraCompleta,
+} from '../src/onda6-ui/audio-maritimo.mjs';
 import { criarMotorAudioMaritimoCliente } from '../src/onda6-ui/sintetizador-webaudio-cliente.mjs';
+import { iniciarRuntimeDomBiofoil } from '../src/onda6-ui/runtime-navegador.mjs';
+import { rasterizarQuadroRgba960x540 } from '../src/onda6-ui/renderizador-canvas.mjs';
+import { obterAssetsConceitoHiBit, obterTabelasRasterUnificado } from '../src/onda6-ui/assets-hibit.mjs';
+import { obterMapaHitboxesNativo } from '../src/onda6-ui/hitboxes-layout.mjs';
+import { criarMotorAudioOggFoleySteam } from '../src/onda7-steam/motor-audio-ogg-foley.mjs';
 
 const DIRETORIO_RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /**
  * Lei N2 + Lei N6: Lista-Catraca da Onda de Implementação de Áudio Comercial C++20/WASM & Steam.
- * Cada sonda roda os módulos REAIS de src/ (Zero Mock — Lei L1) e comprova que a lacuna mapeada
- * no Volume 10 ainda aguarda codificação na sessão de produto. Assim que uma peça for implementada,
- * o portão acusa imediatamente [N2 CATRACA] exigindo promoção a asserção definitiva.
+ * Todas as 8 pendências (CAT-AUD-01..08) foram implementadas no produto e promovidas a asserções
+ * permanentes Zero Mock abaixo; a catraca permanece vazia e vigiada contra regressão.
  */
-export const LISTA_CATRACA_AUDIO_CPP20 = Object.freeze([
-  Object.freeze({
-    id: 'CAT-AUD-01',
-    data: '2026-10-27',
-    frase: 'LAC_01: CSP HTTP de cliente-web.mjs ainda bloqueia wasm-unsafe-eval e worker-src do AudioWorklet',
-    verificarFalha: async () => {
-      const srv = await iniciarServidorClienteWebBiofoil({ host: '127.0.0.1', port: 0 });
-      try {
-        const resp = await fetch(`${srv.url}/`);
-        const csp = resp.headers.get('content-security-policy') ?? '';
-        const diag = auditarPoliticaCspAudioWasm(csp);
-        return diag.status !== 'CSP_APTA_WASM_WORKLET';
-      } finally {
-        await srv.fechar();
-      }
-    },
-  }),
-  Object.freeze({
-    id: 'CAT-AUD-02',
-    data: '2026-10-27',
-    frase: 'LAC_14: criarPerfilInicial() em persistencia-perfil.mjs ainda não grava preferenciasAudio (6 faders dB)',
-    verificarFalha: async () => {
-      const perfil = criarPerfilInicial();
-      return !perfil.preferenciasAudio || typeof perfil.preferenciasAudio.alertasUi !== 'number';
-    },
-  }),
-  Object.freeze({
-    id: 'CAT-AUD-03',
-    data: '2026-10-27',
-    frase: 'LAC_03/LAC_06: binário libbiofoil_audio_rt.wasm e processador AudioWorklet C++20 ainda não empacotados',
-    verificarFalha: async () => {
-      const wasmExiste = fs.existsSync(
-        path.join(DIRETORIO_RAIZ, 'src', 'onda6-ui', 'libbiofoil_audio_rt.wasm')
-      );
-      return !wasmExiste;
-    },
-  }),
-  Object.freeze({
-    id: 'CAT-AUD-04',
-    data: '2026-10-27',
-    frase: 'LAC_02/LAC_17: Pool LRU <= 64 MB e manifesto exactFrameCount/preSkipFrames ainda não integrados ao runtime',
-    verificarFalha: async () => {
-      const motor = criarMotorAudioMaritimoCliente();
-      return typeof motor.obterTelemetriaCacheLruMb !== 'function';
-    },
-  }),
-  Object.freeze({
-    id: 'CAT-AUD-05',
-    data: '2026-10-27',
-    frase: 'LAC_05: runtime-navegador.mjs ainda não registra visibilitychange para Auto-Pausa no Alt-Tab e silenciarSemFoco',
-    verificarFalha: async () => {
-      const codigoRuntime = fs.readFileSync(
-        path.join(DIRETORIO_RAIZ, 'src', 'onda6-ui', 'runtime-navegador.mjs'),
-        'utf8'
-      );
-      return !codigoRuntime.includes('visibilitychange');
-    },
-  }),
-  Object.freeze({
-    id: 'CAT-AUD-06',
-    data: '2026-10-27',
-    frase: 'LAC_07..LAC_11: audio-maritimo.mjs ainda não emite EVT_AUD_01..11 (Arma Pronta, Salva, Fuga, Morte, Loops e Stingers)',
-    verificarFalha: async () => {
-      const est = criarEstadoInicialPartida('seed-catraca-aud-06', 'CARCACA_ALFA');
-      const paisagem = construirPaisagemSonoraCompleta(est, est, null);
-      return !Array.isArray(paisagem.eventosComplementaresVol10);
-    },
-  }),
-  Object.freeze({
-    id: 'CAT-AUD-07',
-    data: '2026-10-27',
-    frase: 'LAC_12/LAC_13/LAC_16: sintetizador-webaudio-cliente.mjs ainda não expõe perfis ESTUDIO/STEAM_DECK/NOTURNO, saidaMono e confortoAntiTinnitus',
-    verificarFalha: async () => {
-      const motor = criarMotorAudioMaritimoCliente();
-      return (
-        typeof motor.definirPerfilAcustico !== 'function' ||
-        typeof motor.definirSaidaMono !== 'function' ||
-        typeof motor.definirConfortoAntiTinnitus !== 'function'
-      );
-    },
-  }),
-  Object.freeze({
-    id: 'CAT-AUD-08',
-    data: '2026-10-27',
-    frase: 'LAC_15: projetarViewModelWireframe ainda não projeta legendasTaticasDirecionais (< / >) XAG 104 no HUD 960x540',
-    verificarFalha: async () => {
-      const est = criarEstadoInicialPartida('seed-catraca-aud-08', 'CARCACA_ALFA');
-      const vm = projetarViewModelWireframe(est);
-      return !Array.isArray(vm.legendasTaticasDirecionais);
-    },
-  }),
-]);
+export const LISTA_CATRACA_AUDIO_CPP20 = Object.freeze([]);
 
 test('Portão Vol. 10 (L4 + L5 + N4): extrai e valida integralmente os 6 Gêneros, 2 Camadas C++20, 6 Barramentos, 3 Leis, 11 Eventos, 3 Perfis, 6 Faders e 18 Lacunas Steam', () => {
   const cadeia = carregarCadeiaCanonicaGdd(DIRETORIO_RAIZ);
@@ -594,13 +521,15 @@ test('Oráculos Acústicos C++20/DSP (L1 + L2 + L3 + L4): Memória LRU 64 MB, Hi
     'CSP_APTA_WASM_WORKLET'
   );
 
+  const perfilLegadoSemAudio = Object.freeze({ versaoPerfil: '0.9.0' });
   const perfilEntrada = criarPerfilInicial();
-  const perfilMudo = mesclarPreferenciasAudioNoPerfilImunePermadeath(perfilEntrada, {
+  const perfilMudo = mesclarPreferenciasAudioNoPerfilImunePermadeath(perfilLegadoSemAudio, {
     mudo: true,
     legendasTaticasDirecionais: 'DESLIGADO',
   });
   assert.equal(Object.isFrozen(perfilMudo), true);
-  assert.equal('preferenciasAudio' in perfilEntrada, false, '[L2] Perfil de entrada jamais pode ser mutado in-place');
+  assert.equal('preferenciasAudio' in perfilLegadoSemAudio, false, '[L2] Perfil de entrada jamais pode ser mutado in-place');
+  assert.equal(perfilEntrada.preferenciasAudio.mudo, false, '[L2] criarPerfilInicial jamais pode nascer mudo');
   assert.equal(
     perfilMudo.telemetriaAcessibilidadeAudio.legendasEfetivas,
     'ALERTAS_CRITICOS',
@@ -610,9 +539,457 @@ test('Oráculos Acústicos C++20/DSP (L1 + L2 + L3 + L4): Memória LRU 64 MB, Hi
   console.log('[N4] Oráculos acústicos executados e verificados: 8 funções puras + 3 perfis + 6 barramentos');
 });
 
-test('Leis N2 + N6 + Guardas de Erro: executa as 8 sondas reais da Lista-Catraca contra src/ e cobre guardas defensivas', async () => {
-  console.log(`[N4] Sondas reais na LISTA_CATRACA_AUDIO_CPP20 examinadas: ${LISTA_CATRACA_AUDIO_CPP20.length}`);
-  assert.equal(LISTA_CATRACA_AUDIO_CPP20.length, 8, 'Devem existir exatamente 8 sondas reais na catraca da Onda de Áudio');
+test('Integração de Produto Vol. 10 (CAT-AUD-01..08 + C++20/WASM Dual-Layer): CSP, WASM Worklet 0-WASI, Permadeath Audio, Pool LRU 64 MB, Alt-Tab Visibility, 11 Eventos + LEI_SFX_2, 3 Perfis Acústicos e Legendas XAG 104', async () => {
+  // 1. CAT-AUD-01 + CAT-AUD-03: CSP HTTP + Tauri CSP + Binário C++20 libbiofoil_audio_rt.wasm (0 WASI) + AudioWorklet + DSP RT
+  const tauriConf = JSON.parse(
+    fs.readFileSync(path.join(DIRETORIO_RAIZ, 'steam-desktop', 'tauri.conf.json'), 'utf8')
+  );
+  const diagTauriCsp = auditarPoliticaCspAudioWasm(tauriConf.app?.security?.csp ?? '');
+  assert.equal(
+    diagTauriCsp.status,
+    'CSP_APTA_WASM_WORKLET',
+    '[CAT-AUD-01] tauri.conf.json deve autorizar wasm-unsafe-eval e worker-src self para AudioWorklet C++20'
+  );
+
+  const srv = await iniciarServidorClienteWebBiofoil({ host: '127.0.0.1', port: 0 });
+  let wasmBytes = null;
+  try {
+    const respRoot = await fetch(`${srv.url}/`);
+    const cspHttp = respRoot.headers.get('content-security-policy') ?? '';
+    const diagHttpCsp = auditarPoliticaCspAudioWasm(cspHttp);
+    assert.equal(
+      diagHttpCsp.status,
+      'CSP_APTA_WASM_WORKLET',
+      '[CAT-AUD-01] CSP HTTP de cliente-web.mjs deve autorizar wasm-unsafe-eval e worker-src self do AudioWorklet'
+    );
+
+    const respWasm = await fetch(`${srv.url}/onda6-ui/libbiofoil_audio_rt.wasm`);
+    assert.equal(respWasm.status, 200, '[CAT-AUD-03] Rota /onda6-ui/libbiofoil_audio_rt.wasm deve responder 200');
+    assert.equal(respWasm.headers.get('content-type'), 'application/wasm');
+    wasmBytes = new Uint8Array(await respWasm.arrayBuffer());
+    assert.ok(wasmBytes.byteLength >= 4096, '[CAT-AUD-03] Binário WASM C++20 deve ter código DSP real compilado');
+
+    const respWorklet = await fetch(`${srv.url}/onda6-ui/worklet-audio-cpp20.js`);
+    assert.equal(respWorklet.status, 200, '[CAT-AUD-03] Rota /onda6-ui/worklet-audio-cpp20.js deve responder 200');
+    assert.match(respWorklet.headers.get('content-type') ?? '', /application\/javascript/);
+    const codigoWorklet = await respWorklet.text();
+    assert.match(codigoWorklet, /registerProcessor\('biofoil-audio-cpp20'/);
+    assert.match(codigoWorklet, /biofoil_rt_process_scratch_block/);
+  } finally {
+    await srv.fechar();
+  }
+
+  const wasmMod = new WebAssembly.Module(wasmBytes);
+  assert.equal(
+    WebAssembly.Module.imports(wasmMod).length,
+    0,
+    '[CAT-AUD-03] libbiofoil_audio_rt.wasm deve ser standalone puro (0 imports WASI/env)'
+  );
+
+  const motorWasm = criarMotorAudioMaritimoCliente();
+  const estConn = await motorWasm.conectarWorkletWasm(wasmBytes, { sampleRate: 48000 });
+  assert.equal(estConn.conectado, true, '[CAT-AUD-03] Motor WebAudio deve instanciar libbiofoil_audio_rt.wasm em runtime');
+
+  // Empurra telemetria Submerso (foilState: 3) + Salva disparada (weaponSalvoTriggered: 1) e roda 24 blocos de 128 amostras
+  motorWasm.empurrarTelemetriaWasmRt({
+    hullIntegrityPct: 0.35,
+    floodedWaterKg: 140.0,
+    cavitationMarginKg: 15.0,
+    foilState: 3,
+    enemyArchetype: 2,
+    bossPhase: 0,
+    oceanBoilWarning: 1,
+    weaponSalvoTriggered: 1,
+    sonarIntensity01: 0.8,
+  });
+  const entradaIntercalada = new Float32Array(256);
+  for (let i = 0; i < 128; i += 1) {
+    entradaIntercalada[2 * i] = Math.sin((2 * Math.PI * 1200 * i) / 48000) * 0.5;
+    entradaIntercalada[2 * i + 1] = Math.cos((2 * Math.PI * 1200 * i) / 48000) * 0.5;
+  }
+  let blocoSaida = null;
+  let menorDuckingDb = 0;
+  for (let b = 0; b < 160; b += 1) {
+    blocoSaida = motorWasm.processarBlocoWasmRt(entradaIntercalada, 128);
+    if (blocoSaida.duckingDb < menorDuckingDb) menorDuckingDb = blocoSaida.duckingDb;
+  }
+  assert.equal(blocoSaida.framesProcessados, 128);
+  assert.equal(blocoSaida.amostrasSaida.length, 256);
+  assert.ok(blocoSaida.amostrasSaida.every(Number.isFinite), '[CAT-AUD-03] Amostras C++20 WASM nunca podem conter NaN/Inf');
+  assert.ok(blocoSaida.corteHidroHz < 450, '[CAT-AUD-03] Filtro hidroacústico C++20 deve fechar rumo a 400 Hz em Touchdown');
+  assert.ok(menorDuckingDb < -0.5, '[CAT-AUD-03] Envelope HDR C++20 deve atenuar BUS_1_MUSIC sob salva de artilharia');
+  assert.equal(blocoSaida.cortesBarramentosHz[0], 20000, '[CAT-AUD-03] BUS_0_SURVIVAL_CUES deve permanecer em bypass 20 kHz no C++20');
+  assert.equal(blocoSaida.cortesBarramentosHz[4], 20000, '[CAT-AUD-03] BUS_4_UI deve permanecer em bypass 20 kHz no C++20');
+
+  // 2. CAT-AUD-02: Persistência de preferenciasAudio (6 faders dB) imune a Permadeath em disco real
+  const perfilIni = criarPerfilInicial();
+  assert.deepEqual(
+    perfilIni.preferenciasAudio,
+    PREFERENCIAS_AUDIO_CANONICAS_VOL10,
+    '[CAT-AUD-02] criarPerfilInicial deve incluir os 6 faders e flags canônicas de preferenciasAudio'
+  );
+  const dirSaveTmp = fs.mkdtempSync(path.join(os.tmpdir(), 'biofoil-aud02-save-'));
+  try {
+    const estRunViva = criarEstadoInicialPartida('seed-aud02-permadeath', 'CARCACA_ALFA');
+    salvarRunSaveDisco(estRunViva, { diretorioDados: dirSaveTmp });
+    assert.equal(carregarRunSaveDisco({ diretorioDados: dirSaveTmp }).status, 'ENCONTRADO');
+
+    const perfilCustom = atualizarPerfilComMetricasRun(perfilIni, {
+      incrementarRunsIniciadas: 1,
+      preferenciasAudio: {
+        master: 70,
+        musica: 45,
+        sfxCombate: 95,
+        cabineTripulacao: 80,
+        ambienteMaritimo: 60,
+        alertasUi: 100,
+        perfilDinamico: 'STEAM_DECK',
+        saidaMono: true,
+        confortoAntiTinnitus: true,
+      },
+    });
+    assert.equal(
+      perfilCustom.preferenciasAudio.musica,
+      45,
+      '[CAT-AUD-02] atualizarPerfilComMetricasRun deve preservar preferenciasAudio customizadas do jogador'
+    );
+    salvarPerfilDisco(perfilCustom, { diretorioDados: dirSaveTmp });
+    const resPermadeath = apagarRunSavePermadeathDisco({ diretorioDados: dirSaveTmp });
+    assert.equal(resPermadeath.status, 'APAGADO_PERMADEATH');
+    assert.equal(carregarRunSaveDisco({ diretorioDados: dirSaveTmp }).status, 'SEM_SAVE_ATIVO');
+
+    const perfilPosMorte = carregarPerfilDisco({ diretorioDados: dirSaveTmp });
+    assert.equal(perfilPosMorte.status, 'CARREGADO_DISCO');
+    assert.equal(
+      perfilPosMorte.perfil.preferenciasAudio.musica,
+      45,
+      '[CAT-AUD-02] Permadeath apaga run_save.json mas jamais pode resetar preferenciasAudio em profile.json'
+    );
+    assert.equal(perfilPosMorte.perfil.preferenciasAudio.perfilDinamico, 'STEAM_DECK');
+    assert.equal(perfilPosMorte.perfil.preferenciasAudio.saidaMono, true);
+    assert.equal(perfilPosMorte.perfil.preferenciasAudio.confortoAntiTinnitus, true);
+  } finally {
+    fs.rmSync(dirSaveTmp, { recursive: true, force: true });
+  }
+
+  // 3. CAT-AUD-04: Pool de Zonas Acústicas LRU <= 64 MB + Loop Sample-Accurate compensando preSkipFrames (312)
+  const motorLru = criarMotorAudioMaritimoCliente();
+  for (let z = 1; z <= 12; z += 1) {
+    motorLru.registrarZonaAcusticaLru(`ZONA_TESTE_${z}`, {
+      bytesPcm: 12 * 1024 * 1024,
+      exactFrameCount: 368_640,
+      preSkipFrames: 312,
+      sampleRateHz: 48000,
+      bpm: 125,
+    });
+  }
+  const telLruWeb = motorLru.obterTelemetriaCacheLruMb();
+  assert.equal(Object.isFrozen(telLruWeb), true);
+  assert.equal(
+    telLruWeb.statusOrcamento,
+    'DENTRO_ORCAMENTO_LRU',
+    '[CAT-AUD-04] Pool LRU do motor WebAudio jamais pode ultrapassar o teto de 64 MB de RAM PCM'
+  );
+  assert.ok(telLruWeb.ramResidenteMb <= 64, '[CAT-AUD-04] RAM residente de zonas deve ficar <= 64 MB');
+  assert.ok(telLruWeb.eviccoesRealizadas >= 7, '[CAT-AUD-04] Registrar 144 MB de zonas deve evictar as mais antigas');
+
+  const ptrZona = motorLru.calcularPonteiroLoopZona('ZONA_TESTE_12', 368_645, 125, 48000);
+  assert.equal(ptrZona.frameBufferDecodificado, 317, '[CAT-AUD-04] Ponteiro de zona deve compensar preSkipFrames=312');
+  assert.equal(ptrZona.loopSemClique, true);
+  assert.throws(() => motorLru.registrarZonaAcusticaLru('', { bytesPcm: 1024 }), /zonaId obrigatorio/);
+  assert.throws(
+    () => motorLru.registrarZonaAcusticaLru('ZONA_GIGANTE', { bytesPcm: 70 * 1024 * 1024 }),
+    /ESTOURO_UNITARIO_POOL_LRU_64MB/
+  );
+
+  const motorOggSteam = criarMotorAudioOggFoleySteam();
+  for (let k = 1; k <= 10; k += 1) {
+    motorOggSteam.registrarBufferDecodificadoLru(`OGG_PESADO_${k}`, {
+      length: 2_000_000,
+      numberOfChannels: 2,
+    });
+  }
+  const telLruOgg = motorOggSteam.obterTelemetriaCacheLruMb();
+  assert.equal(
+    telLruOgg.statusOrcamento,
+    'DENTRO_ORCAMENTO_LRU',
+    '[CAT-AUD-04] Cache de AudioBuffers Ogg Steam deve respeitar teto LRU <= 64 MB'
+  );
+  assert.ok(telLruOgg.eviccoesRealizadas >= 2);
+
+  // 4. CAT-AUD-05: visibilitychange (Alt-Tab / Steam Overlay) auto-pausa COMBATE ativo e silencia/restaura áudio
+  const listenersDoc = new Map();
+  const listenersWin = new Map();
+  const listenersCanvas = new Map();
+  const estCombateDom = criarEstadoInicialPartida('seed-aud05-visibility', 'CARCACA_ALFA');
+  const vmCombateDom = projetarViewModelWireframe(estCombateDom);
+  const docHarness = {
+    hidden: false,
+    visibilityState: 'visible',
+    getElementById(id) {
+      if (id === 'biofoil-canvas') {
+        return {
+          width: 960,
+          height: 540,
+          style: {},
+          getBoundingClientRect: () => ({ left: 0, top: 0, width: 960, height: 540 }),
+          getContext: () => ({
+            imageSmoothingEnabled: false,
+            createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
+            putImageData() {},
+            clearRect() {},
+            fillRect() {},
+            strokeRect() {},
+            beginPath() {},
+            moveTo() {},
+            lineTo() {},
+            stroke() {},
+            fill() {},
+            arc() {},
+            fillText() {},
+          }),
+          addEventListener(tipo, fn) {
+            listenersCanvas.set(tipo, fn);
+          },
+        };
+      }
+      if (id === 'biofoil-bootstrap') {
+        return { textContent: '{}' };
+      }
+      return null;
+    },
+    addEventListener(tipo, fn) {
+      listenersDoc.set(tipo, fn);
+    },
+  };
+  const timersCriados = [];
+  const setIntervalOriginal = globalThis.setInterval;
+  globalThis.setInterval = () => {
+    const fakeId = Symbol('timer');
+    timersCriados.push(fakeId);
+    return fakeId;
+  };
+  let rtDom = null;
+  try {
+    const winHarness = {
+      innerWidth: 960,
+      innerHeight: 540,
+      devicePixelRatio: 1,
+      location: { search: '' },
+      requestAnimationFrame: () => 1,
+      fetch: async () => ({ ok: false, json: async () => ({}) }),
+      addEventListener(tipo, fn) {
+        listenersWin.set(tipo, fn);
+      },
+    };
+    rtDom = iniciarRuntimeDomBiofoil(docHarness, winHarness, {
+      estadoBruto: estCombateDom,
+      viewModel: vmCombateDom,
+      frameCanvas: { comandos: [] },
+    });
+  } finally {
+    globalThis.setInterval = setIntervalOriginal;
+  }
+  assert.ok(rtDom, '[CAT-AUD-05] Runtime DOM deve inicializar com estado de combate real');
+  assert.equal(listenersDoc.has('visibilitychange'), true, '[CAT-AUD-05] Runtime DOM deve escutar visibilitychange');
+  assert.equal(rtDom.obterContextoUi().pausaTaticaAtiva, false);
+  assert.equal(rtDom.motorAudio.estaMudo(), false);
+
+  docHarness.hidden = true;
+  docHarness.visibilityState = 'hidden';
+  listenersDoc.get('visibilitychange')();
+  assert.equal(
+    rtDom.obterContextoUi().pausaTaticaAtiva,
+    true,
+    '[CAT-AUD-05] Perder foco (Alt-Tab / Overlay) em COMBATE ativo deve ativar Pausa Tática imediatamente'
+  );
+  assert.equal(rtDom.motorAudio.estaMudo(), true, '[CAT-AUD-05] silenciarSemFoco deve emudecer áudio em segundo plano');
+
+  docHarness.hidden = false;
+  docHarness.visibilityState = 'visible';
+  listenersDoc.get('visibilitychange')();
+  assert.equal(rtDom.motorAudio.estaMudo(), false, '[CAT-AUD-05] Retornar foco deve restaurar áudio se não estava mudo antes');
+  assert.equal(
+    rtDom.obterContextoUi().pausaTaticaAtiva,
+    true,
+    '[CAT-AUD-05] Retornar foco deve manter Pausa Tática ativa até o jogador despausar voluntariamente'
+  );
+
+  // 5. CAT-AUD-06 + LEI_SFX_2: 11 Eventos Complementares (EVT_AUD_01..11) + Zero Reúso de Disparo de Arma em UI/Tripulação
+  const comandosUiTrip = [
+    'MOVER_TRIPULANTE',
+    'MIRAR_ARMA',
+    'ALTERNAR_MODO_SALVA',
+    'ATIVAR_TINTA_FURTIVA',
+    'ATIVAR_PULSO_ENZIMAS',
+    'ATIVAR_PINCA_CARANGUEJO',
+    'VIAJAR_NO_MAPA',
+    'INICIAR_NOVA_RUN',
+    'ALOCAR_ENERGIA',
+    'DESALOCAR_ENERGIA',
+  ];
+  const estSfxBase = criarEstadoInicialPartida('seed-aud06-sfx', 'CARCACA_ALFA');
+  for (const tipoCmd of comandosUiTrip) {
+    const sfxEmitidos = extrairSfxMulticamadaDoTick(estSfxBase, estSfxBase, {
+      aceito: true,
+      comandoExecutado: { tipo: tipoCmd, slotIndex: 0 },
+    });
+    for (const sfx of sfxEmitidos) {
+      assert.equal(
+        String(sfx.idSfx).startsWith('SFX_DISPARO_'),
+        false,
+        `[CAT-AUD-06 / LEI_SFX_2] Comando de UI/navegação ${tipoCmd} jamais pode reutilizar disparo bélico (${sfx.idSfx})`
+      );
+    }
+  }
+
+  // Disparo determinístico dos 11 eventos EVT_AUD_01..11 na paisagem sonora completa
+  const estAnt11 = structuredClone(estSfxBase);
+  estAnt11.naveJogador.armasAtivas = [
+    { chassiId: 'EMISSOR_ACUSTICO_I', progressoRecargaSeg: 2.0, tempoRecargaBaseSeg: 8.0, modoDisparo: 'MANUAL' },
+  ];
+  estAnt11.naveJogador.progressoFugaSeg = 18.0;
+  estAnt11.alvoCombate = { ativo: true, faseChefe: 1, emFuga: false, salasOuOrgaos: [] };
+
+  const estAtu11 = structuredClone(estAnt11);
+  estAtu11.meta.tickAtual = (Number(estAnt11.meta?.tickAtual ?? 0) + 1);
+  estAtu11.naveJogador.armasAtivas[0].progressoRecargaSeg = 8.0;
+  estAtu11.naveJogador.progressoFugaSeg = 20.0;
+  estAtu11.naveJogador.tripulacao[0].hpAtual = 0;
+  estAtu11.naveJogador.camaras[0].brechaAtiva = true;
+  estAtu11.naveJogador.camaras[0].curtoCircuitoAtivo = true;
+  estAtu11.alvoCombate = { ativo: true, faseChefe: 2, emFuga: true, progressoFugaSeg: 4.0, salasOuOrgaos: [] };
+  estAtu11.meta.eventosVisuaisUltimoTick = [{ tipo: 'FEIXE_JOGADOR', dano: 2 }];
+
+  const paisagemCombate11 = construirPaisagemSonoraCompleta(
+    clonarProfundoCongelado(estAnt11),
+    clonarProfundoCongelado(estAtu11),
+    { aceito: true, comandoExecutado: { tipo: 'ATIVAR_TINTA_FURTIVA' } }
+  );
+  const estFim11 = structuredClone(estAtu11);
+  estFim11.meta.faseJogo = 'FIM_DE_RUN';
+  estFim11.meta.desfechoRun = 'VITORIA_CAMPANHA';
+  const paisagemFim11 = construirPaisagemSonoraCompleta(
+    clonarProfundoCongelado(estAtu11),
+    clonarProfundoCongelado(estFim11),
+    null
+  );
+  const idsEventos11 = new Set([
+    ...paisagemCombate11.eventosComplementaresVol10.map((e) => e.id),
+    ...paisagemFim11.eventosComplementaresVol10.map((e) => e.id),
+  ]);
+  const esperados11 = [
+    'EVT_AUD_01_ARMA_PRONTA_SLOT',
+    'EVT_AUD_02_SALVA_COMPLETA_PRONTA',
+    'EVT_AUD_03_SALTO_FUGA_PRONTO',
+    'EVT_AUD_04_INIMIGO_EM_FUGA',
+    'EVT_AUD_05_MORTE_TRIPULANTE_ALIADO',
+    'EVT_AUD_06_ESPECIAIS_4_ESPECIES',
+    'EVT_AUD_07_LOOP_ROMBO_PRESSURIZADO',
+    'EVT_AUD_08_LOOP_CURTO_E_REPARO',
+    'EVT_AUD_09_VARREDURA_BEAM_ORTOGONAL',
+    'EVT_AUD_10_SEIS_STINGERS_QUANTIZADOS',
+    'EVT_AUD_11_ARCOS_FINAIS_FECHADOS',
+  ];
+  for (const idEsp of esperados11) {
+    assert.equal(idsEventos11.has(idEsp), true, `[CAT-AUD-06] Evento complementar ${idEsp} não foi emitido por audio-maritimo.mjs`);
+  }
+
+  // 6. CAT-AUD-07: Perfis Acústicos (ESTUDIO, STEAM_DECK, NOTURNO), Saída Mono e Conforto Anti-Tinnitus (3200 Hz)
+  const motorPerfis = criarMotorAudioMaritimoCliente();
+  const estDeck = motorPerfis.definirPerfilAcustico('STEAM_DECK');
+  assert.equal(estDeck.perfilDinamico, 'STEAM_DECK');
+  assert.equal(estDeck.alvoLufs, -18.0);
+  assert.deepEqual(
+    estDeck.harmonicosFundamentalAusenteHz,
+    [87.3, 130.95],
+    '[CAT-AUD-07] Perfil STEAM_DECK no motor WebAudio deve configurar harmônicos 2x/3x (87.3 e 130.95 Hz)'
+  );
+
+  const estNoturno = motorPerfis.definirPerfilAcustico('NOTURNO');
+  assert.equal(estNoturno.alvoLufs, -24.0);
+  assert.equal(estNoturno.highPassSaidaHz, 65);
+
+  const estMono = motorPerfis.definirSaidaMono(true);
+  assert.equal(estMono.saidaMono, true, '[CAT-AUD-07] definirSaidaMono(true) deve colapsar L+R sem cancelamento');
+
+  const estTinnitus = motorPerfis.definirConfortoAntiTinnitus(true);
+  assert.equal(
+    estTinnitus.tetoAntiTinnitusHz,
+    3200,
+    '[CAT-AUD-07] definirConfortoAntiTinnitus(true) deve cravar teto em 3200 Hz protegendo ouvidos sensíveis'
+  );
+  assert.throws(() => motorPerfis.definirPerfilAcustico('CINEMA_FANTASMA'), /PERFIL ACUSTICO INVALIDO/);
+
+  // 7. CAT-AUD-08: Legendas Táticas Direcionais (< / > / <>) XAG 104 no ViewModel e no HUD 960x540 quando silenciado
+  const estLegendasSom = structuredClone(estSfxBase);
+  estLegendasSom.naveJogador.estadoFisico = '2_TOUCHDOWN';
+  estLegendasSom.naveJogador.camaras[0].brechaAtiva = true;
+  estLegendasSom.alvoCombate = {
+    ativo: true,
+    emFuga: true,
+    progressoFugaSeg: 5.0,
+    alarmeFervuraAtivoSeg: 4.0,
+    salasOuOrgaos: [],
+  };
+  estLegendasSom.meta.eventosVisuaisUltimoTick = [{ tipo: 'PROJETIL_INIMIGO', dano: 1 }];
+  estLegendasSom.meta.audioMutado = false;
+  estLegendasSom.meta.preferenciasAudio = { mudo: false, legendasTaticasDirecionais: 'DESLIGADO' };
+
+  const vmComSom = projetarViewModelWireframe(clonarProfundoCongelado(estLegendasSom));
+  assert.equal(vmComSom.modoLegendasTaticasEfetivo, 'DESLIGADO');
+  assert.equal(vmComSom.legendasTaticasDirecionais.length, 0);
+
+  const estLegendasMutado = structuredClone(estLegendasSom);
+  estLegendasMutado.meta.audioMutado = true;
+  const vmMutadoXag = projetarViewModelWireframe(clonarProfundoCongelado(estLegendasMutado));
+  assert.equal(
+    vmMutadoXag.modoLegendasTaticasEfetivo,
+    'ALERTAS_CRITICOS',
+    '[CAT-AUD-08] Silenciar áudio com legendas DESLIGADO deve auto-ativar ALERTAS_CRITICOS no ViewModel (XAG 104)'
+  );
+  assert.ok(vmMutadoXag.legendasTaticasDirecionais.some((l) => l.direcao === '<' && l.id === 'LEG_BRECHA_CASCO'));
+  assert.ok(vmMutadoXag.legendasTaticasDirecionais.some((l) => l.direcao === '<>' && l.id === 'LEG_FERVURA_OCEANO'));
+  assert.ok(vmMutadoXag.legendasTaticasDirecionais.some((l) => l.direcao === '>' && l.id === 'LEG_INIMIGO_FUGA'));
+
+  const assetsHiBit = obterAssetsConceitoHiBit();
+  const tabelasRaster = obterTabelasRasterUnificado();
+  const hbSom = obterMapaHitboxesNativo(vmComSom);
+  const hbMut = obterMapaHitboxesNativo(vmMutadoXag);
+  const rgbaSemLegenda = rasterizarQuadroRgba960x540(vmComSom, { tempoSeg: 0.25 }, assetsHiBit, hbSom, tabelasRaster);
+  const rgbaComLegendaXag = rasterizarQuadroRgba960x540(vmMutadoXag, { tempoSeg: 0.25 }, assetsHiBit, hbMut, tabelasRaster);
+
+  // Conta pixels diferentes na faixa de legendas direcionais (y = 410..426, x = 250..820)
+  let pixelsDiferentesFaixaLegenda = 0;
+  for (let y = 410; y <= 426; y += 1) {
+    for (let x = 250; x <= 820; x += 1) {
+      const idx = (y * 960 + x) * 4;
+      if (
+        rgbaSemLegenda[idx] !== rgbaComLegendaXag[idx] ||
+        rgbaSemLegenda[idx + 1] !== rgbaComLegendaXag[idx + 1] ||
+        rgbaSemLegenda[idx + 2] !== rgbaComLegendaXag[idx + 2]
+      ) {
+        pixelsDiferentesFaixaLegenda += 1;
+      }
+    }
+  }
+  assert.ok(
+    pixelsDiferentesFaixaLegenda >= 120,
+    '[CAT-AUD-08] HUD 960x540 deve desenhar indicador visual direcional (< / >) quando áudio está silenciado'
+  );
+
+  console.log(
+    `[N4] Integração CAT-AUD-01..08 verificada: WASM ${wasmBytes.byteLength}B (0-WASI), ${esperados11.length}/11 eventos Vol.10, Pool LRU ${telLruWeb.ramResidenteMb}MB<=64MB e ${pixelsDiferentesFaixaLegenda}px XAG 104`
+  );
+});
+
+test('Leis N2 + N6 + Guardas de Erro: comprova catraca vazia pós-promoção e cobre guardas defensivas', async () => {
+  console.log(`[N4] Sondas pendentes na LISTA_CATRACA_AUDIO_CPP20 examinadas: ${LISTA_CATRACA_AUDIO_CPP20.length}`);
+  assert.equal(
+    LISTA_CATRACA_AUDIO_CPP20.length,
+    0,
+    '[N2 CATRACA] LISTA_CATRACA_AUDIO_CPP20 deve permanecer vazia após promoção integral de CAT-AUD-01..08'
+  );
 
   for (const item of LISTA_CATRACA_AUDIO_CPP20) {
     assert.ok(item.id && item.data && item.frase, 'Item da catraca exige id, data e frase');
