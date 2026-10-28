@@ -106,9 +106,59 @@ export function avancarTickIaInimiga(estado, dtSeg = 0.25) {
   }
 
   let salasExaminadas = 0;
+  const ehEdicaoSteam = Boolean(proximo.meta?.edicaoComercialSteam);
   const salaMotor = alvo.salasOuOrgaos.find((s) => /MOTOR|MAQUINAS|PROPULSAO|REATOR/i.test(s.nome));
   const bombaPoraoOperacional =
     alvo.classeAlvo === 'BARCO_HUMANO' && (!salaMotor || (salaMotor.integridadeAtual ?? salaMotor.integridade ?? 1) > 0);
+  const abordadoresPorSalaInim = new Map();
+  for (const ali of proximo.naveJogador?.tripulacao ?? []) {
+    if (ali.localizacao === 'BORDO_INIMIGO' && Number(ali.hpAtual ?? 0) > 0) {
+      const idS = Number(ali.salaInimigaId ?? 0);
+      abordadoresPorSalaInim.set(idS, (abordadoresPorSalaInim.get(idS) ?? 0) + 1);
+    }
+  }
+
+  // Sincroniza e decai timers individuais de tripulação inimiga (`atordoadoSeg` e `controleNeuralSeg`) 1x por ID único
+  const estadoTripPorId = new Map();
+  for (const hTop of alvo.tripulacaoInimiga ?? []) {
+    estadoTripPorId.set(hTop.id, { ...hTop });
+  }
+  for (const sPre of alvo.salasOuOrgaos) {
+    for (const tSala of sPre.tripulantes ?? []) {
+      const prev = estadoTripPorId.get(tSala.id);
+      estadoTripPorId.set(tSala.id, {
+        ...(prev ?? {}),
+        ...tSala,
+        salaId: sPre.id,
+        hpAtual: prev ? Math.min(Number(prev.hpAtual ?? 100), Number(tSala.hpAtual ?? 100)) : Number(tSala.hpAtual ?? 100),
+        atordoadoSeg: Math.max(Number(prev?.atordoadoSeg ?? 0), Number(tSala.atordoadoSeg ?? 0)),
+        controleNeuralSeg: Math.max(Number(prev?.controleNeuralSeg ?? 0), Number(tSala.controleNeuralSeg ?? 0)),
+      });
+    }
+  }
+  for (const infoT of estadoTripPorId.values()) {
+    if (Number(infoT.atordoadoSeg ?? 0) > 0) {
+      infoT.atordoadoSeg = Math.max(0.0, arredondar4(Number(infoT.atordoadoSeg) - dtSeg));
+    }
+    if (Number(infoT.controleNeuralSeg ?? 0) > 0) {
+      infoT.controleNeuralSeg = Math.max(0.0, arredondar4(Number(infoT.controleNeuralSeg) - dtSeg));
+    }
+  }
+  for (const sSync of alvo.salasOuOrgaos) {
+    if (Array.isArray(sSync.tripulantes)) {
+      for (const tSala of sSync.tripulantes) {
+        const sync = estadoTripPorId.get(tSala.id);
+        if (!sync) continue;
+        tSala.hpAtual = sync.hpAtual;
+        if (sync.atordoadoSeg !== undefined || tSala.atordoadoSeg !== undefined) {
+          tSala.atordoadoSeg = Number(sync.atordoadoSeg ?? 0);
+        }
+        if (sync.controleNeuralSeg !== undefined || tSala.controleNeuralSeg !== undefined) {
+          tSala.controleNeuralSeg = Number(sync.controleNeuralSeg ?? 0);
+        }
+      }
+    }
+  }
 
   for (const sala of alvo.salasOuOrgaos) {
     salasExaminadas += 1;
@@ -182,10 +232,54 @@ export function avancarTickIaInimiga(estado, dtSeg = 0.25) {
           }
         }
       }
+
+      // Controle Neural (Parasita Neural AE) e Reparo Ativo de Sistemas por Marinheiros/Mergulhadores não-atordoados (Edição Steam)
+      const vivosNaSala = (sala.tripulantes ?? []).filter((t) => Number(t.hpAtual ?? 0) > 0);
+      const controladosNaSala = vivosNaSala.filter((t) => Number(t.controleNeuralSeg ?? 0) > 0 && !(Number(t.atordoadoSeg ?? 0) > 0));
+      if (controladosNaSala.length > 0) {
+        sala.progressoReparoInimigoSeg = 0.0;
+        const outrosHostis = vivosNaSala.filter((t) => !(Number(t.controleNeuralSeg ?? 0) > 0));
+        if (outrosHostis.length > 0) {
+          outrosHostis[0].hpAtual = Math.max(0.0, arredondar4(outrosHostis[0].hpAtual - 10.0 * controladosNaSala.length * dtSeg));
+        } else {
+          sala.progressoSabotagemNeuralSeg = arredondar4(Number(sala.progressoSabotagemNeuralSeg ?? 0) + dtSeg * controladosNaSala.length);
+          if (sala.progressoSabotagemNeuralSeg >= 6.0 && sala.integridadeAtual > 0) {
+            sala.progressoSabotagemNeuralSeg = arredondar4(sala.progressoSabotagemNeuralSeg - 6.0);
+            sala.integridadeAtual = Math.max(0, sala.integridadeAtual - 1);
+            sala.integridade = sala.integridadeAtual;
+          }
+        }
+      } else if (ehEdicaoSteam) {
+        const intMaxSala = Math.max(1, Number(sala.integridadeMax ?? sala.barrasMax ?? sala.integridadeAtual ?? 1));
+        const reparadoresAptos = vivosNaSala.filter(
+          (t) =>
+            !(Number(t.atordoadoSeg ?? 0) > 0) &&
+            !(Number(t.controleNeuralSeg ?? 0) > 0) &&
+            !t.emFugaEscada
+        ).length;
+        const contestadaPorAliado = (abordadoresPorSalaInim.get(Number(sala.id)) ?? 0) > 0;
+        if (
+          reparadoresAptos > 0 &&
+          !contestadaPorAliado &&
+          sala.integridadeAtual < intMaxSala &&
+          !(Number(sala.corrosaoAcidaSeg ?? 0) > 0)
+        ) {
+          sala.progressoReparoInimigoSeg = arredondar4(
+            Number(sala.progressoReparoInimigoSeg ?? 0) + dtSeg * reparadoresAptos
+          );
+          if (sala.progressoReparoInimigoSeg >= 14.0) {
+            sala.progressoReparoInimigoSeg = arredondar4(sala.progressoReparoInimigoSeg - 14.0);
+            sala.integridadeAtual = Math.min(intMaxSala, sala.integridadeAtual + 1);
+            sala.integridade = sala.integridadeAtual;
+          }
+        } else if (sala.integridadeAtual >= intMaxSala) {
+          sala.progressoReparoInimigoSeg = 0.0;
+        }
+      }
     }
   }
 
-  // 3. IA Humana de sobrevivência: marinheiro com HP < 30 em sala submersa inundada sobe para a Cabine seca (id=1)
+  // 3. IA Humana de sobrevivência: marinheiro com HP < 30 em sala submersa inundada sobe para a Cabine seca (id=1) se NÃO estiver atordoado!
   if (alvo.classeAlvo === 'BARCO_HUMANO') {
     const salaCabine = alvo.salasOuOrgaos.find((s) => s.id === 1 && !s.submersa);
     if (salaCabine) {
@@ -194,12 +288,19 @@ export function avancarTickIaInimiga(estado, dtSeg = 0.25) {
         if (!sala.submersa || sala.aguaKg < CONSTANTES_IA_INIMIGOS.CAPACIDADE_INUNDACAO_SALA_BARCO_KG) continue;
         const restantes = [];
         for (const t of sala.tripulantes ?? []) {
-          if (t.hpAtual > 0 && t.especie === 'MARINHEIRO' && t.hpAtual < CONSTANTES_IA_INIMIGOS.LIMIAR_HP_FUGA_HUMANO) {
+          const bloqueadoPorStunOuNeuro = Number(t.atordoadoSeg ?? 0) > 0 || Number(t.controleNeuralSeg ?? 0) > 0;
+          if (
+            !bloqueadoPorStunOuNeuro &&
+            t.hpAtual > 0 &&
+            t.especie === 'MARINHEIRO' &&
+            t.hpAtual < CONSTANTES_IA_INIMIGOS.LIMIAR_HP_FUGA_HUMANO
+          ) {
             if (t.emFugaEscada) {
               t.progressoFugaEscadaSeg = arredondar4((t.progressoFugaEscadaSeg ?? 0.0) + dtSeg);
               if (t.progressoFugaEscadaSeg >= tempoEscada) {
                 t.progressoFugaEscadaSeg = 0.0;
                 t.emFugaEscada = false;
+                t.salaId = salaCabine.id;
                 salaCabine.tripulantes.push(t);
                 continue;
               }
@@ -213,6 +314,28 @@ export function avancarTickIaInimiga(estado, dtSeg = 0.25) {
         sala.tripulantes = restantes;
       }
     }
+  }
+
+  if (Array.isArray(alvo.tripulacaoInimiga)) {
+    const posFinalPorId = new Map();
+    for (const sFim of alvo.salasOuOrgaos) {
+      for (const tFim of sFim.tripulantes ?? []) {
+        posFinalPorId.set(tFim.id, { ...tFim, salaId: sFim.id });
+      }
+    }
+    alvo.tripulacaoInimiga = alvo.tripulacaoInimiga.map((h) => {
+      const f = posFinalPorId.get(h.id) ?? estadoTripPorId.get(h.id);
+      if (!f) return h;
+      return {
+        ...h,
+        salaId: f.salaId ?? h.salaId,
+        hpAtual: f.hpAtual,
+        ...(f.atordoadoSeg !== undefined || h.atordoadoSeg !== undefined ? { atordoadoSeg: Number(f.atordoadoSeg ?? 0) } : {}),
+        ...(f.controleNeuralSeg !== undefined || h.controleNeuralSeg !== undefined
+          ? { controleNeuralSeg: Number(f.controleNeuralSeg ?? 0) }
+          : {}),
+      };
+    });
   }
 
   proximo.telemetriaN4.ultimoTickSalasInimigasExaminadas = salasExaminadas;

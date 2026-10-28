@@ -5,6 +5,7 @@
 import { clonarProfundoCongelado } from '../gdd-parser.mjs';
 import { enumerarTrincasBeam } from '../onda2-combate/tick-sistemas-armas.mjs';
 import { CATALOGO_ARMAS_51 } from '../onda5-catalogo-chefe/catalogo-naves-itens.mjs';
+import { resolverArmaCatalogoUnificado } from '../onda7-steam/catalogo-armas-orgaos-ae.mjs';
 import {
   converterCoordenadaTelaParaNativa,
   obterMapaHitboxesNativo,
@@ -21,7 +22,7 @@ const CARCACAS_ATALHO_HANGAR = Object.freeze([
   'COLMEIA_VIVA',
 ]);
 
-export function construirTrincaBeamAssistidaDom(alvoCombate, salaClicadaId, salaAnteriorId = null) {
+export function construirTrincaBeamAssistidaDom(alvoCombate, salaClicadaId, salaAnteriorId = null, tamFeixe = 3) {
   const s1 = Number(salaClicadaId);
   const grafo = resolverGrafoBeamAlvoInterno(alvoCombate);
   const salasIds = new Set(
@@ -30,6 +31,16 @@ export function construirTrincaBeamAssistidaDom(alvoCombate, salaClicadaId, sala
       : Object.keys(grafo).map((k) => Number(k))
   );
   if (!salasIds.has(s1)) return null;
+  const tam = Math.max(1, Math.min(3, Number(tamFeixe) || 3));
+  if (tam === 1) return [s1];
+  if (tam === 2) {
+    const sAnt2 = salaAnteriorId !== null && salaAnteriorId !== undefined ? Number(salaAnteriorId) : null;
+    if (sAnt2 !== null && sAnt2 !== s1 && salasIds.has(sAnt2) && (grafo[sAnt2] ?? []).includes(s1)) {
+      return [sAnt2, s1];
+    }
+    const viz = (grafo[s1] ?? []).find((idV) => salasIds.has(Number(idV)));
+    return viz !== undefined ? [s1, Number(viz)] : [s1];
+  }
   const todas = enumerarTrincasBeam(grafo).filter((t) => t.every((id) => salasIds.has(Number(id))));
   const sAnt = salaAnteriorId !== null && salaAnteriorId !== undefined ? Number(salaAnteriorId) : null;
   if (sAnt !== null && sAnt !== s1 && salasIds.has(sAnt)) {
@@ -67,9 +78,124 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
   const todasAbertas = (estado.naveJogador?.camaras ?? []).every((c) => c.valvulaExternaAberta);
   const faseAtual = estado.meta?.faseJogo ?? viewModel?.faseJogo ?? 'COMBATE';
   const modalAtivo = estado.meta?.modalCampanhaAtivo ?? viewModel?.modalCampanhaAtivo ?? null;
+  const modalSteamAtivo = estado.meta?.modalSteamAtivo ?? viewModel?.modalSteamAtivo ?? null;
+  const edicaoSteam = Boolean(estado.meta?.edicaoComercialSteam || viewModel?.edicaoComercialSteam);
 
   if (tipoEvento === 'KEYDOWN') {
     const code = String(eventoInput.code ?? '');
+    const atalhosSteam = edicaoSteam
+      ? (estado.meta?.configuracoesSteam?.atalhosTeclado ?? viewModel?.configuracoesSteam?.atalhosTeclado ?? null)
+      : null;
+    const aguardandoRebind = estado.meta?.aguardandoRebindAcao ?? viewModel?.aguardandoRebindAcao ?? null;
+    const teclaAbrirOpcoes = atalhosSteam?.ABRIR_OPCOES ?? 'KeyO';
+    const teclaAlternarIdioma = atalhosSteam?.ALTERNAR_IDIOMA ?? 'KeyL';
+    const teclaAbrirConquistas = atalhosSteam?.ABRIR_CONQUISTAS ?? 'KeyJ';
+    const teclaPausar = atalhosSteam?.PAUSAR_TATICO ?? 'Space';
+    const teclaMergulho = atalhosSteam?.MERGULHO_TATICO ?? 'KeyM';
+    const teclaDrenar = atalhosSteam?.DRENAR_VALVULAS ?? 'KeyD';
+    const teclaSalvaManual = atalhosSteam?.SALVA_MANUAL ?? 'KeyX';
+    const teclaSalvarPostos = atalhosSteam?.SALVAR_POSTOS ?? 'KeyZ';
+    const teclaRetornarPostos = atalhosSteam?.RETORNAR_POSTOS ?? 'KeyY';
+    const teclaSondaHack = atalhosSteam?.SONDA_HACK ?? 'KeyH';
+    const teclaParasitaNeural = atalhosSteam?.PARASITA_NEURAL ?? 'KeyN';
+    const teclaAbordagem = atalhosSteam?.ABORDAGEM_ENVIO ?? 'KeyG';
+
+    if (modalSteamAtivo) {
+      if (modalSteamAtivo === 'OPCOES' && aguardandoRebind) {
+        if (code === 'Escape') {
+          return clonarProfundoCongelado({
+            reconhecido: true,
+            acaoLocalUi: 'ACAO_CAMPANHA',
+            acaoCampanhaUi: {
+              tipoAcao: 'EXECUTAR_ACAO_STEAM',
+              payload: { acaoSteam: 'INICIAR_REMAPEAR_TECLA', acaoId: null },
+            },
+            comandoMotor: null,
+            resultadoMotor: null,
+          });
+        }
+        if (code.length > 0 && !['ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(code)) {
+          return clonarProfundoCongelado({
+            reconhecido: true,
+            acaoLocalUi: 'ACAO_CAMPANHA',
+            acaoCampanhaUi: {
+              tipoAcao: 'EXECUTAR_ACAO_STEAM',
+              payload: { acaoSteam: 'REATRIBUIR_TECLA', acaoId: aguardandoRebind, novaTeclaCodigo: code },
+            },
+            comandoMotor: null,
+            resultadoMotor: null,
+          });
+        }
+      }
+      if (
+        code === 'Escape' ||
+        code === teclaAbrirOpcoes ||
+        (modalSteamAtivo === 'CONQUISTAS' && code === teclaAbrirConquistas)
+      ) {
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'ACAO_CAMPANHA',
+          acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'FECHAR_MODAL_STEAM' } },
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
+      if (code === teclaAlternarIdioma) {
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'ACAO_CAMPANHA',
+          acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'ALTERNAR_IDIOMA' } },
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
+      return clonarProfundoCongelado({
+        reconhecido: false,
+        acaoLocalUi: null,
+        comandoMotor: null,
+        resultadoMotor: null,
+      });
+    }
+
+    if (edicaoSteam && code === teclaAbrirOpcoes) {
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: 'ACAO_CAMPANHA',
+        acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'ALTERNAR_MODAL_OPCOES' } },
+        comandoMotor: null,
+        resultadoMotor: null,
+      });
+    }
+
+    if (edicaoSteam && code === teclaAlternarIdioma) {
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: 'ACAO_CAMPANHA',
+        acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'ALTERNAR_IDIOMA' } },
+        comandoMotor: null,
+        resultadoMotor: null,
+      });
+    }
+
+    if ((estado.meta?.tutorialSteam?.ativo || viewModel?.tutorialSteam?.ativo) && code === 'Escape') {
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: 'ACAO_CAMPANHA',
+        acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'TUTORIAL_PULAR' } },
+        comandoMotor: null,
+        resultadoMotor: null,
+      });
+    }
+
+    if (edicaoSteam && code === teclaAbrirConquistas && (teclaAbrirConquistas !== 'KeyK' || eventoInput.shiftKey === true)) {
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: 'ACAO_CAMPANHA',
+        acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'ABRIR_CONQUISTAS' } },
+        comandoMotor: null,
+        resultadoMotor: null,
+      });
+    }
 
     if (code === 'KeyK') {
       return clonarProfundoCongelado({
@@ -191,6 +317,33 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
           resultadoMotor: null,
         });
       }
+      if (edicaoSteam && code === 'KeyB') {
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'ACAO_CAMPANHA',
+          acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'ALTERNAR_VARIANTE_AB' } },
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
+      if (edicaoSteam && (code === 'KeyF' || code === 'KeyD')) {
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'ACAO_CAMPANHA',
+          acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'CICLAR_DIFICULDADE' } },
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
+      if (edicaoSteam && code === 'KeyT') {
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'ACAO_CAMPANHA',
+          acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'INICIAR_TUTORIAL_GUIADO' } },
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
       return clonarProfundoCongelado({
         reconhecido: false,
         acaoLocalUi: null,
@@ -218,7 +371,7 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
       });
     }
 
-    if (code === 'Space') {
+    if (code === teclaPausar) {
       return clonarProfundoCongelado({
         reconhecido: true,
         acaoLocalUi: 'ALTERNAR_PAUSA_TATICA',
@@ -246,6 +399,68 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
       });
     }
 
+    if (faseAtual !== 'EVENTO') {
+      const teclasSlots = [
+        atalhosSteam?.ARMA_SLOT_1 ?? 'Digit1',
+        atalhosSteam?.ARMA_SLOT_2 ?? 'Digit2',
+        atalhosSteam?.ARMA_SLOT_3 ?? 'Digit3',
+        atalhosSteam?.ARMA_SLOT_4 ?? 'Digit4',
+      ];
+      const idxSlotCustom = teclasSlots.indexOf(code);
+      if (idxSlotCustom >= 0) {
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'SELECIONAR_SLOT_ARMA',
+          slotArmaSelecionado: idxSlotCustom,
+          modoOrdemAbordagem: false,
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
+    }
+
+    if (faseAtual === 'COMBATE' && code === teclaSalvaManual) {
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: 'ACAO_CAMPANHA',
+        acaoCampanhaUi: { tipoAcao: 'DISPARAR_SALVA_MANUAL', payload: { slotIndex: 'TODOS' } },
+        comandoMotor: null,
+        resultadoMotor: null,
+      });
+    }
+    if (code === teclaDrenar) {
+      const comandoMotor = { tipo: 'DRENAR_TUDO', payload: { modoSeguro: true } };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+    if (code === teclaMergulho) {
+      const recolher = estado.naveJogador?.estadoFisico === '1_NO_FOIL';
+      const comandoMotor = { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: recolher } };
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: null,
+        comandoMotor,
+        resultadoMotor: despacharComandoUi(estado, comandoMotor),
+      });
+    }
+
+    if (
+      faseAtual === 'COMBATE' &&
+      code === 'KeyR' &&
+      (estado.alvoCombate?.ofertaRendicaoAtiva || viewModel?.painelAlvo?.ofertaRendicaoAtiva)
+    ) {
+      return clonarProfundoCongelado({
+        reconhecido: true,
+        acaoLocalUi: 'ACAO_CAMPANHA',
+        acaoCampanhaUi: { tipoAcao: 'ACEITAR_RENDICAO_INIMIGA', payload: {} },
+        comandoMotor: null,
+        resultadoMotor: null,
+      });
+    }
     if (faseAtual === 'COMBATE' && code === 'KeyA') {
       return clonarProfundoCongelado({
         reconhecido: true,
@@ -255,26 +470,57 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
         resultadoMotor: null,
       });
     }
-    if (faseAtual === 'COMBATE' && code === 'KeyX') {
-      return clonarProfundoCongelado({
-        reconhecido: true,
-        acaoLocalUi: 'ACAO_CAMPANHA',
-        acaoCampanhaUi: { tipoAcao: 'DISPARAR_SALVA_MANUAL', payload: { slotIndex: 'TODOS' } },
-        comandoMotor: null,
-        resultadoMotor: null,
-      });
+    if (edicaoSteam && faseAtual === 'COMBATE' && !modalAtivo) {
+      if (code === teclaSalvarPostos) {
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'ACAO_CAMPANHA',
+          acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'SALVAR_POSTOS_TRIPULACAO' } },
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
+      if (code === teclaRetornarPostos) {
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'ACAO_CAMPANHA',
+          acaoCampanhaUi: { tipoAcao: 'EXECUTAR_ACAO_STEAM', payload: { acaoSteam: 'RETORNAR_POSTOS_TRIPULACAO' } },
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
+      if (code === teclaSondaHack) {
+        const salaHack =
+          Number(contextoUi.salaAlvoAbordagemId ?? 0) ||
+          Number(estado.naveJogador?.armasAtivas?.[Number(contextoUi.slotArmaSelecionado ?? 0)]?.salaAlvoId ?? 0) ||
+          null;
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'ACAO_CAMPANHA',
+          acaoCampanhaUi: {
+            tipoAcao: 'EXECUTAR_ACAO_STEAM',
+            payload: { acaoSteam: 'ACIONAR_SONDA_SABOTAGEM', salaAlvoId: salaHack },
+          },
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
+      if (code === teclaParasitaNeural) {
+        const salaNeuro = Number(contextoUi.salaAlvoAbordagemId ?? 0) || null;
+        return clonarProfundoCongelado({
+          reconhecido: true,
+          acaoLocalUi: 'ACAO_CAMPANHA',
+          acaoCampanhaUi: {
+            tipoAcao: 'EXECUTAR_ACAO_STEAM',
+            payload: { acaoSteam: 'ACIONAR_PARASITA_NEURAL', salaAlvoId: salaNeuro },
+          },
+          comandoMotor: null,
+          resultadoMotor: null,
+        });
+      }
     }
-    if (faseAtual === 'COMBATE' && code === 'KeyG') {
+    if (faseAtual === 'COMBATE' && code === teclaAbordagem) {
       const comandoMotor = montarComandoAtalhoAbordagemDom(estado, contextoUi);
-      return clonarProfundoCongelado({
-        reconhecido: true,
-        acaoLocalUi: null,
-        comandoMotor,
-        resultadoMotor: despacharComandoUi(estado, comandoMotor),
-      });
-    }
-    if (code === 'KeyD') {
-      const comandoMotor = { tipo: 'DRENAR_TUDO', payload: { modoSeguro: true } };
       return clonarProfundoCongelado({
         reconhecido: true,
         acaoLocalUi: null,
@@ -332,16 +578,6 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
         resultadoMotor: despacharComandoUi(estado, comandoMotor),
       });
     }
-    if (code === 'KeyM') {
-      const recolher = estado.naveJogador?.estadoFisico === '1_NO_FOIL';
-      const comandoMotor = { tipo: 'MERGULHO_TATICO', payload: { recolherFoil: recolher } };
-      return clonarProfundoCongelado({
-        reconhecido: true,
-        acaoLocalUi: null,
-        comandoMotor,
-        resultadoMotor: despacharComandoUi(estado, comandoMotor),
-      });
-    }
     if (code === 'KeyF') {
       const comandoMotor = { tipo: 'SALTO_FUGA', payload: {} };
       return clonarProfundoCongelado({
@@ -387,18 +623,6 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
         acaoLocalUi: null,
         comandoMotor,
         resultadoMotor: despacharComandoUi(estado, comandoMotor),
-      });
-    }
-    const mDigito = code.match(/^Digit([1-4])$/);
-    if (mDigito && faseAtual !== 'EVENTO') {
-      const slotIndex = Number(mDigito[1]) - 1;
-      return clonarProfundoCongelado({
-        reconhecido: true,
-        acaoLocalUi: 'SELECIONAR_SLOT_ARMA',
-        slotArmaSelecionado: slotIndex,
-        modoOrdemAbordagem: false,
-        comandoMotor: null,
-        resultadoMotor: null,
       });
     }
     return clonarProfundoCongelado({
@@ -459,6 +683,36 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
 
   const botaoMouse = eventoInput.botaoMouse ?? eventoInput.button ?? 0;
   let comandoMotor = null;
+
+  if (hb.tipo === 'MODAL_STEAM' || hb.tipo === 'CONTROLE_TUTORIAL' || hb.metadados?.acaoSteam) {
+    const payloadSteamClick = { ...hb.metadados };
+    if (payloadSteamClick.acaoSteam === 'DEFINIR_VOLUME_DIRETO') {
+      const bx = Number(payloadSteamClick.barraX ?? hb.x);
+      const bw = Math.max(1, Number(payloadSteamClick.barraLargura ?? hb.largura));
+      const frac = Math.max(0, Math.min(1, (coord.xNativo - bx) / bw));
+      payloadSteamClick.valor = Math.round((frac * 100) / 5) * 5;
+    } else if (
+      payloadSteamClick.acaoSteam === 'ACIONAR_SONDA_SABOTAGEM' ||
+      payloadSteamClick.acaoSteam === 'ACIONAR_PARASITA_NEURAL'
+    ) {
+      payloadSteamClick.salaAlvoId =
+        Number(contextoUi.salaAlvoAbordagemId ?? 0) ||
+        Number(estado.naveJogador?.armasAtivas?.[Number(contextoUi.slotArmaSelecionado ?? 0)]?.salaAlvoId ?? 0) ||
+        null;
+    }
+    return clonarProfundoCongelado({
+      reconhecido: true,
+      hitboxAtingida: hb.idHitbox,
+      acaoLocalUi: 'ACAO_CAMPANHA',
+      acaoCampanhaUi: {
+        tipoAcao: 'EXECUTAR_ACAO_STEAM',
+        payload: payloadSteamClick,
+      },
+      coordenadaNativa: coord,
+      comandoMotor: null,
+      resultadoMotor: null,
+    });
+  }
 
   if (hb.tipo === 'CONTROLE_CAMPANHA') {
     if (hb.metadados?.acaoCampanha === 'ATALHO_ABORDAGEM_UI') {
@@ -597,17 +851,34 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
       payload: { camaraId: hb.metadados.camaraId, deltaBarras },
     };
   } else if (hb.tipo === 'CARD_TRIPULANTE') {
-    if ((botaoMouse === 2 || eventoInput.shiftKey === true) && hb.metadados.especie === 'BAIACU' && hb.metadados.localizacao !== 'BORDO_INIMIGO') {
+    const ehToggleBaiacu =
+      (botaoMouse === 2 || (!edicaoSteam && eventoInput.shiftKey === true)) &&
+      hb.metadados.especie === 'BAIACU' &&
+      hb.metadados.localizacao !== 'BORDO_INIMIGO';
+    if (ehToggleBaiacu) {
       comandoMotor = {
         tipo: 'ATIVAR_BAIACU',
         payload: { tripulanteId: hb.metadados.tripulanteId, inflado: !hb.metadados.inflado },
       };
     } else {
+      const idClicado = hb.metadados.tripulanteId;
+      let listaSel = [idClicado];
+      if (edicaoSteam && eventoInput.shiftKey === true && botaoMouse === 0) {
+        const atuais = Array.isArray(contextoUi.tripulantesSelecionadosIds) && contextoUi.tripulantesSelecionadosIds.length > 0
+          ? [...contextoUi.tripulantesSelecionadosIds]
+          : (contextoUi.tripulanteSelecionadoId ? [contextoUi.tripulanteSelecionadoId] : []);
+        if (atuais.includes(idClicado)) {
+          listaSel = atuais.length > 1 ? atuais.filter((id) => id !== idClicado) : [idClicado];
+        } else {
+          listaSel = [...atuais, idClicado];
+        }
+      }
       return clonarProfundoCongelado({
         reconhecido: true,
         hitboxAtingida: hb.idHitbox,
         acaoLocalUi: 'SELECIONAR_TRIPULANTE',
-        tripulanteSelecionadoId: hb.metadados.tripulanteId,
+        tripulanteSelecionadoId: listaSel[listaSel.length - 1] ?? idClicado,
+        tripulantesSelecionadosIds: listaSel,
         modoOrdemAbordagem: hb.metadados.localizacao === 'BORDO_INIMIGO',
         coordenadaNativa: coord,
         comandoMotor: null,
@@ -617,13 +888,23 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
   } else if (hb.tipo === 'CAMARA_BIONAVE') {
     const tripulanteSelecionadoId =
       contextoUi.tripulanteSelecionadoId ?? estado.naveJogador?.tripulacao?.[0]?.id ?? 'trip-polvo-1';
+    const esquadraoIds = Array.isArray(contextoUi.tripulantesSelecionadosIds)
+      ? contextoUi.tripulantesSelecionadosIds.filter((id) =>
+          (estado.naveJogador?.tripulacao ?? []).some(
+            (t) => t.id === id && t.localizacao === 'NAVE_JOGADOR' && Number(t.hpAtual ?? 0) > 0
+          )
+        )
+      : [];
     const tripObj = (estado.naveJogador?.tripulacao ?? []).find((t) => t.id === tripulanteSelecionadoId);
     comandoMotor = {
       tipo: 'MOVER_TRIPULANTE',
       payload: {
         tripulanteId: tripulanteSelecionadoId,
+        ...(esquadraoIds.length >= 2 ? { tripulanteIds: esquadraoIds } : {}),
         camaraDestinoId: hb.metadados.camaraId,
-        ...(eventoInput.shiftKey === true ? { acopladoBulbo: !(tripObj?.acopladoBulbo) } : {}),
+        ...(eventoInput.shiftKey === true && esquadraoIds.length < 2
+          ? { acopladoBulbo: !(tripObj?.acopladoBulbo) }
+          : {}),
       },
     };
   } else if (hb.tipo === 'SALA_ALVO') {
@@ -665,14 +946,18 @@ export function traduzirInputDomParaComandoUi(eventoInput, estado, viewModel, co
     const slotObj = estado.naveJogador?.armasAtivas?.[slotIndex];
     const armaSel = slotObj?.arma !== undefined ? slotObj.arma : slotObj;
     const chassiSel = armaSel?.chassiId ?? armaSel?.id ?? null;
-    const specSel = CATALOGO_ARMAS_51.find((a) => a.id === chassiSel) ?? null;
+    const specSel = resolverArmaCatalogoUnificado(chassiSel) ?? CATALOGO_ARMAS_51.find((a) => a.id === chassiSel) ?? null;
     let trincaUsada = Array.isArray(contextoUi.trincaSalasBeam) ? contextoUi.trincaSalasBeam : null;
     if (!trincaUsada && (chassiSel === 'CORTADOR_TERMICO_PLASMA' || specSel?.ehFeixe)) {
-      trincaUsada = construirTrincaBeamAssistidaDom(
-        estado.alvoCombate,
-        hb.metadados.salaId,
-        contextoUi.ultimaSalaBeamClicadaId ?? null
-      );
+      const tamFeixeSel = chassiSel === 'CORTADOR_TERMICO_PLASMA' ? 3 : Math.max(1, Math.min(3, Number(specSel?.projeteis ?? 3)));
+      if (tamFeixeSel >= 2) {
+        trincaUsada = construirTrincaBeamAssistidaDom(
+          estado.alvoCombate,
+          hb.metadados.salaId,
+          contextoUi.ultimaSalaBeamClicadaId ?? null,
+          tamFeixeSel
+        );
+      }
     }
     comandoMotor = {
       tipo: 'MIRAR_ARMA',

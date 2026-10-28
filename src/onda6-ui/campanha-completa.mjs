@@ -40,6 +40,7 @@ import {
   MODOS_DISPARO_ARMAS,
   calcularTrincaBeamAutomatica,
   gerarAlvoInimigoEscaladoSetor,
+  equiparArsenalModularInimigoSteam,
   anexarMapaSetorAoEstado,
   resolverEntradaNoMapaCampanha,
   aplicarRegrasSaquePosCombateCampanha,
@@ -69,6 +70,25 @@ import {
   apagarRunSavePermadeathDisco,
   sincronizarTransicaoPersistenciaDisco,
 } from './persistencia-perfil.mjs';
+import {
+  CATALOGO_24_ARMAS_STEAM,
+  CATALOGO_16_ORGAOS_STEAM,
+  resolverArmaCatalogoUnificado,
+  resolverOrgaoCatalogoUnificado,
+  aplicarKitLayoutEDificuldadeSteamNaRun,
+  calcularModificadoresPassivosOrgaosSteam,
+} from '../onda7-steam/catalogo-armas-orgaos-ae.mjs';
+import {
+  criarConfiguracoesSteam,
+  avaliarConquistasSteam,
+  aplicarAcaoMetaSteamNoEstado,
+  escalarInimigoPorDificuldade,
+} from '../onda7-steam/dificuldades-conquistas-opcoes.mjs';
+import {
+  criarEstadoTutorialSteam,
+  registrarAcaoNoTutorialSteam,
+} from '../onda7-steam/tutorial-interativo.mjs';
+import { resolverTemplateEventoUnificado } from '../onda7-steam/eventos-ae-setores-5a8.mjs';
 
 const MAPA_ARVORE_PARA_CAMARA = Object.freeze({
   ARTILHARIA_DORSAL: 1,
@@ -389,6 +409,8 @@ export function aplicarUpgradeNaveCampanha(estado, idArvore, opcoes = {}) {
     ok: true,
     idArvore,
     novoNivel: cotacao.proximoNivel,
+    nivelMaximo: cotacao.nivelMaximo,
+    atingiuNivelMaximo: cotacao.proximoNivel >= cotacao.nivelMaximo,
     custoPago: cotacao.custoProximo,
     moedaUsada: chaveMoeda.toUpperCase(),
     estado: {
@@ -402,7 +424,7 @@ export function aplicarUpgradeNaveCampanha(estado, idArvore, opcoes = {}) {
 
 function instanciarArmaDeCatalogo(idArma) {
   const base = CATALOGO_ARMAS_BASE_PESO[idArma];
-  const spec51 = CATALOGO_ARMAS_51.find((a) => a.id === idArma);
+  const spec51 = CATALOGO_ARMAS_51.find((a) => a.id === idArma) ?? resolverArmaCatalogoUnificado(idArma);
   if (!base && !spec51) return null;
   const chassiId = base?.chassiId ?? spec51.id;
   return {
@@ -417,6 +439,11 @@ function instanciarArmaDeCatalogo(idArma) {
     progressoRecargaSeg: 0.0,
     municaoCusto: Number(base?.municaoCusto ?? spec51.municao ?? 0),
     soquetesMax: Number(base?.soquetesMax ?? spec51.soquetes ?? 1),
+    cargasMaximas: Math.max(1, Number(spec51?.cargasMaximas ?? 1)),
+    cargasEstocadas: 0,
+    ...(spec51?.tipoEspecial ? { tipoEspecial: spec51.tipoEspecial } : {}),
+    ...(spec51?.ehFeixe !== undefined ? { ehFeixe: Boolean(spec51.ehFeixe) } : {}),
+    ...(spec51?.exigeSalaSubmersa !== undefined ? { exigeSalaSubmersa: Boolean(spec51.exigeSalaSubmersa) } : {}),
     orgaosEnxertados: [],
     salaAlvoId: null,
     trincaSalasBeam: null,
@@ -473,10 +500,12 @@ export function gerenciarEquipamentoPoraoEOrgaos(estado, operacao = {}) {
     if (!novaInstancia) {
       return clonarProfundoCongelado({ ok: false, codigoErro: 'ARMA_CATALOGO_DESCONHECIDA', estado });
     }
-    const slotLivreIdx = armasAtuais.findIndex((s) => !(s?.arma ?? s));
-    const idxDestino = Number.isInteger(operacao.slotArmaIndex) && operacao.slotArmaIndex >= 0 && operacao.slotArmaIndex < 4
-      ? operacao.slotArmaIndex
-      : slotLivreIdx;
+    const limiteSlots = Math.max(1, Math.min(4, Number(estado.naveJogador?.slotsArmasMax ?? 4)));
+    const slotLivreIdx = armasAtuais.findIndex((s, idx) => idx < limiteSlots && !(s?.arma ?? s));
+    const idxDestino =
+      Number.isInteger(operacao.slotArmaIndex) && operacao.slotArmaIndex >= 0 && operacao.slotArmaIndex < limiteSlots
+        ? operacao.slotArmaIndex
+        : slotLivreIdx;
     if (idxDestino < 0) {
       return clonarProfundoCongelado({ ok: false, codigoErro: 'SEM_SLOT_ARMA_LIVRE', estado });
     }
@@ -586,10 +615,19 @@ export function gerenciarEquipamentoPoraoEOrgaos(estado, operacao = {}) {
       },
     });
     if (!resEnx.aceito) {
+      const ehEnEnx = estado.meta?.configuracoesSteam?.idioma === 'en-US';
+      const avisoPassivo =
+        resEnx.marcadorRejeicao === 'ORGAO_PASSIVO_EXIGE_PORAO_SIMBIOTICO'
+          ? ehEnEnx
+            ? 'PASSIVE IMPLANT ACTIVE IN HOLD — CANNOT SOCKET INTO WEAPON'
+            : 'IMPLANTE PASSIVO JÁ ATUA NO PORÃO — NÃO USA SOQUETE DE ARMA'
+          : null;
       return clonarProfundoCongelado({
         ok: false,
         codigoErro: resEnx.marcadorRejeicao ?? 'FALHA_ENXERTAR_ORGAO',
-        estado,
+        estado: avisoPassivo
+          ? { ...estado, meta: { ...(estado.meta ?? {}), ultimoAvisoCampanha: avisoPassivo } }
+          : estado,
       });
     }
     const novoPorao = resEnx.estado.naveJogador.poraoCarga.map((s, idx) =>
@@ -642,7 +680,7 @@ export function gerenciarEquipamentoPoraoEOrgaos(estado, operacao = {}) {
         estado,
       });
     }
-    const specOrg = CATALOGO_ORGAOS_52.find((o) => o.id === orgaoId);
+    const specOrg = CATALOGO_ORGAOS_52.find((o) => o.id === orgaoId) ?? resolverOrgaoCatalogoUnificado(orgaoId);
     const novoPorao = resRem.estado.naveJogador.poraoCarga.map((s, idx) =>
       idx === idxLivre
         ? {
@@ -697,6 +735,7 @@ export function criarEstadoCampanhaCompleta(opcoes = {}) {
   const faseInicial = opcoes.faseInicial ?? 'INICIO';
   const setorInicial = Math.max(1, Math.min(8, Math.floor(Number(opcoes.setorNumero ?? 1) || 1)));
 
+  const ehEdicaoSteam = Boolean(opcoes.edicaoComercialSteam);
   let base = criarEstadoInicialPartida({
     idArquitetura,
     seedPartida,
@@ -705,11 +744,39 @@ export function criarEstadoCampanhaCompleta(opcoes = {}) {
     biomaId: (CATALOGO_BIOMAS_53[setorInicial - 1] ?? CATALOGO_BIOMAS_53[0]).id,
   });
 
+  const cfgSteamResolvida = ehEdicaoSteam
+    ? criarConfiguracoesSteam(
+        opcoes.configuracoesSteam ?? perfil.configuracoesSteam ?? { dificuldadePadrao: opcoes.dificuldade ?? 'NORMAL' }
+      )
+    : null;
+  const difSteamResolvida = ehEdicaoSteam
+    ? (opcoes.dificuldade ?? cfgSteamResolvida?.dificuldadePadrao ?? 'NORMAL')
+    : 'NORMAL';
+
+  if (ehEdicaoSteam) {
+    base = aplicarKitLayoutEDificuldadeSteamNaRun(base, {
+      idArquitetura,
+      variante: opcoes.variante ?? 'A',
+      dificuldade: difSteamResolvida,
+      configuracoesSteam: cfgSteamResolvida,
+    });
+    const navSinc = recalcularHidraulicaNaveImutavel(base.naveJogador);
+    base = { ...base, naveJogador: navSinc };
+  }
+
   base = anexarMapaSetorAoEstado(base, seedPartida, setorInicial);
-  const alvoInicial =
+  const alvoInicialBase =
     faseInicial === 'COMBATE'
       ? gerarAlvoInimigoEscaladoSetor(seedPartida, setorInicial, 'NO_INICIAL', opcoes)
       : { ...base.alvoCombate, ativo: false };
+  const alvoInicialEsc =
+    ehEdicaoSteam && faseInicial === 'COMBATE'
+      ? escalarInimigoPorDificuldade(alvoInicialBase, difSteamResolvida, setorInicial)
+      : alvoInicialBase;
+  const alvoInicial =
+    ehEdicaoSteam && faseInicial === 'COMBATE'
+      ? equiparArsenalModularInimigoSteam(alvoInicialEsc, seedPartida, setorInicial, 'NO_INICIAL')
+      : alvoInicialEsc;
 
   return clonarProfundoCongelado({
     ...base,
@@ -717,6 +784,32 @@ export function criarEstadoCampanhaCompleta(opcoes = {}) {
       ...base.meta,
       faseJogo: faseInicial,
       modoCampanhaCompleta: true,
+      edicaoComercialSteam: ehEdicaoSteam,
+      ...(ehEdicaoSteam
+        ? {
+            layoutId: base.naveJogador?.layoutId ?? `${idArquitetura}_${opcoes.variante === 'B' ? 'B' : 'A'}`,
+            varianteHangar: opcoes.variante === 'B' ? 'B' : 'A',
+            dificuldade: difSteamResolvida,
+            configuracoesSteam: cfgSteamResolvida,
+            modalSteamAtivo: opcoes.modalSteamAtivo ?? null,
+            tutorialSteam: opcoes.tutorialSteam ?? criarEstadoTutorialSteam(false),
+            ...(faseInicial === 'COMBATE'
+              ? {
+                  hpCascoJogadorInicioLuta: Number(base.naveJogador?.hpCascoAtual ?? 0),
+                  tripulacaoVivosInicioLutaCount: (base.naveJogador?.tripulacao ?? []).filter(
+                    (t) => Number(t.hpAtual ?? 0) > 0
+                  ).length,
+                  telemetriaCombateSteam: {},
+                }
+              : {}),
+            conquistasDesbloqueadas: Array.isArray(opcoes.conquistasDesbloqueadas)
+              ? [...opcoes.conquistasDesbloqueadas]
+              : (perfil.conquistasSteamDesbloqueadas ?? []),
+            layoutsTipoBDesbloqueados: Array.isArray(opcoes.layoutsTipoBDesbloqueados)
+              ? [...opcoes.layoutsTipoBDesbloqueados]
+              : (perfil.layoutsTipoBDesbloqueados ?? []),
+          }
+        : {}),
       modalCampanhaAtivo: null,
       moedaPreferencialReator: 'SUCATA',
       audioMutado: false,
@@ -724,6 +817,7 @@ export function criarEstadoCampanhaCompleta(opcoes = {}) {
       temRunSalvaDisponivel: Boolean((runSalvaInfo.status === 'ENCONTRADO' || runSalvaInfo.existeRunSalva) && runSalvaInfo.estadoRun),
       desfechoRun: null,
       carcacasDesbloqueadasAntesDaRun: { ...(perfil.carcacasDesbloqueadas ?? { CARCACA_ALFA: true }) },
+      layoutsTipoBAntesDaRun: [...(perfil.layoutsTipoBDesbloqueados ?? [])],
       metricasRun: {
         setorMaximoAlcancado: setorInicial,
         combatesVencidos: 0,
@@ -736,7 +830,26 @@ export function criarEstadoCampanhaCompleta(opcoes = {}) {
         novosDesbloqueiosNestaRun: [],
       },
       saquePendente: null,
-      ultimoAvisoCampanha: null,
+      ultimoAvisoCampanha:
+        ehEdicaoSteam && faseInicial === 'COMBATE'
+          ? cfgSteamResolvida?.idioma === 'en-US'
+            ? `HOSTILE CONTACT: ${
+                ({
+                  BARCO_1_LANCHA: 'PATROL CUTTER',
+                  BARCO_2_CORVETA: 'SONAR CORVETTE',
+                  BARCO_3_ARRASTAO: 'SHIELD TRAWLER',
+                  BARCO_4_SUBMARINO: 'ASSAULT SUBMARINE',
+                  MONSTRO_1_TEUTHIS: 'ARMORED TEUTHIS',
+                  MONSTRO_2_ENGUIA: 'BIO-ELECTRIC EEL',
+                  MONSTRO_3_CARANGUEJO: 'BASALT ROCK-CRAB',
+                  MONSTRO_4_HIDRA: 'CRATER THERMO-HYDRA',
+                  CHEFE_DRAGA_FASE_1: 'CONTINENTAL DREDGE F1',
+                  CHEFE_DRAGA_FASE_2: 'CONTINENTAL DREDGE F2',
+                  CHEFE_DRAGA_FASE_3: 'CONTINENTAL DREDGE F3',
+                })[alvoInicial?.arquetipoId] ?? 'HOSTILE TARGET'
+              }`
+            : `CONTATO HOSTIL: ${alvoInicial?.nome ?? 'ALVO HOSTIL'}`
+          : null,
     },
     perfilJogador: perfil,
     catalogoHangarNaves: CATALOGO_NAVES_54.map((n) => ({
@@ -768,23 +881,42 @@ function iniciarNovaRunDoHangar(estadoAtual, idArquiteturaEscolhida, seedNova, o
 
   const perfilIncrementado = atualizarPerfilComMetricasRun(perfil, { incrementarRunsIniciadas: 1 });
   const seed = String(seedNova ?? `biofoil-run-${Number(perfilIncrementado.estatisticasGlobais?.runsIniciadas ?? 1)}`);
+  const ehSteamRun = Boolean(estadoAtual.meta?.edicaoComercialSteam || opcoesPersistencia.iniciarTutorialCombate);
+  const iniciarEmCombateTutorial = Boolean(opcoesPersistencia.iniciarTutorialCombate);
 
   let novoEstado = criarEstadoCampanhaCompleta({
     ...opcoesPersistencia,
     perfilInicial: perfilIncrementado,
     idArquitetura: idArq,
     seedPartida: seed,
-    faseInicial: 'MAPA',
+    faseInicial: iniciarEmCombateTutorial ? 'COMBATE' : 'MAPA',
     setorNumero: 1,
     persistirEmDisco: false,
+    ...(ehSteamRun
+      ? {
+          edicaoComercialSteam: true,
+          variante: iniciarEmCombateTutorial ? 'A' : (estadoAtual.meta?.varianteHangar ?? 'A'),
+          dificuldade: estadoAtual.meta?.dificuldade ?? 'NORMAL',
+          configuracoesSteam: estadoAtual.meta?.configuracoesSteam,
+          conquistasDesbloqueadas: estadoAtual.meta?.conquistasDesbloqueadas ?? [],
+          tutorialSteam: iniciarEmCombateTutorial
+            ? criarEstadoTutorialSteam(true)
+            : (estadoAtual.meta?.tutorialSteam ?? criarEstadoTutorialSteam(false)),
+        }
+      : {}),
   });
 
+  const ehEnNovaRun = ehSteamRun && novoEstado.meta?.configuracoesSteam?.idioma === 'en-US';
   novoEstado = {
     ...novoEstado,
     meta: {
       ...novoEstado.meta,
       temRunSalvaDisponivel: true,
-      ultimoAvisoCampanha: `SETOR 1: ${novoEstado.meta.nomeBioma}`,
+      ultimoAvisoCampanha: iniciarEmCombateTutorial
+        ? novoEstado.meta?.ultimoAvisoCampanha ?? (ehEnNovaRun ? 'TACTICAL TRAINING ENGAGED' : 'TREINAMENTO TÁTICO ATIVO')
+        : ehEnNovaRun
+          ? 'SECTOR 1: Shallow Scrap Atolls'
+          : `SETOR 1: ${novoEstado.meta.nomeBioma}`,
     },
   };
 
@@ -798,6 +930,138 @@ function iniciarNovaRunDoHangar(estadoAtual, idArquiteturaEscolhida, seedNova, o
     acaoExecutada: 'INICIAR_NOVA_RUN',
     estado: novoEstado,
   });
+}
+
+function contarArsenalEOrgaosNaveSteam(nave) {
+  const armasAtivasSimultaneas = (nave?.armasAtivas ?? []).filter((s) => Boolean(s?.arma ?? s)).length;
+  const orgaosEmArmas = (nave?.armasAtivas ?? []).reduce((acc, s) => {
+    const arma = s?.arma ?? s;
+    return acc + (Array.isArray(arma?.orgaosEnxertados) ? arma.orgaosEnxertados.length : 0);
+  }, 0);
+  const orgaosNoPorao = (nave?.poraoCarga ?? []).filter(
+    (s) =>
+      s?.item?.tipo === 'ORGAO' ||
+      s?.tipo === 'ORGAO' ||
+      s?.categoria === 'ORGAO' ||
+      Boolean(resolverOrgaoCatalogoUnificado(s?.item?.id ?? s?.id))
+  ).length;
+  const tripulacaoViva = (nave?.tripulacao ?? []).filter((t) => Number(t.hpAtual ?? 0) > 0);
+  const especiesDistintasVivasABordo = new Set(tripulacaoViva.map((t) => t.especie)).size;
+  const pctCascoAtual = Math.round(
+    (Number(nave?.hpCascoAtual ?? 0) / Math.max(1, Number(nave?.hpCascoMax ?? 30))) * 100
+  );
+  return {
+    armasAtivasSimultaneas,
+    orgaosAtivosSimultaneos: orgaosEmArmas + orgaosNoPorao,
+    especiesDistintasVivasABordo,
+    pctCascoAtual,
+  };
+}
+
+function sincronizarEstadoEConquistasSteam(estadoBruto, telemetriaExtra = {}, opcoesPersistencia = {}) {
+  if (!estadoBruto?.meta?.edicaoComercialSteam) return estadoBruto;
+  let est = estadoBruto;
+  if (
+    est.mapaSetorial &&
+    est.mapaSetorial.cartaRevelada !== true &&
+    calcularModificadoresPassivosOrgaosSteam(est.naveJogador).revelaNosAdjacentesMapa === true
+  ) {
+    est = {
+      ...est,
+      mapaSetorial: {
+        ...est.mapaSetorial,
+        cartaRevelada: true,
+      },
+    };
+  }
+  const mr = est.meta?.metricasRun ?? {};
+  const telComb = est.meta?.telemetriaCombateSteam ?? {};
+  const perfilBase = est.perfilJogador ?? criarPerfilInicial();
+  const jaDesbloqueadas = [
+    ...(perfilBase.conquistasSteamDesbloqueadas ?? []),
+    ...(est.meta?.conquistasDesbloqueadas ?? []),
+  ];
+  const aval = avaliarConquistasSteam(
+    {
+      especieNave: est.naveJogador?.idArquitetura,
+      setorAtual: Number(est.mapaSetorial?.setorNumero ?? est.meta?.setorAtual ?? 1),
+      dificuldade: est.meta?.dificuldade ?? 'NORMAL',
+      saltosRealizados: Number(mr.saltosRealizadosNaRun ?? 0),
+      blueOptionsResolvidasNaRun: Number(mr.blueOptionsResolvidasNaRun ?? 0),
+      questsConcluidasNaRun: Number(mr.questsConcluidasNaRun ?? 0),
+      sistemaNoNivelMaximo: Boolean(mr.evoluiuSistemaNivelMaximoNaRun),
+      tutorialConcluido: Boolean(est.meta?.tutorialSteam?.concluido),
+      aguaDrenadaNaLutaKg: Number(telComb.aguaDrenadaNaLutaKg ?? 0),
+      sistemasInimigosIonizadosSimultaneos: Number(telComb.sistemasInimigosIonizadosSimultaneos ?? 0),
+      impactosAbsorvidosOuDefletidosNaLuta: Number(telComb.impactosAbsorvidosOuDefletidosNaLuta ?? 0),
+      feixeDisparadoSobTintaFurtiva: Boolean(telComb.feixeDisparadoSobTintaFurtiva),
+      esquivouEmMergulhoTatico: Boolean(telComb.esquivouEmMergulhoTatico),
+      ...contarArsenalEOrgaosNaveSteam(est.naveJogador),
+      layoutsTipoBDesbloqueados: [
+        ...(perfilBase.layoutsTipoBDesbloqueados ?? []),
+        ...(est.meta?.layoutsTipoBDesbloqueados ?? []),
+      ],
+      ...telemetriaExtra,
+    },
+    jaDesbloqueadas
+  );
+  if (aval.novosDesbloqueados.length === 0 && est === estadoBruto) {
+    return estadoBruto;
+  }
+  const perfilPos = atualizarPerfilComMetricasRun(perfilBase, {
+    conquistasSteamDesbloqueadas: aval.todosDesbloqueados,
+    layoutsTipoBDesbloqueados: aval.layoutsTipoBDesbloqueados,
+    configuracoesSteam: est.meta?.configuracoesSteam,
+  });
+  if (opcoesPersistencia.persistirEmDisco === true && aval.novosDesbloqueados.length > 0) {
+    salvarPerfilDisco(perfilPos, opcoesPersistencia);
+  }
+  return congelarProfundo({
+    ...est,
+    perfilJogador: perfilPos,
+    meta: {
+      ...est.meta,
+      conquistasDesbloqueadas: [...aval.todosDesbloqueados],
+      layoutsTipoBDesbloqueados: [...aval.layoutsTipoBDesbloqueados],
+      ...(aval.novosDesbloqueados.length > 0
+        ? {
+            popupConquistaRecente: {
+              idConquista: aval.novosDesbloqueados[0],
+              idsNovas: [...aval.novosDesbloqueados],
+              restanteSeg: 4.5,
+            },
+          }
+        : {}),
+    },
+  });
+}
+
+export function sincronizarProgressoTutorialSteamNoEstado(estadoBruto, chaveAcao, opcoesPersistencia = {}) {
+  if (!estadoBruto?.meta?.edicaoComercialSteam || !estadoBruto?.meta?.tutorialSteam?.ativo) {
+    return estadoBruto;
+  }
+  const cmdLimpo = String(chaveAcao ?? '').trim().toUpperCase();
+  if (!cmdLimpo) return estadoBruto;
+  const tutAnt = estadoBruto.meta.tutorialSteam;
+  const tutProx = registrarAcaoNoTutorialSteam(tutAnt, cmdLimpo);
+  if (tutProx === tutAnt) return estadoBruto;
+  let estAtu = congelarProfundo({
+    ...estadoBruto,
+    meta: {
+      ...estadoBruto.meta,
+      tutorialSteam: tutProx,
+    },
+  });
+  if (tutProx.concluido) {
+    estAtu = sincronizarEstadoEConquistasSteam(estAtu, { tutorialConcluido: true }, opcoesPersistencia);
+  }
+  if (opcoesPersistencia.persistirEmDisco === true) {
+    const faseT = estAtu.meta?.faseJogo;
+    if (faseT && faseT !== 'INICIO' && faseT !== 'FIM_DE_RUN') {
+      salvarRunSaveDisco(estAtu, opcoesPersistencia);
+    }
+  }
+  return estAtu;
 }
 
 function finalizarRunComPersistencia(estado, desfechoRun, opcoesPersistencia = {}) {
@@ -816,6 +1080,56 @@ function finalizarRunComPersistencia(estado, desfechoRun, opcoesPersistencia = {
         ? 'TR_7C_DERROTA_EM_EVENTO'
         : 'TR_7A_DERROTA_EM_COMBATE';
   const perfilBase = estado.perfilJogador ?? criarPerfilInicial();
+  const ehSteamFim = Boolean(estado.meta?.edicaoComercialSteam);
+  const contNaveFim = ehSteamFim ? contarArsenalEOrgaosNaveSteam(estado.naveJogador) : null;
+  const telFim = estado.meta?.telemetriaCombateSteam ?? {};
+  const avalConqFim = ehSteamFim
+    ? avaliarConquistasSteam(
+        {
+          especieNave: estado.naveJogador?.idArquitetura,
+          setorAtual: metricasRun.setorMaximoAlcancado,
+          dificuldade: estado.meta?.dificuldade ?? 'NORMAL',
+          vitoriaCampanhaDraga: desfechoRun === 'VITORIA_CAMPANHA',
+          saltosRealizados: Number(metricasRun.saltosRealizadosNaRun ?? metricasRun.combatesVencidos ?? 0),
+          capturaIntactaRealizada:
+            Number(metricasRun.barcosCapturadosIntactosNaRun ?? 0) > 0 ||
+            Number(metricasRun.orgaosIntactosExtraidosNaRun ?? 0) > 0,
+          blueOptionsResolvidasNaRun: Number(metricasRun.blueOptionsResolvidasNaRun ?? 0),
+          questsConcluidasNaRun: Number(metricasRun.questsConcluidasNaRun ?? 0),
+          sistemaNoNivelMaximo: Boolean(metricasRun.evoluiuSistemaNivelMaximoNaRun),
+          tutorialConcluido: Boolean(estado.meta?.tutorialSteam?.concluido),
+          aguaDrenadaNaLutaKg: Number(telFim.aguaDrenadaNaLutaKg ?? 0),
+          sistemasInimigosIonizadosSimultaneos: Number(telFim.sistemasInimigosIonizadosSimultaneos ?? 0),
+          impactosAbsorvidosOuDefletidosNaLuta: Number(telFim.impactosAbsorvidosOuDefletidosNaLuta ?? 0),
+          feixeDisparadoSobTintaFurtiva: Boolean(telFim.feixeDisparadoSobTintaFurtiva),
+          esquivouEmMergulhoTatico: Boolean(telFim.esquivouEmMergulhoTatico),
+          ...(desfechoRun === 'VITORIA_CAMPANHA'
+            ? {
+                vitoriaCombateSemTouchdown:
+                  !Boolean(telFim.caiuEmTouchdownNaLuta) && estado.naveJogador?.estadoFisico === '1_NO_FOIL',
+                vitoriaEmTouchdownSemMortes:
+                  estado.naveJogador?.estadoFisico !== '1_NO_FOIL' &&
+                  !Boolean(telFim.sofreuMorteTripulanteNaLuta) &&
+                  (estado.naveJogador?.tripulacao ?? []).filter((t) => Number(t.hpAtual ?? 0) > 0).length >=
+                    Number(
+                      estado.meta?.tripulacaoVivosInicioLutaCount ??
+                        (estado.naveJogador?.tripulacao ?? []).filter((t) => Number(t.hpAtual ?? 0) > 0).length
+                    ),
+                vitoriaCombateZeroDanoCasco: !Boolean(telFim.sofreuDanoCascoNaLuta),
+              }
+            : {}),
+          ...contNaveFim,
+          layoutsTipoBDesbloqueados: [
+            ...(perfilBase.layoutsTipoBDesbloqueados ?? []),
+            ...(estado.meta?.layoutsTipoBDesbloqueados ?? []),
+          ],
+        },
+        [
+          ...(perfilBase.conquistasSteamDesbloqueadas ?? []),
+          ...(estado.meta?.conquistasDesbloqueadas ?? []),
+        ]
+      )
+    : null;
   const contextoMetricasPerfil = {
     setorNumero: metricasRun.setorMaximoAlcancado,
     setorNumeroAlcanceMaxNestaRun: metricasRun.setorMaximoAlcancado,
@@ -824,13 +1138,26 @@ function finalizarRunComPersistencia(estado, desfechoRun, opcoesPersistencia = {
     vitoriaCombate: Boolean(metricasRun.venceuCombateSetor4SemDanoCascoInimigo || desfechoRun === 'VITORIA_CAMPANHA'),
     danoCascoCausadoAoInimigoNestaLuta: metricasRun.venceuCombateSetor4SemDanoCascoInimigo ? 0 : 99,
     incrementarVitoriasFinais: desfechoRun === 'VITORIA_CAMPANHA' ? 1 : 0,
+    ...(avalConqFim
+      ? {
+          conquistasSteamDesbloqueadas: avalConqFim.todosDesbloqueados,
+          layoutsTipoBDesbloqueados: avalConqFim.layoutsTipoBDesbloqueados,
+          configuracoesSteam: estado.meta?.configuracoesSteam,
+        }
+      : {}),
   };
   const perfilPos = atualizarPerfilComMetricasRun(perfilBase, contextoMetricasPerfil);
   const desbloqueiosAntes = estado.meta?.carcacasDesbloqueadasAntesDaRun ?? perfilBase.carcacasDesbloqueadas ?? { CARCACA_ALFA: true };
-  const novosDesbloqueiosNestaRun = Object.entries(perfilPos.carcacasDesbloqueadas ?? {})
+  const layoutsBAntes = new Set(estado.meta?.layoutsTipoBAntesDaRun ?? perfilBase.layoutsTipoBDesbloqueados ?? []);
+  const novasCarcacas = Object.entries(perfilPos.carcacasDesbloqueadas ?? {})
     .filter(([idC, ok]) => ok && idC !== 'CARCACA_ALFA' && !desbloqueiosAntes[idC])
     .map(([idC]) => idC);
+  const novosLayoutsB = (perfilPos.layoutsTipoBDesbloqueados ?? []).filter((idL) => !layoutsBAntes.has(idL));
+  const novosDesbloqueiosNestaRun = [...new Set([...novasCarcacas, ...novosLayoutsB])];
   metricasRun.novosDesbloqueiosNestaRun = novosDesbloqueiosNestaRun;
+  if (avalConqFim && avalConqFim.novosDesbloqueados.length > 0) {
+    metricasRun.novasConquistasSteamNestaRun = [...avalConqFim.novosDesbloqueados];
+  }
 
   if (opcoesPersistencia.persistirEmDisco === true) {
     const faseEsperadaTr = transicao === 'TR_7C_DERROTA_EM_EVENTO' ? 'EVENTO' : 'COMBATE';
@@ -866,6 +1193,21 @@ function finalizarRunComPersistencia(estado, desfechoRun, opcoesPersistencia = {
       modalCampanhaAtivo: null,
       desfechoRun,
       temRunSalvaDisponivel: false,
+      ...(avalConqFim
+        ? {
+            conquistasDesbloqueadas: [...avalConqFim.todosDesbloqueados],
+            layoutsTipoBDesbloqueados: [...avalConqFim.layoutsTipoBDesbloqueados],
+            ...(avalConqFim.novosDesbloqueados.length > 0
+              ? {
+                  popupConquistaRecente: {
+                    idConquista: avalConqFim.novosDesbloqueados[0],
+                    idsNovas: [...avalConqFim.novosDesbloqueados],
+                    restanteSeg: 4.5,
+                  },
+                }
+              : {}),
+          }
+        : {}),
       metricasRun,
     },
   });
@@ -882,6 +1224,41 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
 
   const tipoAcao = String(acao.tipoAcao ?? acao.tipo ?? '').toUpperCase();
   const payload = acao.payload ?? acao;
+
+  if (tipoAcao === 'EXECUTAR_ACAO_STEAM') {
+    const resSteam = aplicarAcaoMetaSteamNoEstado(estadoCampanha, payload.acaoSteam, payload);
+    if (!resSteam.ok) {
+      return clonarProfundoCongelado({ ok: false, codigoErro: resSteam.codigoErro, estado: resSteam.estado });
+    }
+    const perfilAtuSteam = atualizarPerfilComMetricasRun(resSteam.estado.perfilJogador ?? criarPerfilInicial(), {
+      conquistasSteamDesbloqueadas: resSteam.estado.meta?.conquistasDesbloqueadas ?? [],
+      configuracoesSteam: resSteam.estado.meta?.configuracoesSteam,
+    });
+    const estadoComPerfilSteam = {
+      ...resSteam.estado,
+      perfilJogador: perfilAtuSteam,
+    };
+    if (opcoesPersistencia.persistirEmDisco === true) {
+      salvarPerfilDisco(perfilAtuSteam, opcoesPersistencia);
+      const faseS = estadoComPerfilSteam.meta?.faseJogo;
+      if (faseS && faseS !== 'INICIO' && faseS !== 'FIM_DE_RUN') {
+        salvarRunSaveDisco(estadoComPerfilSteam, opcoesPersistencia);
+      }
+    }
+    if (resSteam.iniciarRunTutorialCombate) {
+      return iniciarNovaRunDoHangar(
+        estadoComPerfilSteam,
+        'CARCACA_ALFA',
+        payload.seedPartida ?? 'biofoil-tutorial-steam',
+        { ...opcoesPersistencia, ignorarBloqueioCarcaca: true, iniciarTutorialCombate: true }
+      );
+    }
+    return clonarProfundoCongelado({
+      ok: true,
+      acaoExecutada: resSteam.acaoSteamExecutada,
+      estado: estadoComPerfilSteam,
+    });
+  }
 
   if (tipoAcao === 'ALTERNAR_AUDIO_MUDO') {
     const novoMudo = payload.mutado !== undefined ? Boolean(payload.mutado) : !Boolean(estadoCampanha.meta?.audioMutado);
@@ -926,6 +1303,9 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
         meta: {
           ...estadoCampanha.meta,
           carcacaSelecionadaHangar: idArq,
+          ...(estadoCampanha.meta?.edicaoComercialSteam
+            ? { layoutId: `${idArq}_${estadoCampanha.meta?.varianteHangar === 'B' ? 'B' : 'A'}` }
+            : {}),
           ultimoAvisoCampanha: null,
         },
       },
@@ -933,6 +1313,8 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
   }
 
   if (tipoAcao === 'ABANDONAR_EXPEDICAO') {
+    const ehSteamAband = Boolean(opcoesPersistencia.edicaoComercialSteam ?? estadoCampanha.meta?.edicaoComercialSteam);
+    const ehEnAband = ehSteamAband && estadoCampanha.meta?.configuracoesSteam?.idioma === 'en-US';
     const jaConfirmou = payload.confirmado === true || Boolean(estadoCampanha.meta?.confirmarAbandonoPendente);
     if (!jaConfirmou) {
       return clonarProfundoCongelado({
@@ -944,7 +1326,9 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
           meta: {
             ...estadoCampanha.meta,
             confirmarAbandonoPendente: true,
-            ultimoAvisoCampanha: 'CLIQUE NOVAMENTE EM ABANDONAR PARA ENCERRAR A RUN',
+            ultimoAvisoCampanha: ehEnAband
+              ? 'CLICK ABANDON AGAIN TO END CURRENT RUN'
+              : 'CLIQUE NOVAMENTE EM ABANDONAR PARA ENCERRAR A RUN',
           },
         },
       });
@@ -961,6 +1345,19 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
         'CARCACA_ALFA',
       faseInicial: 'INICIO',
       persistirEmDisco: false,
+      ...(ehSteamAband
+        ? {
+            edicaoComercialSteam: true,
+            variante: estadoCampanha.meta?.varianteHangar ?? 'A',
+            dificuldade: estadoCampanha.meta?.dificuldade ?? 'NORMAL',
+            configuracoesSteam: estadoCampanha.meta?.configuracoesSteam,
+            conquistasDesbloqueadas: estadoCampanha.meta?.conquistasDesbloqueadas,
+            layoutsTipoBDesbloqueados: estadoCampanha.meta?.layoutsTipoBDesbloqueados,
+            tutorialSteam: estadoCampanha.meta?.tutorialSteam?.concluido
+              ? estadoCampanha.meta.tutorialSteam
+              : criarEstadoTutorialSteam(false),
+          }
+        : {}),
     });
     const hangarPosAbandono = {
       ...baseHangar,
@@ -969,7 +1366,9 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
         temRunSalvaDisponivel: false,
         modalCampanhaAtivo: null,
         confirmarAbandonoPendente: false,
-        ultimoAvisoCampanha: 'EXPEDIÇÃO ABANDONADA — SELECIONE UMA NOVA CARCAÇA',
+        ultimoAvisoCampanha: ehEnAband
+          ? 'EXPEDITION ABANDONED — SELECT A NEW HULL'
+          : 'EXPEDIÇÃO ABANDONADA — SELECIONE UMA NOVA CARCAÇA',
       },
     };
     return clonarProfundoCongelado({
@@ -1029,11 +1428,25 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
   }
 
   if (tipoAcao === 'VOLTAR_AO_HANGAR') {
+    const ehSteamVoltar = Boolean(opcoesPersistencia.edicaoComercialSteam ?? estadoCampanha.meta?.edicaoComercialSteam);
     const novoHangar = criarEstadoCampanhaCompleta({
       ...opcoesPersistencia,
       perfilInicial: estadoCampanha.perfilJogador,
       idArquitetura: estadoCampanha.meta?.carcacaSelecionadaHangar ?? estadoCampanha.naveJogador?.idArquitetura ?? 'CARCACA_ALFA',
       faseInicial: 'INICIO',
+      ...(ehSteamVoltar
+        ? {
+            edicaoComercialSteam: true,
+            variante: estadoCampanha.meta?.varianteHangar ?? 'A',
+            dificuldade: estadoCampanha.meta?.dificuldade ?? 'NORMAL',
+            configuracoesSteam: estadoCampanha.meta?.configuracoesSteam,
+            conquistasDesbloqueadas: estadoCampanha.meta?.conquistasDesbloqueadas,
+            layoutsTipoBDesbloqueados: estadoCampanha.meta?.layoutsTipoBDesbloqueados,
+            tutorialSteam: estadoCampanha.meta?.tutorialSteam?.concluido
+              ? estadoCampanha.meta.tutorialSteam
+              : criarEstadoTutorialSteam(false),
+          }
+        : {}),
     });
     return clonarProfundoCongelado({
       ok: true,
@@ -1095,10 +1508,29 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
       moedaPreferencial: payload.moedaPreferencial ?? estadoCampanha.meta?.moedaPreferencialReator ?? 'SUCATA',
       permitirForaDeLoja: Boolean(payload.permitirForaDeLoja),
     });
-    if (resUp.ok && opcoesPersistencia.persistirEmDisco === true) {
-      salvarRunSaveDisco(resUp.estado, opcoesPersistencia);
+    if (!resUp.ok) return resUp;
+    let estPosUp = resUp.estado;
+    if (resUp.atingiuNivelMaximo && estPosUp.meta?.edicaoComercialSteam) {
+      estPosUp = {
+        ...estPosUp,
+        meta: {
+          ...estPosUp.meta,
+          metricasRun: {
+            ...(estPosUp.meta?.metricasRun ?? {}),
+            evoluiuSistemaNivelMaximoNaRun: true,
+          },
+        },
+      };
     }
-    return resUp;
+    estPosUp = sincronizarEstadoEConquistasSteam(
+      estPosUp,
+      resUp.atingiuNivelMaximo ? { sistemaNoNivelMaximo: true } : {},
+      opcoesPersistencia
+    );
+    if (opcoesPersistencia.persistirEmDisco === true) {
+      salvarRunSaveDisco(estPosUp, opcoesPersistencia);
+    }
+    return clonarProfundoCongelado({ ...resUp, estado: estPosUp });
   }
 
   if (
@@ -1109,29 +1541,140 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
     tipoAcao === 'DESCARTAR_ITEM_PORAO'
   ) {
     const resEq = gerenciarEquipamentoPoraoEOrgaos(estadoCampanha, { ...payload, tipo: tipoAcao });
-    if (resEq.ok && opcoesPersistencia.persistirEmDisco === true) {
-      salvarRunSaveDisco(resEq.estado, opcoesPersistencia);
+    if (!resEq.ok) return resEq;
+    const estPosEq = sincronizarEstadoEConquistasSteam(resEq.estado, {}, opcoesPersistencia);
+    if (opcoesPersistencia.persistirEmDisco === true) {
+      salvarRunSaveDisco(estPosEq, opcoesPersistencia);
     }
-    return resEq;
+    return clonarProfundoCongelado({ ...resEq, estado: estPosEq });
   }
 
   if (tipoAcao === 'ALTERNAR_MODO_DISPARO_ARMA') {
-    return alternarModoDisparoArma(estadoCampanha, payload.slotIndex ?? 'TODOS', payload.forcarManual ?? null);
+    const resAltModo = alternarModoDisparoArma(estadoCampanha, payload.slotIndex ?? 'TODOS', payload.forcarManual ?? null);
+    if (!resAltModo.ok) return resAltModo;
+    return clonarProfundoCongelado({
+      ...resAltModo,
+      estado: sincronizarProgressoTutorialSteamNoEstado(resAltModo.estado, tipoAcao, opcoesPersistencia),
+    });
   }
 
   if (tipoAcao === 'DISPARAR_SALVA_MANUAL') {
-    return dispararSalvaManualPronta(estadoCampanha, payload.slotIndex ?? 'TODOS');
+    const resSalva = dispararSalvaManualPronta(estadoCampanha, payload.slotIndex ?? 'TODOS');
+    if (!resSalva.ok) return resSalva;
+    return clonarProfundoCongelado({
+      ...resSalva,
+      estado: sincronizarProgressoTutorialSteamNoEstado(resSalva.estado, tipoAcao, opcoesPersistencia),
+    });
   }
 
   if (tipoAcao === 'MOVER_ABORDO_INIMIGO') {
-    return ordenarMovimentoAbordagemInimiga(estadoCampanha, payload.tripulanteId, payload.salaInimigaDestinoId);
+    const resAb = ordenarMovimentoAbordagemInimiga(estadoCampanha, payload.tripulanteId, payload.salaInimigaDestinoId);
+    if (!resAb.ok) return resAb;
+    return clonarProfundoCongelado({
+      ...resAb,
+      estado: sincronizarProgressoTutorialSteamNoEstado(resAb.estado, tipoAcao, opcoesPersistencia),
+    });
+  }
+
+  if (tipoAcao === 'ACEITAR_RENDICAO_INIMIGA') {
+    const oferta = estadoCampanha.alvoCombate?.ofertaRendicaoAtiva;
+    if (estadoCampanha.meta?.faseJogo !== 'COMBATE' || !oferta) {
+      return clonarProfundoCongelado({ ok: false, codigoErro: 'SEM_OFERTA_RENDICAO', estado: estadoCampanha });
+    }
+    const vivosPreRend = (estadoCampanha.naveJogador?.tripulacao ?? []).filter((t) => Number(t.hpAtual ?? 0) > 0);
+    const ocupacaoRend = {};
+    for (const t of vivosPreRend) {
+      if (t.localizacao !== 'BORDO_INIMIGO') {
+        ocupacaoRend[t.camaraAtualId] = (ocupacaoRend[t.camaraAtualId] ?? 0) + 1;
+      }
+    }
+    const tripResgatadaRend = vivosPreRend.map((t) => {
+      if (t.localizacao !== 'BORDO_INIMIGO') return t;
+      const camDestRend =
+        [7, 3, 5, 2, 4, 1, 6, 8].find(
+          (idC) =>
+            (ocupacaoRend[idC] ?? 0) < Math.max(1, Number(estadoCampanha.naveJogador?.limitesPorSala?.[idC] ?? 2))
+        ) ?? 7;
+      ocupacaoRend[camDestRend] = (ocupacaoRend[camDestRend] ?? 0) + 1;
+      return {
+        ...t,
+        localizacao: 'NAVE_JOGADOR',
+        camaraAtualId: camDestRend,
+        camaraDestinoId: null,
+        salaInimigaId: null,
+        salaInimigaDestinoId: null,
+        proximaSalaInimigaId: null,
+        rotaInimigaAtiva: [],
+        progressoTravessiaInimigaSeg: 0.0,
+        modoParasita: false,
+        progressoSabotagemInternaSeg: 0.0,
+      };
+    });
+    const navePosRend = recalcularHidraulicaNaveImutavel({
+      ...estadoCampanha.naveJogador,
+      pesoVirtualArrastoKg: 0.0,
+      penalidadeSustentacaoKg: 0.0,
+      neutralizaChuvaAcidaRestanteSeg: 0.0,
+      tripulacao: tripResgatadaRend,
+    });
+    const recRend = aplicarRegrasSaquePosCombateCampanha(
+      {
+        sucata: Number(oferta.sucata ?? 12),
+        biomassa: Number(oferta.biomassa ?? 0),
+        combustivel: Number(oferta.combustivel ?? 2),
+        municao: Number(oferta.municao ?? 1),
+      },
+      estadoCampanha
+    );
+    const novaCartRend = {
+      sucata: Number(estadoCampanha.economia?.sucata ?? 0) + Number(recRend.sucata ?? 0),
+      biomassa: Number(estadoCampanha.economia?.biomassa ?? 0) + Number(recRend.biomassa ?? 0),
+      combustivel: Number(estadoCampanha.economia?.combustivel ?? 0) + Number(recRend.combustivel ?? 0),
+      municao: Number(estadoCampanha.economia?.municao ?? 0) + Number(recRend.municao ?? 0),
+    };
+    const mrRendAnt = estadoCampanha.meta?.metricasRun ?? {};
+    const estRend = clonarProfundoCongelado({
+      ...estadoCampanha,
+      economia: novaCartRend,
+      recursos: novaCartRend,
+      naveJogador: navePosRend,
+      alvoCombate: { ...(estadoCampanha.alvoCombate ?? {}), ativo: false, ofertaRendicaoAtiva: null },
+      meta: {
+        ...estadoCampanha.meta,
+        modalCampanhaAtivo: 'SAQUE',
+        perigoAmbientalId: null,
+        modificadoresCombateAtivos: null,
+        metricasRun: {
+          ...mrRendAnt,
+          combatesVencidos: Number(mrRendAnt.combatesVencidos ?? 0) + 1,
+          rendicoesAceitasNaRun: Number(mrRendAnt.rendicoesAceitasNaRun ?? 0) + 1,
+          sucataAcumuladaTotal: Number(mrRendAnt.sucataAcumuladaTotal ?? 0) + Number(recRend.sucata ?? 0),
+          biomassaAcumuladaTotal: Number(mrRendAnt.biomassaAcumuladaTotal ?? 0) + Number(recRend.biomassa ?? 0),
+        },
+        saquePendente: {
+          modalidade: 'RENDICAO_NEGOCIADA',
+          inimigoNome: estadoCampanha.alvoCombate?.nome ?? estadoCampanha.alvoCombate?.idInimigo ?? 'Alvo Hostil',
+          sucata: Number(recRend.sucata ?? 0),
+          biomassa: Number(recRend.biomassa ?? 0),
+          combustivel: Number(recRend.combustivel ?? 0),
+          municao: Number(recRend.municao ?? 0),
+          itemRecuperado: null,
+          depositadoNoPorao: false,
+          animaisResgatadosIds: [],
+        },
+      },
+    });
+    if (opcoesPersistencia.persistirEmDisco === true) {
+      salvarRunSaveDisco(estRend, opcoesPersistencia);
+    }
+    return clonarProfundoCongelado({ ok: true, acaoExecutada: tipoAcao, estado: estRend });
   }
 
   if (tipoAcao === 'CONFIRMAR_SAQUE_POS_COMBATE') {
     if (estadoCampanha.meta?.modalCampanhaAtivo !== 'SAQUE') {
       return clonarProfundoCongelado({ ok: false, codigoErro: 'SEM_SAQUE_PENDENTE', estado: estadoCampanha });
     }
-    const estMapa = clonarProfundoCongelado({
+    let estMapa = clonarProfundoCongelado({
       ...estadoCampanha,
       meta: {
         ...estadoCampanha.meta,
@@ -1141,6 +1684,7 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
       },
       alvoCombate: { ...(estadoCampanha.alvoCombate ?? {}), ativo: false },
     });
+    estMapa = sincronizarProgressoTutorialSteamNoEstado(estMapa, tipoAcao, opcoesPersistencia);
     if (opcoesPersistencia.persistirEmDisco === true) {
       salvarRunSaveDisco(estMapa, opcoesPersistencia);
       salvarPerfilDisco(estMapa.perfilJogador, opcoesPersistencia);
@@ -1202,7 +1746,58 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
   if (comandoAtomico.tipo === 'VIAJAR_NO_MAPA') {
     const idDest = comandoAtomico.payload?.idNoDestino ?? comandoAtomico.payload?.noDestinoId;
     const noDest = (proximoEstado.mapaSetorial?.nos ?? []).find((n) => n.id === idDest) ?? { id: idDest, tipoNo: 'COMBATE' };
-    proximoEstado = congelarProfundo(resolverEntradaNoMapaCampanha(proximoEstado, noDest, opcoesPersistencia));
+    let estEnt = resolverEntradaNoMapaCampanha(proximoEstado, noDest, opcoesPersistencia);
+    if (estEnt.meta?.edicaoComercialSteam) {
+      const mrSalto = estEnt.meta?.metricasRun ?? {};
+      const saltosRealizadosNaRun = Number(mrSalto.saltosRealizadosNaRun ?? 0) + 1;
+      const setorPosSalto = Number(estEnt.mapaSetorial?.setorNumero ?? estEnt.meta?.setorAtual ?? 1);
+      const avalSalto = avaliarConquistasSteam(
+        {
+          especieNave: estEnt.naveJogador?.idArquitetura,
+          setorAtual: setorPosSalto,
+          dificuldade: estEnt.meta?.dificuldade ?? 'NORMAL',
+          saltosRealizados: saltosRealizadosNaRun,
+          ...contarArsenalEOrgaosNaveSteam(estEnt.naveJogador),
+          layoutsTipoBDesbloqueados: estEnt.perfilJogador?.layoutsTipoBDesbloqueados ?? [],
+        },
+        [
+          ...(estEnt.perfilJogador?.conquistasSteamDesbloqueadas ?? []),
+          ...(estEnt.meta?.conquistasDesbloqueadas ?? []),
+        ]
+      );
+      const perfilPosSalto = atualizarPerfilComMetricasRun(
+        estEnt.perfilJogador ?? criarPerfilInicial(),
+        {
+          conquistasSteamDesbloqueadas: avalSalto.todosDesbloqueados,
+          layoutsTipoBDesbloqueados: avalSalto.layoutsTipoBDesbloqueados,
+          configuracoesSteam: estEnt.meta?.configuracoesSteam,
+        }
+      );
+      estEnt = {
+        ...estEnt,
+        perfilJogador: perfilPosSalto,
+        meta: {
+          ...estEnt.meta,
+          conquistasDesbloqueadas: [...avalSalto.todosDesbloqueados],
+          layoutsTipoBDesbloqueados: [...avalSalto.layoutsTipoBDesbloqueados],
+          ...(avalSalto.novosDesbloqueados.length > 0
+            ? {
+                popupConquistaRecente: {
+                  idConquista: avalSalto.novosDesbloqueados[0],
+                  idsNovas: [...avalSalto.novosDesbloqueados],
+                  restanteSeg: 4.5,
+                },
+              }
+            : {}),
+          metricasRun: { ...mrSalto, saltosRealizadosNaRun },
+        },
+      };
+      if (opcoesPersistencia.persistirEmDisco === true) {
+        salvarPerfilDisco(perfilPosSalto, opcoesPersistencia);
+        salvarRunSaveDisco(estEnt, opcoesPersistencia);
+      }
+    }
+    proximoEstado = congelarProfundo(estEnt);
   } else if (comandoAtomico.tipo === 'ESCOLHER_OPCAO_EVENTO') {
     const resumoEv = construirDesfechoEventoCanonicamente(
       estadoBaseMotor,
@@ -1218,6 +1813,68 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
       },
       opcoesPersistencia
     );
+    if (proximoEstado.meta?.edicaoComercialSteam) {
+      const mrEv = proximoEstado.meta?.metricasRun ?? {};
+      const blueOptionsResolvidasNaRun =
+        Number(mrEv.blueOptionsResolvidasNaRun ?? 0) + (resumoEv.blueOptionAtivada ? 1 : 0);
+      const idEvQuestCheck = String(resumoEv.idEvento ?? '');
+      const tplEvQuestCheck = resolverTemplateEventoUnificado(idEvQuestCheck);
+      const ehQuestConcluida =
+        Boolean(estadoBaseMotor.eventoAtual?.noMapa?.ehQuestAtiva) ||
+        Boolean(tplEvQuestCheck?.ehEventoQuest) ||
+        /^AE_Q[1-8]_/.test(idEvQuestCheck) ||
+        idEvQuestCheck.includes('_QUEST');
+      const questsConcluidasNaRun = Number(mrEv.questsConcluidasNaRun ?? 0) + (ehQuestConcluida ? 1 : 0);
+      const avalEv = avaliarConquistasSteam(
+        {
+          especieNave: proximoEstado.naveJogador?.idArquitetura,
+          setorAtual: Number(proximoEstado.mapaSetorial?.setorNumero ?? 1),
+          dificuldade: proximoEstado.meta?.dificuldade ?? 'NORMAL',
+          blueOptionsResolvidasNaRun,
+          questsConcluidasNaRun,
+          ...contarArsenalEOrgaosNaveSteam(proximoEstado.naveJogador),
+          layoutsTipoBDesbloqueados: proximoEstado.perfilJogador?.layoutsTipoBDesbloqueados ?? [],
+        },
+        [
+          ...(proximoEstado.perfilJogador?.conquistasSteamDesbloqueadas ?? []),
+          ...(proximoEstado.meta?.conquistasDesbloqueadas ?? []),
+        ]
+      );
+      const perfilPosEv = atualizarPerfilComMetricasRun(
+        proximoEstado.perfilJogador ?? criarPerfilInicial(),
+        {
+          conquistasSteamDesbloqueadas: avalEv.todosDesbloqueados,
+          layoutsTipoBDesbloqueados: avalEv.layoutsTipoBDesbloqueados,
+          configuracoesSteam: proximoEstado.meta?.configuracoesSteam,
+        }
+      );
+      proximoEstado = congelarProfundo({
+        ...proximoEstado,
+        perfilJogador: perfilPosEv,
+        meta: {
+          ...proximoEstado.meta,
+          conquistasDesbloqueadas: [...avalEv.todosDesbloqueados],
+          layoutsTipoBDesbloqueados: [...avalEv.layoutsTipoBDesbloqueados],
+          ...(avalEv.novosDesbloqueados.length > 0
+            ? {
+                popupConquistaRecente: {
+                  idConquista: avalEv.novosDesbloqueados[0],
+                  idsNovas: [...avalEv.novosDesbloqueados],
+                  restanteSeg: 4.5,
+                },
+              }
+            : {}),
+          metricasRun: {
+            ...mrEv,
+            blueOptionsResolvidasNaRun,
+            questsConcluidasNaRun,
+          },
+        },
+      });
+      if (opcoesPersistencia.persistirEmDisco === true) {
+        salvarPerfilDisco(perfilPosEv, opcoesPersistencia);
+      }
+    }
     if (proximoEstado.meta?.faseJogo === 'FIM_DE_RUN') {
       proximoEstado = finalizarRunComPersistencia(proximoEstado, 'DERROTA_PERMADEATH', opcoesPersistencia);
     } else if (proximoEstado.meta?.faseJogo === 'COMBATE') {
@@ -1225,17 +1882,54 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
       const setor = Number(proximoEstado.mapaSetorial?.setorNumero ?? 1);
       const noId = proximoEstado.mapaSetorial?.noAtualId ?? 'NO_EVENTO';
       const modEv = proximoEstado.meta?.modificadoresCombateAtivos ?? {};
-      const alvoEv = gerarAlvoInimigoEscaladoSetor(seed, setor, noId, {
+      const ehSteamEvComb = Boolean(proximoEstado.meta?.edicaoComercialSteam);
+      const alvoEvBase = gerarAlvoInimigoEscaladoSetor(seed, setor, noId, {
         classeForcada: modEv.classeForcada ?? undefined,
         bonusBarreiraInimigo: modEv.bonusBarreiraInimigo ?? 0,
         canalVisibilidadeSonar: modEv.canalVisibilidadeSonar ?? undefined,
+        edicaoComercialSteam: ehSteamEvComb,
       });
+      const alvoEvEsc = ehSteamEvComb
+        ? escalarInimigoPorDificuldade(alvoEvBase, proximoEstado.meta?.dificuldade ?? 'NORMAL', setor)
+        : alvoEvBase;
+      const alvoEv = ehSteamEvComb ? equiparArsenalModularInimigoSteam(alvoEvEsc, seed, setor, noId) : alvoEvEsc;
+      const modsCombEv = ehSteamEvComb ? calcularModificadoresPassivosOrgaosSteam(proximoEstado.naveJogador) : null;
+      const navePreCombEv =
+        modsCombEv && modsCombEv.preIgnicaoCombatePct > 0
+          ? {
+              ...proximoEstado.naveJogador,
+              armasAtivas: (proximoEstado.naveJogador.armasAtivas ?? []).map((s) =>
+                s?.arma
+                  ? {
+                      ...s,
+                      arma: {
+                        ...s.arma,
+                        progressoRecargaSeg: Math.max(
+                          Number(s.arma.progressoRecargaSeg ?? 0),
+                          Math.round(Number(s.arma.tempoRecargaBaseSeg ?? 10) * modsCombEv.preIgnicaoCombatePct * 100) / 100
+                        ),
+                      },
+                    }
+                  : s
+              ),
+            }
+          : proximoEstado.naveJogador;
       const desfechoCombate = { ...resumoEv, iniciouCombate: true, combateObrigatorio: true, proximaFase: 'COMBATE' };
       proximoEstado = congelarProfundo({
         ...proximoEstado,
+        naveJogador: navePreCombEv,
         meta: {
           ...proximoEstado.meta,
           hpCascoInimigoInicioLuta: alvoEv.hpCascoMax,
+          ...(ehSteamEvComb
+            ? {
+                hpCascoJogadorInicioLuta: Number(navePreCombEv?.hpCascoAtual ?? 0),
+                tripulacaoVivosInicioLutaCount: (navePreCombEv?.tripulacao ?? []).filter(
+                  (t) => Number(t.hpAtual ?? 0) > 0 && t.vivo !== false
+                ).length,
+                telemetriaCombateSteam: {},
+              }
+            : {}),
           ultimoResultadoEvento: desfechoCombate,
           modalCampanhaAtivo: opcoesPersistencia.pularModalDesfechoEvento === true ? null : 'EVENTO_DESFECHO',
           desfechoEventoPendente: opcoesPersistencia.pularModalDesfechoEvento === true ? null : desfechoCombate,
@@ -1258,9 +1952,16 @@ export function executarAcaoCampanhaCompleta(estadoCampanha, acao = {}, opcoesPe
       }
     }
   } else if (comandoAtomico.tipo === 'COMPRAR_OU_VENDER_LOJA' || comandoAtomico.tipo === 'SALTO_FUGA') {
+    proximoEstado = sincronizarEstadoEConquistasSteam(proximoEstado, {}, opcoesPersistencia);
     if (opcoesPersistencia.persistirEmDisco === true) {
       salvarRunSaveDisco(proximoEstado, opcoesPersistencia);
     }
+  } else if (proximoEstado.meta?.edicaoComercialSteam) {
+    proximoEstado = sincronizarEstadoEConquistasSteam(proximoEstado, {}, opcoesPersistencia);
+  }
+
+  if (proximoEstado.meta?.edicaoComercialSteam && proximoEstado.meta?.tutorialSteam?.ativo) {
+    proximoEstado = sincronizarProgressoTutorialSteamNoEstado(proximoEstado, comandoAtomico.tipo, opcoesPersistencia);
   }
 
   return clonarProfundoCongelado({
@@ -1293,6 +1994,23 @@ export function avancarTickCampanhaCompleta(estadoCampanha, dtSeg = 0.25, opcoes
   }
 
   let estadoPosTick = avancarTickPartidaEmTempoReal(estadoCampanha, dtSeg, opcoesPersistencia.opcoesDebugTick ?? {});
+  if (estadoPosTick.meta?.edicaoComercialSteam) {
+    if (Number(estadoPosTick.meta?.popupConquistaRecente?.restanteSeg ?? 0) > 0) {
+      const novoRestPop = Math.max(
+        0,
+        Math.round((Number(estadoPosTick.meta.popupConquistaRecente.restanteSeg) - dtSeg) * 1000) / 1000
+      );
+      estadoPosTick = congelarProfundo({
+        ...estadoPosTick,
+        meta: {
+          ...estadoPosTick.meta,
+          popupConquistaRecente:
+            novoRestPop > 0 ? { ...estadoPosTick.meta.popupConquistaRecente, restanteSeg: novoRestPop } : null,
+        },
+      });
+    }
+    estadoPosTick = sincronizarEstadoEConquistasSteam(estadoPosTick, {}, opcoesPersistencia);
+  }
 
   const vivosJogador = (estadoPosTick.naveJogador?.tripulacao ?? []).filter((t) => Number(t.hpAtual ?? 0) > 0).length;
   if (Number(estadoPosTick.naveJogador?.hpCascoAtual ?? 0) <= 0 || vivosJogador === 0) {
@@ -1312,6 +2030,13 @@ export function avancarTickCampanhaCompleta(estadoCampanha, dtSeg = 0.25, opcoes
       const faseAtual = Number(alvo.faseChefe ?? 1);
       if (faseAtual < 3) {
         const transicionado = transicionarFaseChefeDraga(estadoPosTick);
+        const alvoProxFase = estadoPosTick.meta?.edicaoComercialSteam
+          ? escalarInimigoPorDificuldade(
+              transicionado.alvoCombate,
+              estadoPosTick.meta?.dificuldade ?? 'NORMAL',
+              8
+            )
+          : transicionado.alvoCombate;
         const bonusSucata = faseAtual === 1 ? 15 : 20;
         const bonusBio = faseAtual === 1 ? 10 : 15;
         const cartBase = {
@@ -1323,6 +2048,7 @@ export function avancarTickCampanhaCompleta(estadoCampanha, dtSeg = 0.25, opcoes
         const mrFase = transicionado.meta?.metricasRun ?? {};
         return clonarProfundoCongelado({
           ...transicionado,
+          alvoCombate: alvoProxFase,
           economia: cartBase,
           recursos: cartBase,
           meta: {
@@ -1332,7 +2058,10 @@ export function avancarTickCampanhaCompleta(estadoCampanha, dtSeg = 0.25, opcoes
               sucataAcumuladaTotal: Number(mrFase.sucataAcumuladaTotal ?? 0) + bonusSucata,
               biomassaAcumuladaTotal: Number(mrFase.biomassaAcumuladaTotal ?? 0) + bonusBio,
             },
-            ultimoAvisoCampanha: `DRAGA RECUOU! INICIANDO FASE ${faseAtual + 1}/3 (+${bonusSucata} SUC, +${bonusBio} BIO)`,
+            ultimoAvisoCampanha:
+              transicionado.meta?.configuracoesSteam?.idioma === 'en-US'
+                ? `DREDGE RETREATED! ENGAGING PHASE ${faseAtual + 1}/3 (+${bonusSucata} SCR, +${bonusBio} BIO)`
+                : `DRAGA RECUOU! INICIANDO FASE ${faseAtual + 1}/3 (+${bonusSucata} SUC, +${bonusBio} BIO)`,
           },
         });
       }
@@ -1352,37 +2081,49 @@ export function avancarTickCampanhaCompleta(estadoCampanha, dtSeg = 0.25, opcoes
   const seed = String(estadoPosTick.meta?.seedPartida ?? 'seed-saque');
   const noId = String(estadoPosTick.mapaSetorial?.noAtualId ?? 'NO_SAQUE');
 
-  // Resgata tripulantes aliados vivos que estavam em BORDO_INIMIGO de volta para a Câmara 7 (ou Câmara 3)
-  const tripulacaoResgatada = (estadoPosTick.naveJogador.tripulacao ?? [])
-    .filter((t) => Number(t.hpAtual ?? 0) > 0)
-    .map((t) =>
-      t.localizacao === 'BORDO_INIMIGO'
-        ? {
-            ...t,
-            localizacao: 'NAVE_JOGADOR',
-            camaraAtualId: 7,
-            camaraDestinoId: null,
-            salaInimigaId: null,
-            salaInimigaDestinoId: null,
-            proximaSalaInimigaId: null,
-            rotaInimigaAtiva: [],
-            progressoTravessiaInimigaSeg: 0.0,
-            modoParasita: false,
-            progressoSabotagemInternaSeg: 0.0,
-          }
-        : t
-    );
+  // Resgata tripulantes aliados vivos que estavam em BORDO_INIMIGO respeitando limitesPorSala
+  const vivosPreSaque = (estadoPosTick.naveJogador.tripulacao ?? []).filter((t) => Number(t.hpAtual ?? 0) > 0);
+  const ocupacaoSaque = {};
+  for (const t of vivosPreSaque) {
+    if (t.localizacao !== 'BORDO_INIMIGO') {
+      ocupacaoSaque[t.camaraAtualId] = (ocupacaoSaque[t.camaraAtualId] ?? 0) + 1;
+    }
+  }
+  const tripulacaoResgatada = vivosPreSaque.map((t) => {
+    if (t.localizacao !== 'BORDO_INIMIGO') return t;
+    const camDestSaque =
+      [7, 3, 5, 2, 4, 1, 6, 8].find(
+        (idC) =>
+          (ocupacaoSaque[idC] ?? 0) < Math.max(1, Number(estadoPosTick.naveJogador?.limitesPorSala?.[idC] ?? 2))
+      ) ?? 7;
+    ocupacaoSaque[camDestSaque] = (ocupacaoSaque[camDestSaque] ?? 0) + 1;
+    return {
+      ...t,
+      localizacao: 'NAVE_JOGADOR',
+      camaraAtualId: camDestSaque,
+      camaraDestinoId: null,
+      salaInimigaId: null,
+      salaInimigaDestinoId: null,
+      proximaSalaInimigaId: null,
+      rotaInimigaAtiva: [],
+      progressoTravessiaInimigaSeg: 0.0,
+      modoParasita: false,
+      progressoSabotagemInternaSeg: 0.0,
+    };
+  });
 
   // Determina item bônus recuperado (Órgão Intacto em EXTRACAO_CIRURGICA ou 25% Arma em CAPTURA_INTACTA)
   let itemRecuperado = null;
+  const poolOrgaosSaque = estadoPosTick.meta?.edicaoComercialSteam ? CATALOGO_16_ORGAOS_STEAM : CATALOGO_ORGAOS_52;
+  const poolArmasSaque = estadoPosTick.meta?.edicaoComercialSteam ? CATALOGO_24_ARMAS_STEAM : CATALOGO_ARMAS_51;
   if (vitoria.modalidade === 'EXTRACAO_CIRURGICA') {
-    const idOrgao = alvo.orgaoExtraido ?? CATALOGO_ORGAOS_52[streamCombateDisparo(seed, setor, noId, 1, 501) % CATALOGO_ORGAOS_52.length].id;
-    const specOrg = CATALOGO_ORGAOS_52.find((o) => o.id === idOrgao) ?? CATALOGO_ORGAOS_52[0];
+    const idOrgao = alvo.orgaoExtraido ?? poolOrgaosSaque[streamCombateDisparo(seed, setor, noId, 1, 501) % poolOrgaosSaque.length].id;
+    const specOrg = poolOrgaosSaque.find((o) => o.id === idOrgao) ?? poolOrgaosSaque[0];
     itemRecuperado = { id: specOrg.id, nome: specOrg.nome, tipo: 'ORGAO', pesoKg: Number(specOrg.pesoKg ?? 5) };
   } else if (vitoria.modalidade === 'CAPTURA_INTACTA') {
     const rolaArma = streamCombateDisparo(seed, setor, noId, 1, 502) % 4;
     if (rolaArma === 0) {
-      const specArma = CATALOGO_ARMAS_51[streamCombateDisparo(seed, setor, noId, 1, 503) % CATALOGO_ARMAS_51.length];
+      const specArma = poolArmasSaque[streamCombateDisparo(seed, setor, noId, 1, 503) % poolArmasSaque.length];
       itemRecuperado = { id: specArma.id, nome: specArma.nome, tipo: 'ARMA', pesoKg: Number(specArma.pesoKg ?? 10) };
     }
   }
@@ -1450,16 +2191,76 @@ export function avancarTickCampanhaCompleta(estadoCampanha, dtSeg = 0.25, opcoes
     poraoCarga: poraoPosSaque,
   });
 
+  const telLuta = estadoPosTick.meta?.telemetriaCombateSteam ?? {};
+  const hpInicioLuta = Number(estadoPosTick.meta?.hpCascoJogadorInicioLuta ?? navePosVitoria.hpCascoAtual ?? 1);
+  const avalConqPosCombate = estadoPosTick.meta?.edicaoComercialSteam
+    ? avaliarConquistasSteam(
+        {
+          especieNave: navePosVitoria.idArquitetura,
+          setorAtual: setor,
+          dificuldade: estadoPosTick.meta?.dificuldade ?? 'NORMAL',
+          saltosRealizados: Number(novasMetricas.saltosRealizadosNaRun ?? novasMetricas.combatesVencidos ?? 1),
+          capturaIntactaRealizada:
+            vitoria.modalidade === 'CAPTURA_INTACTA' || vitoria.modalidade === 'EXTRACAO_CIRURGICA',
+          leviataDerrotado:
+            alvo.arquetipoId === 'MONSTRO_4_HIDRA' || alvo.arquetipoId === 'MONSTRO_4_LEVIATA_FOSSA',
+          vitoriaCombateSemTouchdown:
+            !Boolean(telLuta.caiuEmTouchdownNaLuta) && navePosVitoria.estadoFisico === '1_NO_FOIL',
+          vitoriaEmTouchdownSemMortes:
+            navePosVitoria.estadoFisico !== '1_NO_FOIL' &&
+            !Boolean(telLuta.sofreuMorteTripulanteNaLuta) &&
+            tripulacaoResgatada.filter((t) => Number(t.hpAtual ?? 0) > 0).length >=
+              Number(
+                estadoPosTick.meta?.tripulacaoVivosInicioLutaCount ??
+                  (estadoCampanha.naveJogador?.tripulacao ?? []).filter((t) => Number(t.hpAtual ?? 0) > 0).length
+              ),
+          vitoriaCombateZeroDanoCasco:
+            !Boolean(telLuta.sofreuDanoCascoNaLuta) && Number(navePosVitoria.hpCascoAtual ?? 0) >= hpInicioLuta,
+          aguaDrenadaNaLutaKg: Number(telLuta.aguaDrenadaNaLutaKg ?? 0),
+          sistemasInimigosIonizadosSimultaneos: Number(telLuta.sistemasInimigosIonizadosSimultaneos ?? 0),
+          impactosAbsorvidosOuDefletidosNaLuta: Number(telLuta.impactosAbsorvidosOuDefletidosNaLuta ?? 0),
+          feixeDisparadoSobTintaFurtiva: Boolean(telLuta.feixeDisparadoSobTintaFurtiva),
+          esquivouEmMergulhoTatico: Boolean(telLuta.esquivouEmMergulhoTatico),
+          sistemaNoNivelMaximo: Boolean(novasMetricas.evoluiuSistemaNivelMaximoNaRun),
+          tutorialConcluido: Boolean(estadoPosTick.meta?.tutorialSteam?.concluido),
+          ...contarArsenalEOrgaosNaveSteam(navePosVitoria),
+          layoutsTipoBDesbloqueados: [
+            ...(perfilAtualizado.layoutsTipoBDesbloqueados ?? []),
+            ...(estadoPosTick.meta?.layoutsTipoBDesbloqueados ?? []),
+          ],
+        },
+        [
+          ...(perfilAtualizado.conquistasSteamDesbloqueadas ?? []),
+          ...(estadoPosTick.meta?.conquistasDesbloqueadas ?? []),
+        ]
+      )
+    : null;
+  const perfilFinalPosCombate = avalConqPosCombate
+    ? atualizarPerfilComMetricasRun(perfilAtualizado, {
+        conquistasSteamDesbloqueadas: avalConqPosCombate.todosDesbloqueados,
+        layoutsTipoBDesbloqueados: avalConqPosCombate.layoutsTipoBDesbloqueados,
+        configuracoesSteam: estadoPosTick.meta?.configuracoesSteam,
+      })
+    : perfilAtualizado;
+
+  const mapaPosSaque =
+    estadoPosTick.meta?.edicaoComercialSteam &&
+    estadoPosTick.mapaSetorial &&
+    calcularModificadoresPassivosOrgaosSteam(navePosVitoria).revelaNosAdjacentesMapa === true
+      ? { ...estadoPosTick.mapaSetorial, cartaRevelada: true }
+      : estadoPosTick.mapaSetorial;
+
   const estadoComModalSaque = clonarProfundoCongelado({
     ...estadoPosTick,
-    perfilJogador: perfilAtualizado,
+    ...(mapaPosSaque ? { mapaSetorial: mapaPosSaque } : {}),
+    perfilJogador: perfilFinalPosCombate,
     catalogoHangarNaves: CATALOGO_NAVES_54.map((n) => ({
       id: n.idArquitetura,
       nome: n.nome,
       estilo: n.estiloTatico,
       chassiKg: n.pesoChassiKg,
       hpMax: n.hpCascoMax,
-      desbloqueada: Boolean(perfilAtualizado.carcacasDesbloqueadas?.[n.idArquitetura]),
+      desbloqueada: Boolean(perfilFinalPosCombate.carcacasDesbloqueadas?.[n.idArquitetura]),
     })),
     economia: novaCarteira,
     recursos: novaCarteira,
@@ -1470,6 +2271,21 @@ export function avancarTickCampanhaCompleta(estadoCampanha, dtSeg = 0.25, opcoes
     },
     meta: {
       ...estadoPosTick.meta,
+      ...(avalConqPosCombate
+        ? {
+            conquistasDesbloqueadas: [...avalConqPosCombate.todosDesbloqueados],
+            layoutsTipoBDesbloqueados: [...avalConqPosCombate.layoutsTipoBDesbloqueados],
+            ...(avalConqPosCombate.novosDesbloqueados.length > 0
+              ? {
+                  popupConquistaRecente: {
+                    idConquista: avalConqPosCombate.novosDesbloqueados[0],
+                    idsNovas: [...avalConqPosCombate.novosDesbloqueados],
+                    restanteSeg: 4.5,
+                  },
+                }
+              : {}),
+          }
+        : {}),
       modalCampanhaAtivo: 'SAQUE',
       perigoAmbientalId: null,
       modificadoresCombateAtivos: null,
@@ -1489,7 +2305,7 @@ export function avancarTickCampanhaCompleta(estadoCampanha, dtSeg = 0.25, opcoes
   });
 
   if (opcoesPersistencia.persistirEmDisco === true) {
-    salvarPerfilDisco(perfilAtualizado, opcoesPersistencia);
+    salvarPerfilDisco(perfilFinalPosCombate, opcoesPersistencia);
     salvarRunSaveDisco(estadoComModalSaque, opcoesPersistencia);
   }
 

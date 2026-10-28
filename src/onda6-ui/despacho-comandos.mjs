@@ -18,6 +18,7 @@ import {
 import {
   GRAFOS_BEAM_CANONICOS,
   validarTrincaBeam,
+  validarCaminhoBeamAdjacente,
   sincronizarEnergiaArmasComCamaraArtilharia,
 } from '../onda2-combate/tick-sistemas-armas.mjs';
 import { calcularRotaTaticaSobrevivencia } from '../onda2-combate/tick-tripulacao.mjs';
@@ -35,6 +36,24 @@ import {
   resolverGrafoOrtogonalAlvo,
   construirDesfechoEventoCanonicamente,
 } from './encontros-eventos-campanha.mjs';
+import {
+  CATALOGO_24_ARMAS_STEAM,
+  CATALOGO_16_ORGAOS_STEAM,
+  CATALOGO_LOJA_STEAM_COMPLETO,
+  resolverArmaCatalogoUnificado,
+  resolverOrgaoCatalogoUnificado,
+  calcularModificadoresPassivosOrgaosSteam,
+  sortearVitrineLojaSteam,
+} from '../onda7-steam/catalogo-armas-orgaos-ae.mjs';
+import {
+  resolverVisitaNoMapaSteam,
+  plantarBoiaQuestNoSetor,
+} from '../onda7-steam/eventos-ae-setores-5a8.mjs';
+import { registrarAcaoNoTutorialSteam } from '../onda7-steam/tutorial-interativo.mjs';
+import {
+  obterConfiguracaoDificuldadeSteam,
+  avaliarConquistasSteam,
+} from '../onda7-steam/dificuldades-conquistas-opcoes.mjs';
 
 export {
   COORDENADAS_GRADE_CAMARAS_16A,
@@ -169,14 +188,56 @@ function rejeitarComando(estado, comando, marcadorRejeicao, cueEmitido = null) {
   });
 }
 
+function mapearGatilhoTutorialComando(tipoComando) {
+  if (tipoComando === 'ALTERNAR_VALVULA' || tipoComando === 'DRENAR_TUDO') return 'DRENAR_VALVULAS';
+  if (tipoComando === 'MERGULHO_TATICO') return 'MERGULHO_TATICO';
+  if (tipoComando === 'MIRAR_ARMA') return 'DEFINIR_ALVO_ARMA';
+  if (tipoComando === 'MOVER_TRIPULANTE' || tipoComando === 'ATIVAR_BAIACU') return 'MOVER_TRIPULANTE';
+  return tipoComando;
+}
+
 function concluirComandoAceito(comando, p, novoEstado, cueEmitido = null, extras = {}) {
+  let estFinal = novoEstado;
+  if (estFinal?.meta?.tutorialSteam?.ativo === true) {
+    const tutProx = registrarAcaoNoTutorialSteam(
+      estFinal.meta.tutorialSteam,
+      mapearGatilhoTutorialComando(comando.tipo)
+    );
+    let conqAtu = estFinal.meta?.conquistasDesbloqueadas;
+    if (tutProx.concluido && estFinal?.meta?.edicaoComercialSteam === true) {
+      const avTut = avaliarConquistasSteam({ tutorialConcluido: true }, conqAtu ?? []);
+      conqAtu = [...avTut.todosDesbloqueados];
+    }
+    estFinal = {
+      ...estFinal,
+      meta: {
+        ...estFinal.meta,
+        tutorialSteam: tutProx,
+        ...(conqAtu !== undefined ? { conquistasDesbloqueadas: conqAtu } : {}),
+      },
+    };
+  }
+  if (
+    estFinal?.meta?.edicaoComercialSteam === true &&
+    estFinal?.mapaSetorial &&
+    estFinal.mapaSetorial.cartaRevelada !== true &&
+    calcularModificadoresPassivosOrgaosSteam(estFinal.naveJogador).revelaNosAdjacentesMapa === true
+  ) {
+    estFinal = {
+      ...estFinal,
+      mapaSetorial: {
+        ...estFinal.mapaSetorial,
+        cartaRevelada: true,
+      },
+    };
+  }
   return clonarProfundoCongelado({
     aceito: true,
     marcadorRejeicao: null,
     cueEmitido,
     comandoExecutado: { tipo: comando.tipo, payload: p },
     ...extras,
-    estado: novoEstado,
+    estado: estFinal,
   });
 }
 
@@ -349,56 +410,75 @@ export function despacharComandoUi(estado, comando) {
     }
 
     case 'MOVER_TRIPULANTE': {
-      const idTrip = p.tripulanteId ?? p.idTripulante;
-      const trip = nave.tripulacao.find((t) => t.id === idTrip);
+      const listaIdsEsquadrao =
+        Array.isArray(p.tripulanteIds) && p.tripulanteIds.length > 0
+          ? p.tripulanteIds
+          : [p.tripulanteId ?? p.idTripulante];
       const camaraDestinoExiste = (nave.camaras ?? []).some((c) => c.id === p.camaraDestinoId);
-      if (
-        !trip ||
-        trip.localizacao !== 'NAVE_JOGADOR' ||
-        trip.inflado ||
-        trip.hpAtual <= 0 ||
-        trip.vivo === false ||
-        !camaraDestinoExiste
-      ) {
+      if (!camaraDestinoExiste) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
-      const aliadosNoDestino = nave.tripulacao.filter(
+      const candidatosValidos = listaIdsEsquadrao
+        .map((idT) => nave.tripulacao.find((t) => t.id === idT))
+        .filter(
+          (t) =>
+            t &&
+            t.localizacao === 'NAVE_JOGADOR' &&
+            !t.inflado &&
+            !(Number(t.atordoadoSeg ?? 0) > 0) &&
+            t.hpAtual > 0 &&
+            t.vivo !== false
+        );
+      if (candidatosValidos.length === 0) {
+        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      }
+      const idsEsquadraoSet = new Set(candidatosValidos.map((t) => t.id));
+      let ocupantesAtuaisNoDestino = nave.tripulacao.filter(
         (t) =>
           t.localizacao === 'NAVE_JOGADOR' &&
-          t.camaraAtualId === p.camaraDestinoId &&
+          (t.camaraDestinoId ?? t.camaraAtualId) === p.camaraDestinoId &&
           t.hpAtual > 0 &&
-          t.id !== trip.id
-      );
-      if (aliadosNoDestino.length >= 2) {
+          !idsEsquadraoSet.has(t.id)
+      ).length;
+      const limiteSalaDestino = Math.max(1, Number(nave?.limitesPorSala?.[p.camaraDestinoId] ?? 2));
+      if (ocupantesAtuaisNoDestino >= limiteSalaDestino) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
-      const jaNaCamaraDestino = trip.camaraAtualId === p.camaraDestinoId && !trip.camaraDestinoId;
-      const novoAcoplado = jaNaCamaraDestino
-        ? (p.acopladoBulbo !== undefined ? Boolean(p.acopladoBulbo) : !trip.acopladoBulbo)
-        : false;
-      const planoRota = jaNaCamaraDestino
-        ? null
-        : calcularRotaTaticaSobrevivencia(nave, trip.camaraAtualId, p.camaraDestinoId, trip.especie);
-      const novaRotaAtiva = !jaNaCamaraDestino && planoRota?.ok ? [...planoRota.rota] : [];
-      const novaProximaCamaraId = novaRotaAtiva.length >= 2 ? novaRotaAtiva[1] : (jaNaCamaraDestino ? null : p.camaraDestinoId);
-      const mudandoDestino = trip.camaraDestinoId !== p.camaraDestinoId;
+      const ordensAceitas = new Map();
+      for (const trip of candidatosValidos) {
+        const jaNaCamaraDestino = trip.camaraAtualId === p.camaraDestinoId && !trip.camaraDestinoId;
+        if (!jaNaCamaraDestino && ocupantesAtuaisNoDestino >= limiteSalaDestino) continue;
+        if (!jaNaCamaraDestino) ocupantesAtuaisNoDestino += 1;
+        else ocupantesAtuaisNoDestino += 1;
+        const novoAcoplado = jaNaCamaraDestino
+          ? (p.acopladoBulbo !== undefined ? Boolean(p.acopladoBulbo) : !trip.acopladoBulbo)
+          : false;
+        const planoRota = jaNaCamaraDestino
+          ? null
+          : calcularRotaTaticaSobrevivencia(nave, trip.camaraAtualId, p.camaraDestinoId, trip.especie);
+        const novaRotaAtiva = !jaNaCamaraDestino && planoRota?.ok ? [...planoRota.rota] : [];
+        const novaProximaCamaraId =
+          novaRotaAtiva.length >= 2 ? novaRotaAtiva[1] : jaNaCamaraDestino ? null : p.camaraDestinoId;
+        const mudandoDestino = trip.camaraDestinoId !== p.camaraDestinoId;
+        ordensAceitas.set(trip.id, {
+          camaraDestinoId: jaNaCamaraDestino ? null : p.camaraDestinoId,
+          proximaCamaraId: jaNaCamaraDestino ? null : novaProximaCamaraId,
+          rotaAtiva: novaRotaAtiva,
+          progressoNadoSeg: jaNaCamaraDestino || mudandoDestino ? 0.0 : Number(trip.progressoNadoSeg ?? 0),
+          progressoSalto0a1: jaNaCamaraDestino || mudandoDestino ? 0.0 : Number(trip.progressoSalto0a1 ?? 0),
+          interceptadoPorInvasor: false,
+          acopladoBulbo: novoAcoplado,
+        });
+      }
+      if (ordensAceitas.size === 0) {
+        return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+      }
       return concluirComandoAceito(comando, p, {
         ...estado,
         naveJogador: {
           ...nave,
           tripulacao: nave.tripulacao.map((t) =>
-            t.id === trip.id
-              ? {
-                  ...t,
-                  camaraDestinoId: jaNaCamaraDestino ? null : p.camaraDestinoId,
-                  proximaCamaraId: jaNaCamaraDestino ? null : novaProximaCamaraId,
-                  rotaAtiva: novaRotaAtiva,
-                  progressoNadoSeg: jaNaCamaraDestino || mudandoDestino ? 0.0 : Number(t.progressoNadoSeg ?? 0),
-                  progressoSalto0a1: jaNaCamaraDestino || mudandoDestino ? 0.0 : Number(t.progressoSalto0a1 ?? 0),
-                  interceptadoPorInvasor: false,
-                  acopladoBulbo: novoAcoplado,
-                }
-              : t
+            ordensAceitas.has(t.id) ? { ...t, ...ordensAceitas.get(t.id) } : t
           ),
         },
       });
@@ -418,22 +498,36 @@ export function despacharComandoUi(estado, comando) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
       const idChassi = arma.chassiId ?? arma.idArma ?? arma.id ?? '';
-      const ehFeixe = Boolean(arma.ehFeixe) || idChassi === 'CORTADOR_TERMICO_PLASMA' || idChassi === 'CORTADOR_TERMICO';
-      const exigeSubmersa = Boolean(arma.exigeSalaSubmersa) || idChassi === 'LANCADOR_TORPEDO_ABISSAL';
-      if (ehFeixe && !p.trincaSalasBeam) {
+      const specUnif = resolverArmaCatalogoUnificado(idChassi);
+      const ehFeixe = Boolean(arma.ehFeixe ?? specUnif?.ehFeixe) || idChassi === 'CORTADOR_TERMICO_PLASMA' || idChassi === 'CORTADOR_TERMICO';
+      const tamFeixeEsperado =
+        idChassi === 'CORTADOR_TERMICO_PLASMA' || idChassi === 'CORTADOR_TERMICO'
+          ? 3
+          : ehFeixe
+            ? Math.max(1, Math.min(3, Number(specUnif?.projeteis ?? 3)))
+            : 0;
+      const ehFeixeMultiSala = ehFeixe && tamFeixeEsperado >= 2;
+      const exigeSubmersa =
+        Boolean(arma.exigeSalaSubmersa ?? specUnif?.exigeSalaSubmersa) || idChassi === 'LANCADOR_TORPEDO_ABISSAL';
+      if (ehFeixeMultiSala && !p.trincaSalasBeam) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
       if (p.trincaSalasBeam) {
+        const grafosTodos = [
+          GRAFOS_BEAM_CANONICOS.BIONAVE_2X4,
+          GRAFOS_BEAM_CANONICOS.BARCO_2X2,
+          GRAFOS_BEAM_CANONICOS.BARCO_CORVETA_5,
+          GRAFOS_BEAM_CANONICOS.BARCO_ARRASTAO_6,
+          GRAFOS_BEAM_CANONICOS.BARCO_SUBMARINO_6,
+          GRAFOS_BEAM_CANONICOS.MONSTRO_1X4,
+          GRAFOS_BEAM_CANONICOS.DRAGA_F1_6,
+          GRAFOS_BEAM_CANONICOS.DRAGA_F2_6,
+          GRAFOS_BEAM_CANONICOS.DRAGA_F3_5,
+        ];
         const validaQualquerGrafo =
-          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.BIONAVE_2X4) ||
-          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.BARCO_2X2) ||
-          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.BARCO_CORVETA_5) ||
-          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.BARCO_ARRASTAO_6) ||
-          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.BARCO_SUBMARINO_6) ||
-          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.MONSTRO_1X4) ||
-          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.DRAGA_F1_6) ||
-          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.DRAGA_F2_6) ||
-          validarTrincaBeam(p.trincaSalasBeam, GRAFOS_BEAM_CANONICOS.DRAGA_F3_5);
+          tamFeixeEsperado === 3 || !ehFeixe
+            ? grafosTodos.some((g) => validarTrincaBeam(p.trincaSalasBeam, g))
+            : grafosTodos.some((g) => validarCaminhoBeamAdjacente(p.trincaSalasBeam, g, tamFeixeEsperado));
         if (!validaQualquerGrafo) {
           return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
         }
@@ -626,13 +720,27 @@ export function despacharComandoUi(estado, comando) {
       if (p.opcao === 'C' && (noEvento.tipoNo === 'PERIGO' || String(p.idEvento).startsWith('PER_'))) {
         return rejeitarComando(estado, comando, 'BLOQUEADO_COMBATE_OBRIGATORIO');
       }
-      const resVisita = resolverVisitaNoMapa({
+      const baseCarteira = extrairCarteiraSincronizada(estado);
+      const ehEventoAe = String(noEvento.idTemplateEvento ?? p.idEvento ?? '').startsWith('AE_');
+      const usarMotorSteamEv = ehEventoAe || Boolean(estado.meta?.edicaoComercialSteam);
+      const velFrotaEv = estado.meta?.edicaoComercialSteam
+        ? obterConfiguracaoDificuldadeSteam(estado.meta?.dificuldade ?? 'NORMAL').velocidadeFrotaMnPorHora
+        : undefined;
+      const fnResolverVisita = usarMotorSteamEv ? resolverVisitaNoMapaSteam : resolverVisitaNoMapa;
+      const resVisita = fnResolverVisita({
         seedPartida: estado.meta?.seedPartida ?? 'seed',
         setorNumero: estado.mapaSetorial?.setorNumero ?? 1,
         relogioSetorHoras: estado.mapaSetorial?.relogioSetorHoras ?? estado.mapaSetorial?.relogioHoras ?? 0,
         noMapa: noEvento,
         kitOuNave: nave,
         opcaoEscolhida: p.opcao,
+        ...(usarMotorSteamEv
+          ? {
+              velocidadeFrenteMnH: velFrotaEv,
+              frenteCorporacaoMn: estado.mapaSetorial?.frenteCorporacaoMn ?? null,
+              municaoAtual: baseCarteira.municao,
+            }
+          : {}),
       });
       if (resVisita.aceito === false) {
         return rejeitarComando(estado, comando, resVisita.marcadorRejeicao ?? 'PRECONDICAO_NAO_ATENDIDA');
@@ -647,17 +755,32 @@ export function despacharComandoUi(estado, comando) {
         nave.hpCascoMax,
         Math.max(0, nave.hpCascoAtual - danoCasco) + reparoHp
       );
-      const ganhoSuc = Number(resVisita.moedaGerada?.sucata ?? 0);
-      const ganhoBio = Number(resVisita.moedaGerada?.biomassa ?? 0);
+      const ganhoSucBruto = Number(resVisita.moedaGerada?.sucata ?? 0);
+      const ganhoBioBruto = Number(resVisita.moedaGerada?.biomassa ?? 0);
+      const aplicaEscalaSaqueEventoSteam =
+        estado.meta?.edicaoComercialSteam === true &&
+        resVisita.estadoNo !== 'FROTA_PRINCIPAL_CORPORACAO' &&
+        resVisita.estadoNo !== 'ZONA_MORTA_INDUSTRIALIZADA';
+      const fatorSaqueEventoSteam = aplicaEscalaSaqueEventoSteam
+        ? Number(obterConfiguracaoDificuldadeSteam(estado.meta?.dificuldade ?? 'NORMAL').multiplicadorSaque ?? 1.0) *
+          (1.0 + Number(calcularModificadoresPassivosOrgaosSteam(nave).multiplicadorSaqueBonus ?? 0))
+        : 1.0;
+      const ganhoSuc =
+        aplicaEscalaSaqueEventoSteam && ganhoSucBruto > 0
+          ? Math.max(1, Math.round(ganhoSucBruto * fatorSaqueEventoSteam))
+          : ganhoSucBruto;
+      const ganhoBio =
+        aplicaEscalaSaqueEventoSteam && ganhoBioBruto > 0
+          ? Math.max(1, Math.round(ganhoBioBruto * fatorSaqueEventoSteam))
+          : ganhoBioBruto;
       const ganhoComb = Number(recompensaOpcao.combustivel ?? 0);
       const ganhoMun = Number(recompensaOpcao.municao ?? 0);
-      const baseCarteira = extrairCarteiraSincronizada(estado);
       const novaCarteiraEvento = {
         ...baseCarteira,
-        sucata: baseCarteira.sucata + ganhoSuc,
-        biomassa: baseCarteira.biomassa + ganhoBio,
-        combustivel: baseCarteira.combustivel + ganhoComb,
-        municao: baseCarteira.municao + ganhoMun,
+        sucata: Math.max(0, baseCarteira.sucata + ganhoSuc),
+        biomassa: Math.max(0, baseCarteira.biomassa + ganhoBio),
+        combustivel: Math.max(0, baseCarteira.combustivel + ganhoComb),
+        municao: Math.max(0, baseCarteira.municao + ganhoMun),
       };
 
       const seedEv = String(estado.meta?.seedPartida ?? 'seed-evento');
@@ -674,7 +797,9 @@ export function despacharComandoUi(estado, comando) {
         const hpMaxEsp = Number(HP_MAX_POR_ESPECIE[espNova] ?? 100);
         const camLivre =
           (nave.camaras ?? []).find(
-            (c) => (nave.tripulacao ?? []).filter((t) => t.localizacao === 'NAVE_JOGADOR' && t.camaraAtualId === c.id).length < 2
+            (c) =>
+              (nave.tripulacao ?? []).filter((t) => t.localizacao === 'NAVE_JOGADOR' && t.hpAtual > 0 && t.camaraAtualId === c.id).length <
+              Math.max(1, Number(nave?.limitesPorSala?.[c.id] ?? 2))
           )?.id ?? 3;
         novoTripulanteEspecie = espNova;
         novaTripEv = [
@@ -700,16 +825,18 @@ export function despacharComandoUi(estado, comando) {
       }
       let itemRecuperadoNome = null;
       const idxPoraoLivreEv = novoPoraoEv.findIndex((s) => !s?.item);
+      const catOrgaosPool = estado.meta?.edicaoComercialSteam ? CATALOGO_16_ORGAOS_STEAM : CATALOGO_ORGAOS_52;
+      const catArmasPool = estado.meta?.edicaoComercialSteam ? CATALOGO_24_ARMAS_STEAM : CATALOGO_ARMAS_51;
       if (idxPoraoLivreEv >= 0) {
         if (Number(recompensaOpcao.orgaoIntacto ?? 0) > 0) {
-          const specOrg = CATALOGO_ORGAOS_52[streamCombateDisparo(seedEv, setorEv, noIdEv, 1, 702) % CATALOGO_ORGAOS_52.length];
+          const specOrg = catOrgaosPool[streamCombateDisparo(seedEv, setorEv, noIdEv, 1, 702) % catOrgaosPool.length];
           novoPoraoEv[idxPoraoLivreEv] = {
             slotIndex: idxPoraoLivreEv,
             item: { id: specOrg.id, nome: specOrg.nome, tipo: 'ORGAO', pesoKg: Number(specOrg.pesoKg ?? 5) },
           };
           itemRecuperadoNome = specOrg.nome;
         } else if (Number(recompensaOpcao.armaRecuperada ?? 0) > 0) {
-          const specArma = CATALOGO_ARMAS_51[streamCombateDisparo(seedEv, setorEv, noIdEv, 1, 703) % CATALOGO_ARMAS_51.length];
+          const specArma = catArmasPool[streamCombateDisparo(seedEv, setorEv, noIdEv, 1, 703) % catArmasPool.length];
           novoPoraoEv[idxPoraoLivreEv] = {
             slotIndex: idxPoraoLivreEv,
             item: { id: specArma.id, nome: specArma.nome, tipo: 'ARMA', pesoKg: Number(specArma.pesoKg ?? 10) },
@@ -767,10 +894,13 @@ export function despacharComandoUi(estado, comando) {
       });
 
       const revelaCartaSetor = Boolean(recompensaOpcao.revelaMapaSetorial);
-      const novoMapaEvento =
+      let novoMapaEvento =
         revelaCartaSetor && estado.mapaSetorial
           ? { ...estado.mapaSetorial, cartaRevelada: true }
           : estado.mapaSetorial;
+      if (resVisita.plantaQuestId && novoMapaEvento) {
+        novoMapaEvento = plantarBoiaQuestNoSetor(novoMapaEvento, resVisita.plantaQuestId);
+      }
 
       const estadoPosteriorTemp = {
         ...estado,
@@ -855,15 +985,37 @@ export function despacharComandoUi(estado, comando) {
 
       const aliasItem = {
         CELULA_COMBUSTIVEL: 'INSUMO_COMBUSTIVEL',
+        COMBUSTIVEL_1UN: 'INSUMO_COMBUSTIVEL',
         MUNICAO_TORPEDO_ESPORO: 'INSUMO_MUNICAO',
+        MUNICAO_1UN: 'INSUMO_MUNICAO',
       }[idItemResolvido] ?? idItemResolvido;
-      const item = CATALOGO_LOJA_56B.find((i) => i.id === aliasItem);
+      const itemCru =
+        CATALOGO_LOJA_56B.find((i) => i.id === aliasItem) ??
+        CATALOGO_LOJA_STEAM_COMPLETO.find((i) => i.id === aliasItem);
+      const item = itemCru ? { ...itemCru, precoCompra: itemCru.precoCompra ?? itemCru.preco } : null;
       if (!item) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       const chaveMoeda = item.moeda === 'BIOMASSA' ? 'biomassa' : 'sucata';
       const baseCarteira = extrairCarteiraSincronizada(estado);
       let novaCarteiraLoja = { ...baseCarteira };
       let novoHpCascoLoja = nave.hpCascoAtual;
       let novaTripulacaoLoja = nave.tripulacao;
+      let novasCamarasLoja = nave.camaras;
+      let novosPostosLoja = nave.postosSalvosTripulacao ? { ...nave.postosSalvosTripulacao } : null;
+      let novoSubsistemasLoja = nave.subsistemasTaticosSteam
+        ? { ...nave.subsistemasTaticosSteam }
+        : {
+            sondaSabotagem: false,
+            parasitaNeural: false,
+            droneDefesa: false,
+            droneReparo: false,
+            droneAtaque: false,
+            recargaSondaSeg: 0,
+            sondaAtivaSeg: 0,
+            recargaNeuralSeg: 0,
+            recargaDroneDefesaSeg: 0,
+            recargaDroneReparoSeg: 0,
+            recargaDroneAtaqueSeg: 0,
+          };
       let novosItensCompradosLoja = [...(estado.lojaAtual?.itensCompradosIds ?? [])];
       let novaContagemInsumosLoja = { ...(estado.lojaAtual?.contagemInsumosComprados ?? {}) };
 
@@ -913,8 +1065,9 @@ export function despacharComandoUi(estado, comando) {
           );
           // Preserva órgãos enxertados na arma vendida: devolve ao Porão de Carga (ou credita valorVenda em Biomassa se lotado!)
           for (const idOrg of orgaosNaArma) {
-            const specOrg = CATALOGO_ORGAOS_52.find((o) => o.id === idOrg);
-            const specLojaOrg = CATALOGO_LOJA_56B.find((i) => i.id === idOrg);
+            const specOrg = CATALOGO_ORGAOS_52.find((o) => o.id === idOrg) ?? resolverOrgaoCatalogoUnificado(idOrg);
+            const specLojaOrg =
+              CATALOGO_LOJA_56B.find((i) => i.id === idOrg) ?? CATALOGO_LOJA_STEAM_COMPLETO.find((i) => i.id === idOrg);
             const idxLivreOrg = novoPoraoLoja.findIndex((s) => !s?.item);
             if (idxLivreOrg >= 0) {
               novoPoraoLoja = novoPoraoLoja.map((s, idx) =>
@@ -939,14 +1092,32 @@ export function despacharComandoUi(estado, comando) {
         novaCarteiraLoja[chaveMoeda] += item.valorVenda;
         novosItensCompradosLoja = novosItensCompradosLoja.filter((idC) => idC !== item.id);
       } else {
-        const ehUnicoLoja = item.categoria === 'ARMA' || item.categoria === 'ORGAO' || item.categoria === 'TRIPULANTE';
+        const ehSteamLoja = estado.meta?.edicaoComercialSteam === true;
+        const ehUnicoLoja =
+          item.categoria === 'ARMA' ||
+          item.categoria === 'ORGAO' ||
+          item.categoria === 'TRIPULANTE' ||
+          item.categoria === 'SUBSISTEMA';
         if (ehUnicoLoja && novosItensCompradosLoja.includes(item.id)) {
           return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
         }
-        if (item.categoria === 'INSUMO' && Number(novaContagemInsumosLoja[item.id] ?? 0) >= 5) {
-          return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
-        }
         const setorAtual = estado.mapaSetorial?.setorNumero ?? 1;
+        if (item.categoria === 'INSUMO') {
+          let limiteEstoqueInsumo = 5;
+          if (ehSteamLoja) {
+            const noIdLojaStr = String(estado.mapaSetorial?.noAtualId ?? estado.lojaAtual?.noId ?? '');
+            const mNoLoja = /(\d+)$/.exec(noIdLojaStr);
+            const noIdxLojaNum = mNoLoja ? Number(mNoLoja[1]) : 0;
+            const vitrineLojaRef =
+              estado.lojaAtual?.ofertasSteam ??
+              sortearVitrineLojaSteam(estado.meta?.seedPartida ?? 'biofoil', setorAtual, noIdxLojaNum, nave);
+            const cardIns = Array.isArray(vitrineLojaRef) ? vitrineLojaRef.find((o) => o?.id === item.id) : null;
+            limiteEstoqueInsumo = Number(cardIns?.estoqueInicial ?? cardIns?.estoqueRestante ?? cardIns?.estoqueMax ?? 6);
+          }
+          if (Number(novaContagemInsumosLoja[item.id] ?? 0) >= limiteEstoqueInsumo) {
+            return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+          }
+        }
         const preco =
           item.categoria === 'REPARO'
             ? (setorAtual <= 3 ? 2 : setorAtual <= 6 ? 3 : 4)
@@ -963,28 +1134,49 @@ export function despacharComandoUi(estado, comando) {
             return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
           }
           const especieMap = {
-            TRIPULANTE_POLVO: { especie: 'POLVO', hp: 80 },
-            TRIPULANTE_ARRAIA: { especie: 'ARRAIA', hp: 70 },
-            TRIPULANTE_BAIACU: { especie: 'BAIACU', hp: 150 },
-            TRIPULANTE_CARANGUEJO: { especie: 'CARANGUEJO', hp: 110 },
+            TRIPULANTE_POLVO: { especie: 'POLVO', hp: 80, disciplina: 'reparo' },
+            TRIPULANTE_ARRAIA: { especie: 'ARRAIA', hp: 70, disciplina: 'armas' },
+            TRIPULANTE_BAIACU: { especie: 'BAIACU', hp: 150, disciplina: 'pilotagem' },
+            TRIPULANTE_CARANGUEJO: { especie: 'CARANGUEJO', hp: 110, disciplina: 'combate' },
           }[item.id];
           if (especieMap) {
+            const camLojaLivre =
+              [3, 2, 4, 5, 1, 7, 6, 8].find(
+                (idC) =>
+                  (nave.tripulacao ?? []).filter((t) => t.localizacao === 'NAVE_JOGADOR' && t.hpAtual > 0 && t.camaraAtualId === idC)
+                    .length < Math.max(1, Number(nave?.limitesPorSala?.[idC] ?? 2))
+              ) ?? 3;
+            const idNovoTripLoja = `trip-loja-${(nave.tripulacao ?? []).length + 1}`;
+            const nvVetLoja = ehSteamLoja ? (setorAtual >= 7 ? 2 : setorAtual >= 4 ? 1 : 0) : 0;
+            const xpVetLoja = nvVetLoja >= 2 ? 8 : nvVetLoja === 1 ? 3 : 0;
+            const xpMapNovo = { pilotagem: 0, armas: 0, barreira: 0, reparo: 0, combate: 0 };
+            if (xpVetLoja > 0) xpMapNovo[especieMap.disciplina] = xpVetLoja;
             novaTripulacaoLoja = [
               ...(nave.tripulacao ?? []),
               {
-                id: `trip-loja-${(nave.tripulacao ?? []).length + 1}`,
+                id: idNovoTripLoja,
                 especie: especieMap.especie,
                 hpAtual: especieMap.hp,
                 hpMax: especieMap.hp,
-                camaraAtualId: 3,
+                camaraAtualId: camLojaLivre,
                 camaraDestinoId: null,
                 progressoNadoSeg: 0.0,
                 acopladoBulbo: false,
                 inflado: false,
                 atordoadoSeg: 0.0,
                 localizacao: 'NAVE_JOGADOR',
+                ...(ehSteamLoja
+                  ? {
+                      xpMaestria: xpMapNovo,
+                      nivelMaestria: nvVetLoja,
+                      ...(nvVetLoja > 0 ? { disciplinaMaestria: especieMap.disciplina } : {}),
+                    }
+                  : {}),
               },
             ];
+            if (novosPostosLoja) {
+              novosPostosLoja[idNovoTripLoja] = camLojaLivre;
+            }
           }
         } else if (item.categoria === 'ARMA' || item.categoria === 'ORGAO') {
           const idxLivrePorao = novoPoraoLoja.findIndex((s) => !s?.item);
@@ -996,6 +1188,54 @@ export function despacharComandoUi(estado, comando) {
               ? { ...s, item: { id: item.id, tipo: item.categoria, pesoKg: Number(item.pesoKg ?? 5.0) } }
               : s
           );
+        } else if (item.categoria === 'SUBSISTEMA') {
+          if (item.id === 'SUBSISTEMA_SONDA_SABOTAGEM') {
+            if (novoSubsistemasLoja.sondaSabotagem) {
+              return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+            }
+            novoSubsistemasLoja.sondaSabotagem = true;
+          } else if (item.id === 'SUBSISTEMA_PARASITA_NEURAL') {
+            if (novoSubsistemasLoja.parasitaNeural) {
+              return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+            }
+            novoSubsistemasLoja.parasitaNeural = true;
+          } else if (item.id === 'SUBSISTEMA_DRONE_DEFESA') {
+            if (novoSubsistemasLoja.droneDefesa) {
+              return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+            }
+            novoSubsistemasLoja.droneDefesa = true;
+          } else if (item.id === 'SUBSISTEMA_DRONE_REPARO') {
+            if (novoSubsistemasLoja.droneReparo) {
+              return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+            }
+            novoSubsistemasLoja.droneReparo = true;
+          } else if (item.id === 'SUBSISTEMA_DRONE_ATAQUE') {
+            if (novoSubsistemasLoja.droneAtaque) {
+              return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+            }
+            novoSubsistemasLoja.droneAtaque = true;
+          } else if (item.id === 'SUBSISTEMA_TUBO_PRESSURIZADO' || item.id === 'SUBSISTEMA_TINTA_FURTIVA') {
+            const idCamInst = item.id === 'SUBSISTEMA_TUBO_PRESSURIZADO' ? 7 : 8;
+            const camAlvoInst = (nave.camaras ?? []).find((c) => c.id === idCamInst);
+            if (!camAlvoInst || Number(camAlvoInst.nivelMaxBarras ?? camAlvoInst.barrasNivelMax ?? 0) > 0) {
+              return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+            }
+            novasCamarasLoja = (nave.camaras ?? []).map((c) =>
+              c.id === idCamInst
+                ? {
+                    ...c,
+                    nivelMaxBarras: 1,
+                    barrasNivelMax: 1,
+                    nivelMax: 1,
+                    barrasIntegridade: 1,
+                    integridade: 1,
+                    instalado: true,
+                  }
+                : c
+            );
+          } else {
+            return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
+          }
         }
         novaCarteiraLoja[chaveMoeda] -= preco;
         if (ehUnicoLoja) {
@@ -1012,9 +1252,16 @@ export function despacharComandoUi(estado, comando) {
         {
           ...nave,
           hpCascoAtual: novoHpCascoLoja,
+          camaras: novasCamarasLoja,
           tripulacao: novaTripulacaoLoja,
           armasAtivas: novasArmasLoja,
           poraoCarga: novoPoraoLoja,
+          ...(estado.meta?.edicaoComercialSteam === true
+            ? {
+                subsistemasTaticosSteam: novoSubsistemasLoja,
+                ...(novosPostosLoja ? { postosSalvosTripulacao: novosPostosLoja } : {}),
+              }
+            : {}),
         },
         { redistribuir: acao === 'VENDER' }
       );
@@ -1037,13 +1284,16 @@ export function despacharComandoUi(estado, comando) {
       if (!Number.isInteger(p.slotIndex) || p.slotIndex < 0 || p.slotIndex >= listaArmasEnx.length) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
-      const orgao = CATALOGO_ORGAOS_52.find((o) => o.id === p.orgaoId);
+      const orgao = CATALOGO_ORGAOS_52.find((o) => o.id === p.orgaoId) ?? resolverOrgaoCatalogoUnificado(p.orgaoId);
       const slot = listaArmasEnx[p.slotIndex];
       const arma = slot?.arma !== undefined ? slot.arma : slot;
       if (!orgao || !arma) return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
 
       let novosOrgaos = [...(arma.orgaosEnxertados ?? [])];
       if (p.acao === 'ENCAIXAR') {
+        if (orgao.categoriaEnxerto === 'CASCO_PASSIVO') {
+          return rejeitarComando(estado, comando, 'ORGAO_PASSIVO_EXIGE_PORAO_SIMBIOTICO');
+        }
         if (novosOrgaos.length >= (arma.soquetesMax ?? arma.soquetes ?? 1)) {
           return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
         }
@@ -1059,7 +1309,7 @@ export function despacharComandoUi(estado, comando) {
       }
 
       const penalidadeOrgaosSeg = novosOrgaos.reduce((acc, idOrg) => {
-        const specOrg = CATALOGO_ORGAOS_52.find((o) => o.id === idOrg);
+        const specOrg = CATALOGO_ORGAOS_52.find((o) => o.id === idOrg) ?? resolverOrgaoCatalogoUnificado(idOrg);
         return acc + Number(specOrg?.penalidadeRecargaSeg ?? 0);
       }, 0);
 
@@ -1093,7 +1343,13 @@ export function despacharComandoUi(estado, comando) {
       ) {
         return rejeitarComando(estado, comando, 'PRECONDICAO_NAO_ATENDIDA');
       }
-      const novoEstado = iniciarTravessiaMapa(estado, idNoDestino, p.descartarCargaIds ?? []);
+      const opcoesTravessia = estado.meta?.edicaoComercialSteam
+        ? {
+            velocidadeFrenteMnH: obterConfiguracaoDificuldadeSteam(estado.meta?.dificuldade ?? 'NORMAL')
+              .velocidadeFrotaMnPorHora,
+          }
+        : {};
+      const novoEstado = iniciarTravessiaMapa(estado, idNoDestino, p.descartarCargaIds ?? [], opcoesTravessia);
       return concluirComandoAceito(comando, p, novoEstado);
     }
   }

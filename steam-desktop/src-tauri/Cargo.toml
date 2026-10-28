@@ -1,0 +1,16 @@
+[package]
+name = "biofoil-steam-tauri"
+version = "1.0.0"
+description = "Bio-Foil — Tactical Hydrofoil Roguelike (Steam Commercial Tauri v2 Host)"
+authors = ["Bio-Foil Studio"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[build-dependencies]
+tauri-build = { version = "2.0.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0.0", features = [] }
+steamworks = "0.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

@@ -33,11 +33,29 @@ import {
 } from '../onda5-catalogo-chefe/catalogo-naves-itens.mjs';
 import { criarEstadoChefeDraga } from '../onda5-catalogo-chefe/chefe-draga.mjs';
 import { salvarRunSaveDisco } from './persistencia-perfil.mjs';
+import {
+  resolverTemplateEventoUnificado,
+  avaliarElegibilidadeBlueOptionSteam,
+  sortearEventoCampanhaSteamSemRepeticao,
+  plantarBoiaQuestNoSetor,
+} from '../onda7-steam/eventos-ae-setores-5a8.mjs';
+import { traduzirEventoSteam, TABELA_17_EVENTOS_GDD_I18N } from '../onda7-steam/i18n-dicionario-ui.mjs';
+import {
+  CATALOGO_24_ARMAS_STEAM,
+  calcularModificadoresPassivosOrgaosSteam,
+  sortearVitrineLojaSteam,
+} from '../onda7-steam/catalogo-armas-orgaos-ae.mjs';
+import {
+  obterConfiguracaoDificuldadeSteam,
+  escalarInimigoPorDificuldade,
+} from '../onda7-steam/dificuldades-conquistas-opcoes.mjs';
 
 export const ACOES_CAMPANHA_BIOFOIL = Object.freeze({
+  EXECUTAR_ACAO_STEAM: 'EXECUTAR_ACAO_STEAM',
   ALTERNAR_AUDIO_MUDO: 'ALTERNAR_AUDIO_MUDO',
   SELECIONAR_CARCACA_HANGAR: 'SELECIONAR_CARCACA_HANGAR',
   ABANDONAR_EXPEDICAO: 'ABANDONAR_EXPEDICAO',
+  ACEITAR_RENDICAO_INIMIGA: 'ACEITAR_RENDICAO_INIMIGA',
   SOLICITAR_CONFIRMACAO_ABANDONO: 'SOLICITAR_CONFIRMACAO_ABANDONO',
   CONFIRMAR_DESFECHO_EVENTO: 'CONFIRMAR_DESFECHO_EVENTO',
   INICIAR_NOVA_RUN: 'INICIAR_NOVA_RUN',
@@ -61,6 +79,9 @@ export const ACOES_CAMPANHA_BIOFOIL = Object.freeze({
  * Resolve o grafo ortogonal canônico de salas/órgãos para qualquer embarcação humana, criatura abissal ou fase da Draga Continental.
  */
 export function resolverGrafoOrtogonalAlvo(alvoCombate) {
+  if (alvoCombate?.grafoOrtogonal && typeof alvoCombate.grafoOrtogonal === 'object') {
+    return alvoCombate.grafoOrtogonal;
+  }
   const classe = String(alvoCombate?.classeAlvo ?? alvoCombate?.classeInimigo ?? 'BARCO_HUMANO').toUpperCase();
   const arqId = String(alvoCombate?.arquetipoId ?? '').toUpperCase();
   const salas = Array.isArray(alvoCombate?.salasOuOrgaos) ? alvoCombate.salasOuOrgaos : [];
@@ -247,6 +268,45 @@ export function gerarAlvoInimigoEscaladoSetor(seedPartida = 'seed-biofoil', seto
   if (arq.classe !== 'BARCO_HUMANO') {
     const ganglioBarras = atr.ganglioCentralBarras;
     const barrasSec = Math.max(2, 1 + Math.floor(sCurva / 2));
+    const ehSteamMon = opcoes.edicaoComercialSteam === true;
+    let salasMonstro;
+    let grafoMonstro = null;
+    if (ehSteamMon && arq.id === 'MONSTRO_2_ENGUIA') {
+      salasMonstro = [
+        { id: 1, nome: 'MANDIBULA_VOLT', submersa: true, integridadeAtual: barrasSec + 1, integridade: barrasSec + 1, integridadeMax: barrasSec + 1, barrasMax: barrasSec + 1, aguaKg: 25, tripulantes: [] },
+        { id: 2, nome: 'AMPOLAS_CHOQUE', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 3, nome: 'SINAPSE_LATERAL', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 4, nome: 'CAUDA_PROPULSORA', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 5, nome: 'GANGLIO_CENTRAL', ehGanglioCentral: true, submersa: true, integridadeAtual: ganglioBarras, integridade: ganglioBarras, integridadeMax: ganglioBarras, barrasMax: ganglioBarras, aguaKg: 25, tripulantes: [] },
+      ];
+      grafoMonstro = { 1: [2], 2: [1, 3], 3: [2, 4], 4: [3, 5], 5: [4] };
+    } else if (ehSteamMon && arq.id === 'MONSTRO_3_CARANGUEJO') {
+      salasMonstro = [
+        { id: 1, nome: 'GARRA_ESMAGADORA', submersa: true, integridadeAtual: barrasSec + 1, integridade: barrasSec + 1, integridadeMax: barrasSec + 1, barrasMax: barrasSec + 1, aguaKg: 25, tripulantes: [] },
+        { id: 2, nome: 'BICO_QUITINOSO', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 3, nome: 'CARAPACA_DORSAL', submersa: true, integridadeAtual: barrasSec + 1, integridade: barrasSec + 1, integridadeMax: barrasSec + 1, barrasMax: barrasSec + 1, aguaKg: 25, tripulantes: [] },
+        { id: 4, nome: 'BEXIGA_PRESSAO', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 5, nome: 'GANGLIO_CENTRAL', ehGanglioCentral: true, submersa: true, integridadeAtual: ganglioBarras, integridade: ganglioBarras, integridadeMax: ganglioBarras, barrasMax: ganglioBarras, aguaKg: 25, tripulantes: [] },
+      ];
+      grafoMonstro = { 1: [2, 3], 2: [1, 4], 3: [1, 4, 5], 4: [2, 3, 5], 5: [3, 4] };
+    } else if (ehSteamMon && arq.id === 'MONSTRO_4_HIDRA') {
+      salasMonstro = [
+        { id: 1, nome: 'CABECA_TERMICA_A', submersa: true, integridadeAtual: barrasSec + 1, integridade: barrasSec + 1, integridadeMax: barrasSec + 1, barrasMax: barrasSec + 1, aguaKg: 25, tripulantes: [] },
+        { id: 2, nome: 'CABECA_TERMICA_B', submersa: true, integridadeAtual: barrasSec + 1, integridade: barrasSec + 1, integridadeMax: barrasSec + 1, barrasMax: barrasSec + 1, aguaKg: 25, tripulantes: [] },
+        { id: 3, nome: 'BOLSA_ESPOROS', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 4, nome: 'SIFAO_MUSCULAR', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 5, nome: 'CORACAO_MAGMA', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 6, nome: 'GANGLIO_CENTRAL', ehGanglioCentral: true, submersa: true, integridadeAtual: ganglioBarras, integridade: ganglioBarras, integridadeMax: ganglioBarras, barrasMax: ganglioBarras, aguaKg: 25, tripulantes: [] },
+      ];
+      grafoMonstro = { 1: [2, 3], 2: [1, 4], 3: [1, 4, 5], 4: [2, 3, 6], 5: [3, 6], 6: [4, 5] };
+    } else {
+      salasMonstro = [
+        { id: 1, nome: 'TENTACULOS', submersa: true, integridadeAtual: barrasSec + 1, integridade: barrasSec + 1, integridadeMax: barrasSec + 1, barrasMax: barrasSec + 1, aguaKg: 25, tripulantes: [] },
+        { id: 2, nome: 'BICO_QUITINOSO', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 3, nome: 'SIFAO_MUSCULAR', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
+        { id: 4, nome: 'GANGLIO_CENTRAL', ehGanglioCentral: true, submersa: true, integridadeAtual: ganglioBarras, integridade: ganglioBarras, integridadeMax: ganglioBarras, barrasMax: ganglioBarras, aguaKg: 25, tripulantes: [] },
+      ];
+    }
     return clonarProfundoCongelado({
       ativo: true,
       arquetipoId: arq.id,
@@ -258,6 +318,7 @@ export function gerarAlvoInimigoEscaladoSetor(seedPartida = 'seed-biofoil', seto
       temSonarMilitar: false,
       sonarMilitarAtivo: false,
       ...(canalVisOpcao ? { canalVisibilidadeSonar: canalVisOpcao } : {}),
+      ...(grafoMonstro ? { grafoOrtogonal: grafoMonstro } : {}),
       orgaoExtraido: arq.orgaoExtraido ?? 'BOLSA_TINTA_ABISSAL',
       hpCascoAtual: atr.monstroHp,
       hpCascoMax: atr.monstroHp,
@@ -268,12 +329,7 @@ export function gerarAlvoInimigoEscaladoSetor(seedPartida = 'seed-biofoil', seto
       barreiraBolhasMax: 0,
       progressoAtaquePrimarioSeg: 0.0,
       progressoAtaqueSecundarioSeg: 0.0,
-      salasOuOrgaos: [
-        { id: 1, nome: 'TENTACULOS', submersa: true, integridadeAtual: barrasSec + 1, integridade: barrasSec + 1, integridadeMax: barrasSec + 1, barrasMax: barrasSec + 1, aguaKg: 25, tripulantes: [] },
-        { id: 2, nome: 'BICO_QUITINOSO', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
-        { id: 3, nome: 'SIFAO_MUSCULAR', submersa: true, integridadeAtual: barrasSec, integridade: barrasSec, integridadeMax: barrasSec, barrasMax: barrasSec, aguaKg: 25, tripulantes: [] },
-        { id: 4, nome: 'GANGLIO_CENTRAL', ehGanglioCentral: true, submersa: true, integridadeAtual: ganglioBarras, integridade: ganglioBarras, integridadeMax: ganglioBarras, barrasMax: ganglioBarras, aguaKg: 25, tripulantes: [] },
-      ],
+      salasOuOrgaos: salasMonstro,
       tripulacaoInimiga: [],
     });
   }
@@ -385,6 +441,72 @@ export function gerarAlvoInimigoEscaladoSetor(seedPartida = 'seed-biofoil', seto
 }
 
 /**
+ * Equipa barcos corporativos na Edição Comercial Steam com um par determinístico e visível de armas reais
+ * do `CATALOGO_24_ARMAS_STEAM` escaladas pelo setor (Torreta Primária + Bateria Secundária).
+ */
+export function equiparArsenalModularInimigoSteam(
+  alvoBase,
+  seedPartida = 'seed-biofoil',
+  setorNumero = 1,
+  noId = 'NO_1'
+) {
+  if (!alvoBase || alvoBase.ativo === false || alvoBase.faseChefe) return alvoBase;
+  const classe = alvoBase.classeAlvo ?? alvoBase.classeInimigo ?? 'BARCO_HUMANO';
+  if (classe !== 'BARCO_HUMANO') return alvoBase;
+  const s = Math.max(1, Math.min(8, Math.floor(Number(setorNumero) || 1)));
+  const maxEnePrim = s <= 2 ? 1 : s <= 5 ? 2 : 3;
+  const poolPrim = CATALOGO_24_ARMAS_STEAM.filter(
+    (w) => Number(w.municao ?? 0) === 0 && !w.ehFeixe && Number(w.energia ?? 1) <= maxEnePrim
+  );
+  const poolSec = CATALOGO_24_ARMAS_STEAM.filter(
+    (w) =>
+      (Number(w.municao ?? 0) >= 1 || Boolean(w.mecanicaEspecial) || Number(w.chanceFuroPct ?? 0) >= 40) &&
+      Number(w.energia ?? 1) <= Math.min(3, maxEnePrim + 1)
+  );
+  const h1 = streamCombateDisparo(String(seedPartida), s, String(noId), 0, 811);
+  const h2 = streamCombateDisparo(String(seedPartida), s, String(noId), 0, 812);
+  const w1 = (poolPrim.length > 0 ? poolPrim : CATALOGO_24_ARMAS_STEAM)[h1 % Math.max(1, poolPrim.length)];
+  const w2 = (poolSec.length > 0 ? poolSec : CATALOGO_24_ARMAS_STEAM)[h2 % Math.max(1, poolSec.length)];
+  const PREPOSICOES_CURTAS = new Set(['DE', 'DO', 'DA', 'DOS', 'DAS', 'EM', 'OF', 'THE']);
+  const abreviarLimpo15 = (txt) => {
+    const s = String(txt ?? '').replace(/^\d+\.\s*/, '').trim().toUpperCase();
+    if (s.length <= 15) return s;
+    const palavras = s.split(/\s+/).filter((p) => !PREPOSICOES_CURTAS.has(p));
+    if (palavras.length >= 2) {
+      const par = `${palavras[0]} ${palavras[1]}`;
+      if (par.length <= 15) return par;
+      return `${par.slice(0, 14).trimEnd()}.`;
+    }
+    return `${s.slice(0, 14).trimEnd()}.`;
+  };
+  const resumirArmaInim = (w, slot) => {
+    const rotPtCurto = abreviarLimpo15(w.cardPt ?? w.nome ?? w.id);
+    const rotEnCurto = abreviarLimpo15(w.cardEn ?? w.nomeEn ?? w.nome ?? w.id);
+    const ionBase = Number(w.danoIonico ?? 0);
+    return {
+      slot,
+      id: w.id,
+      chassiId: w.id,
+      nomePt: rotPtCurto,
+      nomeEn: rotEnCurto,
+      familiaVisual: w.familiaVisual ?? (slot === 2 ? 'TORPEDO_ABISSAL' : 'PROJETIL_ACUSTICO'),
+      mecanicaEspecial: w.mecanicaEspecial ?? null,
+      danoCasco: Number(w.danoCasco ?? (ionBase > 0 ? 0 : 1)),
+      danoSistema: Number(w.danoSistema ?? (ionBase > 0 ? 0 : 1)),
+      danoIonico: ionBase,
+      duracaoIonSeg: Number(w.duracaoIonSeg ?? 4),
+      chanceFuroPct: Number(w.chanceFuroPct ?? 0),
+      ignoraEscudo: Number(w.municao ?? 0) > 0 || w.familiaVisual === 'TORPEDO_ABISSAL',
+      atordoamentoAlvoSeg: Number(w.atordoamentoAlvoSeg ?? 0),
+    };
+  };
+  return clonarProfundoCongelado({
+    ...alvoBase,
+    armasEquipadasInimigo: [resumirArmaInim(w1, 1), resumirArmaInim(w2, 2)],
+  });
+}
+
+/**
  * Anexa de forma determinística o mapa hidrográfico setorial (`gerarMapaSetorial`) e metadados do bioma `1..8` ao estado.
  */
 export function anexarMapaSetorAoEstado(estadoBase, seedPartida, setorNumero) {
@@ -393,11 +515,40 @@ export function anexarMapaSetorAoEstado(estadoBase, seedPartida, setorNumero) {
   const idsTemplatesSetorAnterior = Array.isArray(estadoBase?.mapaSetorial?.templatesSorteados?.todos)
     ? estadoBase.mapaSetorial.templatesSorteados.todos
     : [];
+  const questSpillover = estadoBase?.mapaSetorial?.questPendenteProximoSetor ?? null;
   const mapaBruto = gerarMapaSetorial(seedPartida, s, idsTemplatesSetorAnterior);
   const noEntrada = mapaBruto.nos.find((n) => n.tipoNo === 'ENTRADA') ?? mapaBruto.nos[0];
-  const nosComEntradaVisitada = mapaBruto.nos.map((n) =>
-    n.id === noEntrada.id ? { ...n, visitado: true } : n
-  );
+  const ehSteam = Boolean(estadoBase?.meta?.edicaoComercialSteam);
+  const usadosAcumulados = Array.isArray(estadoBase?.meta?.eventosUsadosNaRun)
+    ? [...estadoBase.meta.eventosUsadosNaRun]
+    : [];
+  let idxSalEv = 0;
+  const nosComEntradaVisitada = mapaBruto.nos.map((n) => {
+    const baseNo = n.id === noEntrada.id ? { ...n, visitado: true } : { ...n };
+    if (ehSteam && (baseNo.tipoNo === 'SOS' || baseNo.tipoNo === 'EXPLORACAO' || baseNo.tipoNo === 'PERIGO')) {
+      const evSorteado = sortearEventoCampanhaSteamSemRepeticao(seedPartida, s, baseNo.tipoNo, usadosAcumulados, idxSalEv++);
+      if (evSorteado?.id) {
+        usadosAcumulados.push(evSorteado.id);
+        baseNo.idTemplateEvento = evSorteado.id;
+      }
+    }
+    return baseNo;
+  });
+  const modsOrgaosMapa = ehSteam ? calcularModificadoresPassivosOrgaosSteam(estadoBase?.naveJogador) : null;
+  const mapaSetorialBase = {
+    ...mapaBruto,
+    setorNumero: s,
+    biomaId: bioma.id,
+    nomeBioma: bioma.nome,
+    noAtualId: noEntrada.id,
+    relogioHoras: 0.0,
+    relogioSetorHoras: 0.0,
+    frenteCorporacaoMn: 0.0,
+    ...(modsOrgaosMapa?.revelaNosAdjacentesMapa ? { cartaRevelada: true } : {}),
+    nos: nosComEntradaVisitada,
+  };
+  const mapaSetorialFinal =
+    ehSteam && questSpillover ? plantarBoiaQuestNoSetor(mapaSetorialBase, questSpillover) : mapaSetorialBase;
 
   return clonarProfundoCongelado({
     ...estadoBase,
@@ -410,33 +561,46 @@ export function anexarMapaSetorAoEstado(estadoBase, seedPartida, setorNumero) {
       aguasTurvasAtivas: Boolean(bioma.aguasTurvas || bioma.regraEspecial === 'ESCURIDAO_SONAR_E_MONSTROS'),
       perigoAmbientalId: null,
       modificadoresCombateAtivos: null,
+      ...(ehSteam ? { eventosUsadosNaRun: usadosAcumulados } : {}),
     },
-    mapaSetorial: {
-      ...mapaBruto,
-      setorNumero: s,
-      biomaId: bioma.id,
-      nomeBioma: bioma.nome,
-      noAtualId: noEntrada.id,
-      relogioHoras: 0.0,
-      relogioSetorHoras: 0.0,
-      frenteCorporacaoMn: 0.0,
-      nos: nosComEntradaVisitada,
-    },
+    mapaSetorial: mapaSetorialFinal,
   });
 }
 
 /**
  * Resolve a transição de entrada em qualquer boia do mapa setorial (`SAIDA`, `LOJA`, `SOS`/`EXPLORACAO`/`PERIGO`, `COMBATE` ou Frente Corporativa).
  */
-export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesPersistencia = {}) {
+export function resolverEntradaNoMapaCampanha(estadoPosSaltoBruto, noDestino, opcoesPersistencia = {}) {
+  const ehSteamSalto = Boolean(estadoPosSaltoBruto.meta?.edicaoComercialSteam);
+  const curaSaltoAe = ehSteamSalto
+    ? Number(calcularModificadoresPassivosOrgaosSteam(estadoPosSaltoBruto.naveJogador).reparaCascoPorSaltoHp ?? 0)
+    : 0;
+  const estadoPosSalto =
+    curaSaltoAe > 0 && estadoPosSaltoBruto.naveJogador
+      ? {
+          ...estadoPosSaltoBruto,
+          naveJogador: {
+            ...estadoPosSaltoBruto.naveJogador,
+            hpCascoAtual: Math.min(
+              Number(estadoPosSaltoBruto.naveJogador.hpCascoMax ?? 30),
+              Number(estadoPosSaltoBruto.naveJogador.hpCascoAtual ?? 0) + curaSaltoAe
+            ),
+          },
+        }
+      : estadoPosSaltoBruto;
   const seed = estadoPosSalto.meta?.seedPartida ?? 'seed-campanha';
   const setor = Number(estadoPosSalto.mapaSetorial?.setorNumero ?? estadoPosSalto.meta?.setorAtual ?? 1);
   const tipoNo = noDestino?.tipoNo ?? 'COMBATE';
   const biomaAtual = CATALOGO_BIOMAS_53[Math.max(0, Math.min(7, setor - 1))] ?? CATALOGO_BIOMAS_53[0];
+  const ehSteamEnt = Boolean(estadoPosSalto.meta?.edicaoComercialSteam);
+  const difEnt = estadoPosSalto.meta?.dificuldade ?? 'NORMAL';
+  const velFrotaEnt = ehSteamEnt
+    ? obterConfiguracaoDificuldadeSteam(difEnt).velocidadeFrotaMnPorHora
+    : VELOCIDADE_FRENTE_CORPORATIVA_MN_H;
   const relogioHoras = Number(
     estadoPosSalto.mapaSetorial?.relogioSetorHoras ?? estadoPosSalto.mapaSetorial?.relogioHoras ?? 0
   );
-  const frenteMn = Number(estadoPosSalto.mapaSetorial?.frenteCorporacaoMn ?? relogioHoras * 6.0);
+  const frenteMn = Number(estadoPosSalto.mapaSetorial?.frenteCorporacaoMn ?? relogioHoras * velFrotaEnt);
   const camCortex = (estadoPosSalto.naveJogador?.camaras ?? []).find((c) => c.id === 2);
   const intCortex = Math.max(
     0,
@@ -450,12 +614,15 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
     (noDestino?.engolidoCorporacao === true ||
       (relogioHoras > 0 && noDestino?.xMn !== undefined && Number(noDestino.xMn) <= frenteMn));
 
+  const ehEnEnt = ehSteamEnt && estadoPosSalto.meta?.configuracoesSteam?.idioma === 'en-US';
   if (engolidoFrota) {
-    const alvoElite = gerarAlvoInimigoEscaladoSetor(seed, Math.min(7, setor + 1), noDestino.id, {
+    const alvoEliteBase = gerarAlvoInimigoEscaladoSetor(seed, Math.min(7, setor + 1), noDestino.id, {
       classeForcada: 'BARCO_HUMANO',
       bonusBarreiraInimigo: 1,
       canalVisibilidadeSonar: canalVisBioma,
     });
+    const alvoEliteEsc = ehSteamEnt ? escalarInimigoPorDificuldade(alvoEliteBase, difEnt, Math.min(7, setor + 1)) : alvoEliteBase;
+    const alvoElite = ehSteamEnt ? equiparArsenalModularInimigoSteam(alvoEliteEsc, seed, Math.min(7, setor + 1), noDestino.id) : alvoEliteEsc;
     return {
       ...estadoPosSalto,
       meta: {
@@ -463,7 +630,16 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
         faseJogo: 'COMBATE',
         modalCampanhaAtivo: null,
         hpCascoInimigoInicioLuta: alvoElite.hpCascoMax,
-        ultimoAvisoCampanha: 'EMBOSCADA DA FRENTE CORPORATIVA!',
+        ...(ehSteamEnt
+          ? {
+              hpCascoJogadorInicioLuta: Number(estadoPosSalto.naveJogador?.hpCascoAtual ?? 0),
+              tripulacaoVivosInicioLutaCount: (estadoPosSalto.naveJogador?.tripulacao ?? []).filter(
+                (t) => Number(t.hpAtual ?? 0) > 0
+              ).length,
+              telemetriaCombateSteam: {},
+            }
+          : {}),
+        ultimoAvisoCampanha: ehEnEnt ? 'CORPORATE FLEET AMBUSH!' : 'EMBOSCADA DA FRENTE CORPORATIVA!',
         perigoAmbientalId: null,
         modificadoresCombateAtivos: {
           origemCombate: 'FROTA_PRINCIPAL_CORPORACAO',
@@ -480,10 +656,12 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
     noDestino?.tPrazoHoras !== undefined &&
     relogioHoras > Number(noDestino.tPrazoHoras)
   ) {
-    const alvoZonaMorta = gerarAlvoInimigoEscaladoSetor(seed, setor, noDestino.id, {
+    const alvoZonaMortaBase = gerarAlvoInimigoEscaladoSetor(seed, setor, noDestino.id, {
       classeForcada: 'BARCO_HUMANO',
       canalVisibilidadeSonar: canalVisBioma,
     });
+    const alvoZonaMortaEsc = ehSteamEnt ? escalarInimigoPorDificuldade(alvoZonaMortaBase, difEnt, setor) : alvoZonaMortaBase;
+    const alvoZonaMorta = ehSteamEnt ? equiparArsenalModularInimigoSteam(alvoZonaMortaEsc, seed, setor, noDestino.id) : alvoZonaMortaEsc;
     return {
       ...estadoPosSalto,
       meta: {
@@ -491,7 +669,16 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
         faseJogo: 'COMBATE',
         modalCampanhaAtivo: null,
         hpCascoInimigoInicioLuta: alvoZonaMorta.hpCascoMax,
-        ultimoAvisoCampanha: 'SOS EXPIRADO — ZONA MORTA INDUSTRIALIZADA!',
+        ...(ehSteamEnt
+          ? {
+              hpCascoJogadorInicioLuta: Number(estadoPosSalto.naveJogador?.hpCascoAtual ?? 0),
+              tripulacaoVivosInicioLutaCount: (estadoPosSalto.naveJogador?.tripulacao ?? []).filter(
+                (t) => Number(t.hpAtual ?? 0) > 0
+              ).length,
+              telemetriaCombateSteam: {},
+            }
+          : {}),
+        ultimoAvisoCampanha: ehEnEnt ? 'SOS EXPIRED — INDUSTRIAL DEAD ZONE!' : 'SOS EXPIRADO — ZONA MORTA INDUSTRIALIZADA!',
         perigoAmbientalId: null,
         modificadoresCombateAtivos: {
           origemCombate: 'ZONA_MORTA_INDUSTRIALIZADA',
@@ -521,7 +708,20 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
           ...estadoProxMapa.meta,
           faseJogo: 'MAPA',
           modalCampanhaAtivo: null,
-          ultimoAvisoCampanha: `SETOR ${proximoSetor}/8: ${estadoProxMapa.meta.nomeBioma} (+2 HP)`,
+          ultimoAvisoCampanha: ehEnEnt
+            ? `SECTOR ${proximoSetor}/8: ${
+                ({
+                  BIOMA_1_ATOIS_SUCATA: 'Shallow Scrap Atolls',
+                  BIOMA_2_RECIFES_BIOLUMINESCENTES: 'Bioluminescent Reefs',
+                  BIOMA_3_FLORESTA_KELP: 'Giant Kelp Forest',
+                  BIOMA_4_ESTREITO_ARRASTOES: 'Trawler Strait',
+                  BIOMA_5_FOSSA_ABISSAL: 'Abyssal Pressure Trench',
+                  BIOMA_6_CRATERA_USINA: 'Submerged Reactor Crater',
+                  BIOMA_7_MAR_SARGACOS_QUIMICOS: 'Chemical Sargasso Sea',
+                  BIOMA_8_CRATERA_DRAGA: 'Continental Dredge Crater',
+                })[estadoProxMapa.meta.biomaId] ?? estadoProxMapa.meta.nomeBioma
+              } (+2 HP)`
+            : `SETOR ${proximoSetor}/8: ${estadoProxMapa.meta.nomeBioma} (+2 HP)`,
           metricasRun: {
             ...metricasAtu,
             setorMaximoAlcancado: Math.max(Number(metricasAtu.setorMaximoAlcancado ?? 1), proximoSetor),
@@ -535,7 +735,8 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
       return estAvancado;
     }
 
-    const chefeF1 = criarEstadoChefeDraga(1);
+    const chefeF1Base = criarEstadoChefeDraga(1);
+    const chefeF1 = ehSteamEnt ? escalarInimigoPorDificuldade(chefeF1Base, difEnt, 8) : chefeF1Base;
     return {
       ...estadoPosSalto,
       meta: {
@@ -543,7 +744,18 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
         faseJogo: 'COMBATE',
         modalCampanhaAtivo: null,
         hpCascoInimigoInicioLuta: chefeF1.hpCascoMax,
-        ultimoAvisoCampanha: 'CONFRONTO FINAL: DRAGA CONTINENTAL — FASE 1!',
+        ...(ehSteamEnt
+          ? {
+              hpCascoJogadorInicioLuta: Number(estadoPosSalto.naveJogador?.hpCascoAtual ?? 0),
+              tripulacaoVivosInicioLutaCount: (estadoPosSalto.naveJogador?.tripulacao ?? []).filter(
+                (t) => Number(t.hpAtual ?? 0) > 0
+              ).length,
+              telemetriaCombateSteam: {},
+            }
+          : {}),
+        ultimoAvisoCampanha: ehEnEnt
+          ? 'FINAL SHOWDOWN: CONTINENTAL DREDGE — PHASE 1!'
+          : 'CONFRONTO FINAL: DRAGA CONTINENTAL — FASE 1!',
       },
       alvoCombate: chefeF1,
     };
@@ -551,16 +763,41 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
 
   if (tipoNo === 'LOJA') {
     const estoque = gerarEstoqueLojaForja(seed, setor, noDestino.id);
+    const ehSteamLoja = Boolean(estadoPosSalto.meta?.edicaoComercialSteam);
+    const noIdxNum = Number((String(noDestino.id ?? '').match(/\d+/) ?? ['0'])[0]) || 0;
+    const vitrineAe = ehSteamLoja
+      ? sortearVitrineLojaSteam(seed, setor, noIdxNum, estadoPosSalto.naveJogador)
+      : null;
+    const ofertasSteam = vitrineAe
+      ? vitrineAe
+          .filter(
+            (x) =>
+              x.categoria === 'ARMA' ||
+              x.categoria === 'ORGAO' ||
+              x.categoria === 'TRIPULANTE' ||
+              x.categoria === 'SUBSISTEMA'
+          )
+          .map((x) => ({
+            id: x.id,
+            categoria: x.categoria,
+            moeda: x.moeda,
+            precoCompra: x.preco ?? x.precoCompra ?? 45,
+            valorVenda: x.valorVenda ?? 22,
+            pesoKg: x.pesoKg ?? 0,
+          }))
+      : null;
     const estLoja = {
       ...estadoPosSalto,
       meta: {
         ...estadoPosSalto.meta,
         faseJogo: 'LOJA',
         modalCampanhaAtivo: null,
-        ultimoAvisoCampanha: 'RECIFE-FORJA SIMBIÓTICO ATRACADO',
+        ultimoAvisoCampanha: ehEnEnt ? 'SYMBIOTIC FORGE-REEF DOCKED' : 'RECIFE-FORJA SIMBIÓTICO ATRACADO',
       },
       lojaAtual: {
         ...estoque,
+        ...(vitrineAe ? { ofertasSteam: vitrineAe } : {}),
+        ...(ofertasSteam ? { ofertasUnicas: ofertasSteam } : {}),
         itensCompradosIds: [],
         contagemInsumosComprados: {},
       },
@@ -573,13 +810,14 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
   }
 
   if (tipoNo === 'SOS' || tipoNo === 'PERIGO' || tipoNo === 'EXPLORACAO') {
+    const tipoNoEn = tipoNo === 'EXPLORACAO' ? 'EXPLORATION' : tipoNo === 'PERIGO' ? 'HAZARD' : 'SOS';
     const estEvento = {
       ...estadoPosSalto,
       meta: {
         ...estadoPosSalto.meta,
         faseJogo: 'EVENTO',
         modalCampanhaAtivo: null,
-        ultimoAvisoCampanha: `SINAL ${tipoNo} DETECTADO`,
+        ultimoAvisoCampanha: ehEnEnt ? `${tipoNoEn} SIGNAL DETECTED` : `SINAL ${tipoNo} DETECTADO`,
       },
       eventoAtual: {
         noId: noDestino.id,
@@ -595,18 +833,73 @@ export function resolverEntradaNoMapaCampanha(estadoPosSalto, noDestino, opcoesP
     return estEvento;
   }
 
-  const alvoCombate = gerarAlvoInimigoEscaladoSetor(seed, setor, noDestino.id, {
+  const ehSteamComb = Boolean(estadoPosSalto.meta?.edicaoComercialSteam);
+  const alvoCombateBase = gerarAlvoInimigoEscaladoSetor(seed, setor, noDestino.id, {
     forcarComumSetor8: setor === 8,
     canalVisibilidadeSonar: canalVisBioma,
+    edicaoComercialSteam: ehSteamComb,
   });
+  const alvoCombateEsc = ehSteamComb
+    ? escalarInimigoPorDificuldade(alvoCombateBase, estadoPosSalto.meta?.dificuldade ?? 'NORMAL', setor)
+    : alvoCombateBase;
+  const alvoCombate = ehSteamComb
+    ? equiparArsenalModularInimigoSteam(alvoCombateEsc, seed, setor, noDestino.id)
+    : alvoCombateEsc;
+  const modsComb = ehSteamComb ? calcularModificadoresPassivosOrgaosSteam(estadoPosSalto.naveJogador) : null;
+  const navePreCombate =
+    modsComb && modsComb.preIgnicaoCombatePct > 0
+      ? {
+          ...estadoPosSalto.naveJogador,
+          armasAtivas: (estadoPosSalto.naveJogador.armasAtivas ?? []).map((s) =>
+            s?.arma
+              ? {
+                  ...s,
+                  arma: {
+                    ...s.arma,
+                    progressoRecargaSeg: Math.max(
+                      Number(s.arma.progressoRecargaSeg ?? 0),
+                      Math.round(Number(s.arma.tempoRecargaBaseSeg ?? 10) * modsComb.preIgnicaoCombatePct * 100) / 100
+                    ),
+                  },
+                }
+              : s
+          ),
+        }
+      : estadoPosSalto.naveJogador;
   return {
     ...estadoPosSalto,
+    naveJogador: navePreCombate,
     meta: {
       ...estadoPosSalto.meta,
       faseJogo: 'COMBATE',
       modalCampanhaAtivo: null,
       hpCascoInimigoInicioLuta: alvoCombate.hpCascoMax,
-      ultimoAvisoCampanha: `CONTATO HOSTIL: ${alvoCombate.nome}`,
+      ...(ehSteamComb
+        ? {
+            hpCascoJogadorInicioLuta: Number(navePreCombate?.hpCascoAtual ?? 0),
+            tripulacaoVivosInicioLutaCount: (navePreCombate?.tripulacao ?? []).filter(
+              (t) => Number(t.hpAtual ?? 0) > 0
+            ).length,
+            telemetriaCombateSteam: {},
+          }
+        : {}),
+      ultimoAvisoCampanha: ehEnEnt
+        ? `HOSTILE CONTACT: ${
+            ({
+              BARCO_1_LANCHA: 'PATROL CUTTER',
+              BARCO_2_CORVETA: 'SONAR CORVETTE',
+              BARCO_3_ARRASTAO: 'SHIELD TRAWLER',
+              BARCO_4_SUBMARINO: 'ASSAULT SUBMARINE',
+              MONSTRO_1_TEUTHIS: 'ARMORED TEUTHIS',
+              MONSTRO_2_ENGUIA: 'BIO-ELECTRIC EEL',
+              MONSTRO_3_CARANGUEJO: 'BASALT ROCK-CRAB',
+              MONSTRO_4_HIDRA: 'CRATER THERMO-HYDRA',
+              CHEFE_DRAGA_FASE_1: 'CONTINENTAL DREDGE F1',
+              CHEFE_DRAGA_FASE_2: 'CONTINENTAL DREDGE F2',
+              CHEFE_DRAGA_FASE_3: 'CONTINENTAL DREDGE F3',
+            })[alvoCombate.arquetipoId] ?? 'HOSTILE TARGET'
+          }`
+        : `CONTATO HOSTIL: ${alvoCombate.nome}`,
       perigoAmbientalId: null,
       modificadoresCombateAtivos: null,
     },
@@ -637,9 +930,17 @@ export function aplicarRegrasSaquePosCombateCampanha(recompensaBase, estadoPosTi
       municao: 0,
     });
   }
+  const ehSteamSaque = Boolean(estadoPosTick?.meta?.edicaoComercialSteam);
+  const multDif = ehSteamSaque
+    ? obterConfiguracaoDificuldadeSteam(estadoPosTick?.meta?.dificuldade ?? 'NORMAL').multiplicadorSaque ?? 1.0
+    : 1.0;
+  const multOrg = ehSteamSaque
+    ? 1.0 + (calcularModificadoresPassivosOrgaosSteam(estadoPosTick?.naveJogador).multiplicadorSaqueBonus ?? 0)
+    : 1.0;
+  const fatorTotal = multDif * multOrg;
   return clonarProfundoCongelado({
-    sucata: Number(base.sucata ?? 0),
-    biomassa: Number(base.biomassa ?? 0),
+    sucata: Math.round(Number(base.sucata ?? 0) * fatorTotal),
+    biomassa: Math.round(Number(base.biomassa ?? 0) * fatorTotal),
     combustivel: Number(base.combustivel ?? 0),
     municao: Number(base.municao ?? 0) + Math.max(0, Number(mod?.municaoPosLuta ?? 0)),
   });
@@ -689,7 +990,15 @@ export function construirDesfechoEventoCanonicamente(estadoAnterior, estadoPoste
       'SOS'
   );
   const template = CATALOGO_TEMPLATES_EVENTOS_45A.find((t) => t.id === idEvento) ?? null;
-  const nomeEventoLimpo = template ? template.nome.replace(/^\d+\.\s*/, '').toUpperCase() : idEvento;
+  const tplSteamDesf = !template ? resolverTemplateEventoUnificado(idEvento) : null;
+  const idiomaDesf = estadoPosterior?.meta?.configuracoesSteam?.idioma ?? estadoAnterior?.meta?.configuracoesSteam?.idioma ?? 'pt-BR';
+  const ehEnDesf = idiomaDesf === 'en-US';
+  const enGddDesf = ehEnDesf && template ? TABELA_17_EVENTOS_GDD_I18N[template.id] : null;
+  const nomeEventoLimpo = template
+    ? (enGddDesf ? enGddDesf.seloEn : template.nome.replace(/^\d+\.\s*/, '').toUpperCase())
+    : tplSteamDesf
+      ? (traduzirEventoSteam(tplSteamDesf, idiomaDesf).selo ?? idEvento)
+      : idEvento;
   const iniciouCombate =
     contextoEvento.iniciouCombate !== undefined
       ? Boolean(contextoEvento.iniciouCombate)
@@ -707,14 +1016,37 @@ export function construirDesfechoEventoCanonicamente(estadoAnterior, estadoPoste
   const itemRecuperadoNome =
     contextoEvento.itemRecuperadoNome ?? itemGanho?.nome ?? itemGanho?.id ?? null;
 
+  const mapaEspDesfEn = { POLVO: 'OCTOPUS', ARRAIA: 'ELECTRIC RAY', BAIACU: 'SPINY PUFFER', CARANGUEJO: 'AMPHIB CRAB' };
   const bonusPartes = [];
-  if (novoTripulanteEspecie) bonusPartes.push(`+1 TRIPULANTE (${novoTripulanteEspecie})`);
-  if (itemRecuperadoNome) bonusPartes.push(`PORÃO: +${String(itemRecuperadoNome).replace(/_/g, ' ')}`);
-  if (contextoEvento.revelaMapaSetorial) bonusPartes.push('CARTA HIDROGRÁFICA REVELADA');
+  if (novoTripulanteEspecie) {
+    bonusPartes.push(
+      ehEnDesf
+        ? `+1 CREWMATE (${mapaEspDesfEn[novoTripulanteEspecie] ?? novoTripulanteEspecie})`
+        : `+1 TRIPULANTE (${novoTripulanteEspecie})`
+    );
+  }
+  if (itemRecuperadoNome) {
+    bonusPartes.push(`${ehEnDesf ? 'HOLD' : 'PORÃO'}: +${String(itemRecuperadoNome).replace(/_/g, ' ')}`);
+  }
+  if (contextoEvento.revelaMapaSetorial) {
+    bonusPartes.push(ehEnDesf ? 'SECTOR CHART REVEALED' : 'CARTA HIDROGRÁFICA REVELADA');
+  }
   const bonusEspecialTexto = bonusPartes.length > 0 ? bonusPartes.join(' | ') : null;
 
   let narrativaPrincipal;
-  if (blueOptionAtivada) {
+  if (ehEnDesf) {
+    if (blueOptionAtivada) {
+      narrativaPrincipal = `SYMBIOTIC SYNERGY AT ${nomeEventoLimpo}: CLEAN EXTRACTION WITH ZERO RISK!`;
+    } else if (opcaoEscolhida === 'C') {
+      narrativaPrincipal = `HYDRO-ACOUSTIC WITHDRAWAL AT ${nomeEventoLimpo}: STEALTH COURSE MAINTAINED.`;
+    } else if (iniciouCombate) {
+      narrativaPrincipal = `HOSTILE AMBUSH AT ${nomeEventoLimpo} — ENGAGING COMBAT TRIM ON FOIL!`;
+    } else if (deltaHpCasco < 0) {
+      narrativaPrincipal = `RISKY MANEUVER AT ${nomeEventoLimpo}: CHITIN HULL TOOK ${deltaHpCasco} HP DURING SALVAGE.`;
+    } else {
+      narrativaPrincipal = `STANDARD OPERATION AT ${nomeEventoLimpo}: SHIP STORES UPDATED CLEANLY.`;
+    }
+  } else if (blueOptionAtivada) {
     narrativaPrincipal = `SINERGIA SIMBIÓTICA EM ${nomeEventoLimpo}: EXTRAÇÃO LIMPA SEM RISCO ESTRUTURAL!`;
   } else if (opcaoEscolhida === 'C') {
     narrativaPrincipal = `RECUO HIDROACÚSTICO EM ${nomeEventoLimpo}: BIO-NAVE MANTEVE ROTA FURTIVA.`;
@@ -726,15 +1058,25 @@ export function construirDesfechoEventoCanonicamente(estadoAnterior, estadoPoste
     narrativaPrincipal = `OPERAÇÃO PADRÃO EM ${nomeEventoLimpo}: RESERVATÓRIOS ATUALIZADOS COM SUCESSO.`;
   }
 
-  const titulo = blueOptionAtivada
-    ? `OPÇÃO AZUL [B] — ${nomeEventoLimpo}`
-    : iniciouCombate
-      ? `OPÇÃO [${opcaoEscolhida}] — CONTATO HOSTIL EM ${nomeEventoLimpo}!`
-      : deltaHpCasco < 0
-        ? `OPÇÃO [${opcaoEscolhida}] — EXTRAÇÃO COM AVARIA (${deltaHpCasco} HP)`
-        : opcaoEscolhida === 'C'
-          ? `OPÇÃO [C] — RECUO TÁTICO DE ${nomeEventoLimpo}`
-          : `OPÇÃO [${opcaoEscolhida}] — ${nomeEventoLimpo}`;
+  const titulo = ehEnDesf
+    ? (blueOptionAtivada
+        ? `BLUE OPTION [B] — ${nomeEventoLimpo}`
+        : iniciouCombate
+          ? `OPTION [${opcaoEscolhida}] — HOSTILE CONTACT AT ${nomeEventoLimpo}!`
+          : deltaHpCasco < 0
+            ? `OPTION [${opcaoEscolhida}] — HULL STRAIN (${deltaHpCasco} HP)`
+            : opcaoEscolhida === 'C'
+              ? `OPTION [C] — TACTICAL RETREAT FROM ${nomeEventoLimpo}`
+              : `OPTION [${opcaoEscolhida}] — ${nomeEventoLimpo}`)
+    : (blueOptionAtivada
+        ? `OPÇÃO AZUL [B] — ${nomeEventoLimpo}`
+        : iniciouCombate
+          ? `OPÇÃO [${opcaoEscolhida}] — CONTATO HOSTIL EM ${nomeEventoLimpo}!`
+          : deltaHpCasco < 0
+            ? `OPÇÃO [${opcaoEscolhida}] — EXTRAÇÃO COM AVARIA (${deltaHpCasco} HP)`
+            : opcaoEscolhida === 'C'
+              ? `OPÇÃO [C] — RECUO TÁTICO DE ${nomeEventoLimpo}`
+              : `OPÇÃO [${opcaoEscolhida}] — ${nomeEventoLimpo}`);
 
   return clonarProfundoCongelado({
     idEvento,
@@ -1134,6 +1476,32 @@ export function construirEventoResumoCanonico45A(estado) {
         : 'SOS_1_REDE_ARRASTO';
   const idCandidato =
     estado?.eventoAtual?.idTemplateEvento ?? noAtual?.idTemplateEvento ?? idPadraoCategoria;
+  const idiomaEv = estado?.meta?.configuracoesSteam?.idioma ?? 'pt-BR';
+  const tplUnificado = resolverTemplateEventoUnificado(idCandidato);
+  if (tplUnificado && (String(tplUnificado.id).startsWith('AE_') || idiomaEv === 'en-US')) {
+    const trad = traduzirEventoSteam(tplUnificado, idiomaEv);
+    const cumpreBlueSteam = avaliarElegibilidadeBlueOptionSteam(tplUnificado, estado?.naveJogador ?? {});
+    return clonarProfundoCongelado({
+      idEvento: tplUnificado.id,
+      categoria: tplUnificado.categoria,
+      ehEventoQuest: Boolean(tplUnificado.ehEventoQuest),
+      seloCenarioCurto: trad.seloCenarioCurto ?? trad.selo ?? tplUnificado.categoria,
+      titulo: trad.titulo,
+      narrativaLinhas: trad.linhasNarrativas ?? trad.linhas ?? [],
+      requisitoBlueOption: tplUnificado.reqBlue ?? tplUnificado.requisitoBlueOption ?? null,
+      blueOptionDisponivel: cumpreBlueSteam,
+      opcoes: trad.opcoes.map((op) => {
+        const codOp = op.codigo ?? op.letra ?? 'A';
+        return {
+          codigo: codOp,
+          rotulo: op.rotulo,
+          detalhe: op.detalhe,
+          azul: Boolean(op.ehBlue ?? codOp === 'B'),
+          bloqueada: codOp === 'B' ? !cumpreBlueSteam : codOp === 'C' && tplUnificado.categoria === 'PERIGO',
+        };
+      }),
+    });
+  }
   const template =
     CATALOGO_TEMPLATES_EVENTOS_45A.find((t) => t.id === idCandidato) ??
     CATALOGO_TEMPLATES_EVENTOS_45A.find((t) => t.id === idPadraoCategoria);
@@ -1178,20 +1546,47 @@ export function construirEventoResumoCanonico45A(estado) {
   });
 }
 
-function resumirInteligenciaNoMapa(no, seedPartida, setorNumero) {
+function resumirInteligenciaNoMapa(no, seedPartida, setorNumero, idiomaMapa = 'pt-BR') {
+  const ehEnM = idiomaMapa === 'en-US';
   const tipo = no.tipo ?? no.tipoNo ?? 'COMBATE';
   if (tipo === 'ENTRADA') {
-    return { subtipoCurto: 'ENTRADA', detalheInteligencia: 'BOIA DE INSERÇÃO DO SETOR' };
+    return ehEnM
+      ? { subtipoCurto: 'ENTRY', detalheInteligencia: 'SECTOR ENTRY BUOY' }
+      : { subtipoCurto: 'ENTRADA', detalheInteligencia: 'BOIA DE INSERÇÃO DO SETOR' };
   }
   if (tipo === 'LOJA') {
-    return { subtipoCurto: 'FORJA', detalheInteligencia: 'RECIFE-FORJA SIMBIÓTICO (LOJA & REPARO)' };
+    return ehEnM
+      ? { subtipoCurto: 'FORGE', detalheInteligencia: 'SYMBIOTIC FORGE-REEF (SHOP & REPAIR)' }
+      : { subtipoCurto: 'FORJA', detalheInteligencia: 'RECIFE-FORJA SIMBIÓTICO (LOJA & REPARO)' };
   }
   if (tipo === 'SAIDA' || tipo === 'CHEFE') {
     return setorNumero >= 8
-      ? { subtipoCurto: 'DRAGA F1', detalheInteligencia: 'CONFRONTO FINAL: DRAGA CONTINENTAL (3 FASES)' }
-      : { subtipoCurto: 'PORTAL', detalheInteligencia: `SALTO INTER-SETORIAL -> SETOR ${setorNumero + 1}/8` };
+      ? (ehEnM
+          ? { subtipoCurto: 'DREDGE', detalheInteligencia: 'FINAL BOSS: CONTINENTAL DREDGE (3 PHASES)' }
+          : { subtipoCurto: 'DRAGA F1', detalheInteligencia: 'CONFRONTO FINAL: DRAGA CONTINENTAL (3 FASES)' })
+      : (ehEnM
+          ? { subtipoCurto: 'PORTAL', detalheInteligencia: `SECTOR EXIT GATE -> SECTOR ${setorNumero + 1}/8` }
+          : { subtipoCurto: 'PORTAL', detalheInteligencia: `SALTO INTER-SETORIAL -> SETOR ${setorNumero + 1}/8` });
   }
   if (tipo === 'SOS' || tipo === 'EXPLORACAO' || tipo === 'PERIGO') {
+    if (no.ehQuestAtiva) {
+      const tplQ = resolverTemplateEventoUnificado(no.idTemplateEvento);
+      return {
+        tagMapa: 'QUEST!',
+        subtipoCurto: 'QUEST!',
+        detalheInteligencia: ehEnM
+          ? (tplQ?.tituloEn ?? 'ACTIVE SIDE QUEST BEACON [QUEST]')
+          : (tplQ?.tituloPt ?? 'MISSÃO SECUNDÁRIA ATIVA [QUEST]'),
+      };
+    }
+    if (ehEnM && no.idTemplateEvento && TABELA_17_EVENTOS_GDD_I18N[no.idTemplateEvento]) {
+      const specEn = TABELA_17_EVENTOS_GDD_I18N[no.idTemplateEvento];
+      return {
+        tagMapa: specEn.tagEn,
+        subtipoCurto: specEn.seloEn,
+        detalheInteligencia: specEn.tituloEn,
+      };
+    }
     const specEv = no.idTemplateEvento ? TABELA_NARRATIVA_17_EVENTOS_45A[no.idTemplateEvento] : null;
     if (specEv) {
       return {
@@ -1200,10 +1595,49 @@ function resumirInteligenciaNoMapa(no, seedPartida, setorNumero) {
         detalheInteligencia: specEv.titulo,
       };
     }
-    return { subtipoCurto: tipo, detalheInteligencia: `SINAL DE ${tipo} DETECTADO` };
+    const tplAe = no.idTemplateEvento ? resolverTemplateEventoUnificado(no.idTemplateEvento) : null;
+    if (tplAe) {
+      return ehEnM
+        ? {
+            tagMapa: tplAe.tagMapaEn ?? tipo,
+            subtipoCurto: tplAe.seloEn ?? tipo,
+            detalheInteligencia: tplAe.tituloEn ?? `${tipo} SIGNAL DETECTED`,
+          }
+        : {
+            tagMapa: tplAe.tagMapaPt ?? tipo,
+            subtipoCurto: tplAe.seloPt ?? tipo,
+            detalheInteligencia: tplAe.tituloPt ?? `SINAL DE ${tipo} DETECTADO`,
+          };
+    }
+    const mapTipoEn = { SOS: 'SOS', EXPLORACAO: 'EXPLORE', PERIGO: 'HAZARD' };
+    const tExib = ehEnM ? (mapTipoEn[tipo] ?? tipo) : tipo;
+    return { subtipoCurto: tExib, detalheInteligencia: ehEnM ? `${tExib} SIGNAL DETECTED` : `SINAL DE ${tipo} DETECTADO` };
   }
   const alvoPrevisto = gerarAlvoInimigoEscaladoSetor(seedPartida, setorNumero, no.id);
-  const prefixoClasse = alvoPrevisto.classeAlvo === 'MONSTRO_MARINHO' ? 'MONSTRO' : 'BARCO';
+  const ehMon = alvoPrevisto.classeAlvo === 'MONSTRO_MARINHO';
+  if (ehEnM) {
+    const mapaAlvoEn = {
+      BARCO_1_LANCHA: 'PATROL CUTTER',
+      BARCO_1_PATRULHA: 'PATROL CUTTER',
+      BARCO_2_CORVETA: 'SONAR CORVETTE',
+      BARCO_3_ARRASTAO: 'SHIELD TRAWLER',
+      BARCO_4_SUBMARINO: 'ASSAULT SUB',
+      MONSTRO_1_TEUTHIS: 'ARMORED TEUTHIS',
+      MONSTRO_1_LULA: 'CHITIN KRAKEN',
+      MONSTRO_2_ENGUIA: 'VOLT EEL',
+      MONSTRO_3_CARANGUEJO: 'BASALT CRAB',
+      MONSTRO_3_CARANGUEJO_ROCHA: 'BASALT CRAB',
+      MONSTRO_4_HIDRA: 'THERMO-HYDRA',
+      MONSTRO_4_LEVIATA_FOSSA: 'TRENCH LEVIATHAN',
+    };
+    const clsEn = ehMon ? 'BEAST' : 'VESSEL';
+    const nomeEn = mapaAlvoEn[alvoPrevisto.arquetipoId] ?? clsEn;
+    return {
+      subtipoCurto: clsEn,
+      detalheInteligencia: `${clsEn}: ${nomeEn} (${alvoPrevisto.hpCascoMax} HP)`,
+    };
+  }
+  const prefixoClasse = ehMon ? 'MONSTRO' : 'BARCO';
   const nomeCurtoAlvo = String(alvoPrevisto.nome ?? prefixoClasse).toUpperCase().slice(0, 18);
   return {
     subtipoCurto: prefixoClasse === 'MONSTRO' ? 'MONSTRO' : 'BARCO',
@@ -1242,12 +1676,16 @@ export function construirTelemetriaMapaSetorial(estado, faseJogoAtual = 'MAPA') 
         0
     ) * 100
   ) / 100;
+  const idiomaMapa = estado?.meta?.configuracoesSteam?.idioma ?? 'pt-BR';
+  const velFrotaMapa = estado?.meta?.edicaoComercialSteam
+    ? obterConfiguracaoDificuldadeSteam(estado?.meta?.dificuldade ?? 'NORMAL').velocidadeFrotaMnPorHora
+    : VELOCIDADE_FRENTE_CORPORATIVA_MN_H;
   const frenteCorporativaX = Number(
     estado?.mapaSetorial?.frenteCorporativaX ??
       estado?.mapaSetorial?.frenteCorporacaoMn ??
       (estado?.mapaSetorial?.avancoDraga !== undefined ? Number(estado.mapaSetorial.avancoDraga) * 18 : undefined) ??
       mapaFonte.frenteCorporacaoMn ??
-      (relogioSetorHoras > 0 ? Math.round(VELOCIDADE_FRENTE_CORPORATIVA_MN_H * relogioSetorHoras * 100) / 100 : -18)
+      (relogioSetorHoras > 0 ? Math.round(velFrotaMapa * relogioSetorHoras * 100) / 100 : -18)
   );
   const cartaRevelada = Boolean(estado?.mapaSetorial?.cartaRevelada ?? mapaFonte.cartaRevelada);
 
@@ -1325,15 +1763,20 @@ export function construirTelemetriaMapaSetorial(estado, faseJogoAtual = 'MAPA') 
             tipo === 'SOS' && tPrazoHoras !== null && !sosExpirado && relogioSetorHoras + horasSalto > tPrazoHoras
           ),
           engolidoNoSalto: Boolean(
-            !engolidoCorporacao && xMn <= frenteCorporativaX + VELOCIDADE_FRENTE_CORPORATIVA_MN_H * horasSalto
+            !engolidoCorporacao && xMn <= frenteCorporativaX + velFrotaMapa * horasSalto
           ),
         }
       : null;
 
-    const inteligenciaRevelada = Boolean(ehAtual || visitado || alcancavel || cartaRevelada);
+    const ehQuestAtiva = Boolean(n.ehQuestAtiva);
+    const inteligenciaRevelada = Boolean(ehAtual || visitado || alcancavel || cartaRevelada || ehQuestAtiva);
     const infoIntel = inteligenciaRevelada
-      ? resumirInteligenciaNoMapa(n, seedPartida, setorNumero)
-      : { subtipoCurto: null, detalheInteligencia: 'ASSINATURA OCULTA (FORA DO CONE SONAR)' };
+      ? resumirInteligenciaNoMapa(n, seedPartida, setorNumero, idiomaMapa)
+      : {
+          subtipoCurto: null,
+          detalheInteligencia:
+            idiomaMapa === 'en-US' ? 'HIDDEN SIGNATURE (OUT OF SONAR CONE)' : 'ASSINATURA OCULTA (FORA DO CONE SONAR)',
+        };
 
     return {
       id: n.id,
@@ -1343,6 +1786,7 @@ export function construirTelemetriaMapaSetorial(estado, faseJogoAtual = 'MAPA') 
       yMn,
       visitado,
       ehAtual,
+      ehQuestAtiva,
       alcancavel,
       tPrazoHoras,
       sosExpirado,

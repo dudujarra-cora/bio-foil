@@ -8,6 +8,9 @@
   },
   "scripts": {
     "start": "node scripts/jogar-biofoil.mjs",
+    "steam:gerar-audio": "node scripts/gerar-assets-audio-ogg.mjs",
+    "steam:desktop": "node scripts/jogar-biofoil.mjs --steam-desktop",
+    "steam:pack-depot": "node -e \"import('./src/onda7-steam/steamworks-desktop-host.mjs').then((m) => m.empacotarDepotSteamAutocontido())\"",
     "test": "node --test tests/*.test.mjs",
     "auditar": "sh scripts/auditar-frente.sh",
     "mutacoes": "node scripts/rodar-mutacoes.mjs",

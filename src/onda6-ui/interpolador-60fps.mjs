@@ -16,6 +16,11 @@ import {
   calcularLayoutPlacaCamaras960,
   calcularRetangulosSalasAlvo960,
 } from './geometria-layout-960.mjs';
+import {
+  resolverLayoutTopologiaNave,
+  obterBocaDorsalLayout960,
+  calcularRetangulosCamarasMoldadas960,
+} from '../onda7-steam/topologias-naves-ab.mjs';
 
 function construirHitboxesInterpolacaoFallback960(vm, opcoes = {}) {
   const faseJogo = vm?.faseJogo ?? 'COMBATE';
@@ -27,19 +32,27 @@ function construirHitboxesInterpolacaoFallback960(vm, opcoes = {}) {
   const classeAlvo = String(vm?.painelAlvo?.classeAlvo ?? '');
   const ehMonstroAlvo = classeAlvo.includes('MONSTRO');
   const layoutPlacaCamaras = calcularLayoutPlacaCamaras960(ehTouchdown, ehMonstroAlvo);
+  const moldadoSteam = vm?.layoutId
+    ? calcularRetangulosCamarasMoldadas960({
+        idArquitetura: vm.layoutId,
+        ehTouchdown,
+        ehMonstroAlvo,
+      })
+    : null;
   const hitboxes = [];
 
   for (const cam of vm?.camaras ?? []) {
     const coordPadrao = COORDENADAS_GRADE_CAMARAS_16A[cam.id] ?? { coluna: 0, andar: 0 };
     const col = Number(cam.coluna ?? coordPadrao.coluna);
     const andar = Math.max(0, Math.min(3, Number(cam.andar ?? coordPadrao.andar)));
+    const rMold = moldadoSteam?.camaras?.[cam.id] ?? null;
     hitboxes.push({
       idHitbox: `CAMARA_${cam.id}`,
       tipo: 'CAMARA_BIONAVE',
-      x: col === 0 ? layoutPlacaCamaras.xEsq : layoutPlacaCamaras.xDir,
-      y: layoutPlacaCamaras.toposY[andar],
-      largura: layoutPlacaCamaras.larguraCam,
-      altura: layoutPlacaCamaras.alturasY[andar],
+      x: rMold ? rMold.x : (col === 0 ? layoutPlacaCamaras.xEsq : layoutPlacaCamaras.xDir),
+      y: rMold ? rMold.y : layoutPlacaCamaras.toposY[andar],
+      largura: rMold ? rMold.largura : layoutPlacaCamaras.larguraCam,
+      altura: rMold ? rMold.altura : layoutPlacaCamaras.alturasY[andar],
       metadados: { camaraId: cam.id, coluna: col, andar },
     });
   }
@@ -165,7 +178,7 @@ export function interpolarEstadoVisual60Fps(estadoVisualAnterior, viewModelAlvo,
     hitboxes.filter((h) => h.tipo === 'SALA_ALVO').map((h) => [h.metadados.salaId, h])
   );
 
-  // 3. Travessia Orgânica por Waypoints de Portais Topológicos (Esfíncteres Verticais + Túneis Branquiais + Duto Ventral 5<->6) + Poses 4-Frames Contextuais
+  // 3. Travessia Orgânica por Waypoints de Portais Topológicos (Esfíncteres Verticais + Túneis Branquiais + Dutos Tipo A/B) + Poses 4-Frames Contextuais
   const desativarWaypointsMutacao = opcoes.desativarWaypointsPortal60FpsMutacao === true;
   const VIZINHOS_TOPO_INLINE = {
     1: [2, 7],
@@ -177,15 +190,17 @@ export function interpolarEstadoVisual60Fps(estadoVisualAnterior, viewModelAlvo,
     6: [4, 8, 5],
     8: [5, 6],
   };
+  const topoLayout60 = vm?.layoutId ? resolverLayoutTopologiaNave(vm.layoutId) : null;
+  const grafoVizinhosAtivo = topoLayout60?.grafoAdjacencia ?? VIZINHOS_TOPO_INLINE;
   const resolverPrimeiroSaltoInline = (idOrig, idDest) => {
     if (!idOrig || !idDest || idOrig === idDest) return null;
-    if ((VIZINHOS_TOPO_INLINE[idOrig] || []).includes(idDest)) return idDest;
+    if ((grafoVizinhosAtivo[idOrig] || []).includes(idDest)) return idDest;
     const fila = [[idOrig]];
     const vis = new Set([idOrig]);
     while (fila.length > 0) {
       const camPath = fila.shift();
       const ult = camPath[camPath.length - 1];
-      for (const vz of VIZINHOS_TOPO_INLINE[ult] || []) {
+      for (const vz of grafoVizinhosAtivo[ult] || []) {
         if (vz === idDest) return camPath[1] ?? vz;
         if (!vis.has(vz)) {
           vis.add(vz);
@@ -195,6 +210,16 @@ export function interpolarEstadoVisual60Fps(estadoVisualAnterior, viewModelAlvo,
     }
     return idDest;
   };
+  const todosHbCamaras = [...hbCamarasMap.values()];
+  const maxDirCol0Cena = Math.max(
+    441,
+    ...todosHbCamaras.filter((h) => h.metadados?.coluna === 0).map((h) => h.x + h.largura)
+  );
+  const minEsqCol1Cena = Math.min(
+    463,
+    ...todosHbCamaras.filter((h) => h.metadados?.coluna === 1).map((h) => h.x)
+  );
+  const xCanalEspinhaCena = Math.round((maxDirCol0Cena + minEsqCol1Cena) * 0.5);
   const pontoNoCaminhoPortal = (hbOrig, hbProx, idOrig, idProx, t01) => {
     const ox = hbOrig.x + Math.floor(hbOrig.largura / 2);
     const oy = hbOrig.y + 11 + Math.floor((hbOrig.altura - 13) / 2);
@@ -210,6 +235,36 @@ export function interpolarEstadoVisual60Fps(estadoVisualAnterior, viewModelAlvo,
         y: oy + (dy - oy) * t,
         chavePortal,
         ehDutoVentral: false,
+      };
+    }
+    const andarOrig = Number(hbOrig.metadados?.andar ?? 0);
+    const andarProx = Number(hbProx.metadados?.andar ?? 0);
+    const colOrig = Number(hbOrig.metadados?.coluna ?? (ox < xCanalEspinhaCena ? 0 : 1));
+    const colProx = Number(hbProx.metadados?.coluna ?? (dx < xCanalEspinhaCena ? 0 : 1));
+    const ehSaltoDutoEspecial =
+      !(menor === 5 && maior === 6) &&
+      (Math.abs(andarOrig - andarProx) > 1 || (colOrig !== colProx && andarOrig !== andarProx));
+    if (ehSaltoDutoEspecial) {
+      const xBordaOrig = colOrig === 0 ? hbOrig.x + hbOrig.largura - 1 : hbOrig.x + 1;
+      const xBordaProx = colProx === 0 ? hbProx.x + hbProx.largura - 1 : hbProx.x + 1;
+      const ptsDuto = [
+        [ox, oy],
+        [xBordaOrig, oy],
+        [xCanalEspinhaCena, oy],
+        [xCanalEspinhaCena, dy],
+        [xBordaProx, dy],
+        [dx, dy],
+      ];
+      const segsD = ptsDuto.length - 1;
+      const posD = Math.min(segsD - 1e-6, t * segsD);
+      const iD = Math.floor(posD);
+      const uD = posD - iD;
+      return {
+        x: ptsDuto[iD][0] + (ptsDuto[iD + 1][0] - ptsDuto[iD][0]) * uD,
+        y: ptsDuto[iD][1] + (ptsDuto[iD + 1][1] - ptsDuto[iD][1]) * uD,
+        chavePortal,
+        ehDutoVentral: true,
+        noTuboVentral: t >= 0.18 && t <= 0.82,
       };
     }
     // Caso 1: Duto Hidráulico Ventral em sifão curvo J (6 <-> calha ventral do Piso 4 <-> coluna vertebral central <-> 5 SIFÃO, sem cruzar a câmara 8!)
@@ -475,7 +530,10 @@ export function interpolarEstadoVisual60Fps(estadoVisualAnterior, viewModelAlvo,
   }
 
   const portaisDilatados = {};
-  const todasChavesPortal = ['1-2', '2-4', '4-6', '3-7', '3-5', '5-8', '1-7', '2-3', '4-5', '6-8', '5-6'];
+  const todasChavesPortal = [
+    '1-2', '2-4', '4-6', '3-7', '3-5', '5-8', '1-7', '2-3', '4-5', '6-8', '5-6',
+    ...(vm?.layoutId ? ['1-6', '7-8', '2-5', '3-4', '1-3', '5-7', '1-4', '3-8'] : []),
+  ];
   const fatorPortal = reduzirMovimento ? 1 : 1 - Math.exp(-10 * dt);
   for (const chP of todasChavesPortal) {
     const antVal = Number(ant.portaisDilatados?.[chP] ?? 0);
@@ -550,6 +608,13 @@ export function interpolarEstadoVisual60Fps(estadoVisualAnterior, viewModelAlvo,
   const idCarcCena = String(vm.idCarcaca ?? vm.idArquitetura ?? 'CARCACA_ALFA');
   const obterBocaDorsalCena = (slotIdx) => {
     const ehTdBoca = alvoDeslocamentoPx > 10;
+    if (vm?.layoutId) {
+      const [bxS, byS] = obterBocaDorsalLayout960(vm.layoutId, undefined, slotIdx, {
+        ehTouchdown: ehTdBoca,
+        ehMonstroAlvo: ehMonstroCena,
+      });
+      return [bxS, byS];
+    }
     const dyBase = ehTdBoca ? 10 : ehMonstroCena ? -12 : 0;
     const dxTd = ehTdBoca ? -24 : 0;
     const tabBocas = {
@@ -714,9 +779,10 @@ export function interpolarEstadoVisual60Fps(estadoVisualAnterior, viewModelAlvo,
     }
   }
 
+  const desativarShake = reduzirMovimento || vm?.configuracoesSteam?.screenShakeAtivo === false;
   const angShake = tempoAcumuladoSeg * 47;
-  const shakeX = reduzirMovimento || intensidadeShake < 0.15 ? 0 : Math.round(Math.cos(angShake) * intensidadeShake);
-  const shakeY = reduzirMovimento || intensidadeShake < 0.15 ? 0 : Math.round(Math.sin(angShake * 1.3) * intensidadeShake);
+  const shakeX = desativarShake || intensidadeShake < 0.15 ? 0 : Math.round(Math.cos(angShake) * intensidadeShake);
+  const shakeY = desativarShake || intensidadeShake < 0.15 ? 0 : Math.round(Math.sin(angShake * 1.3) * intensidadeShake);
 
   // 5. Microinteração < 16ms de Hover / Active-Press / Instant Warm Tooltip (Emil Kowalski)
   const hoverHitboxId = opcoes.hoverHitboxId !== undefined ? opcoes.hoverHitboxId : (vm.idHitboxHover ?? ant.hoverHitboxId ?? null);

@@ -181,8 +181,9 @@ export function iniciarTravessiaMapa(
   const relogioBase = estado.mapaSetorial?.relogioSetorHoras ?? estado.mapaSetorial?.relogioHoras ?? 0;
   const novoRelogioHoras =
     Math.round((relogioBase + tempoSalto.horasSalto) * 10) / 10;
+  const velFrente = Number(opcoesDebug.velocidadeFrenteMnH ?? VELOCIDADE_FRENTE_CORPORATIVA_MN_H);
   const novaFrenteCorporacaoMn =
-    Math.round(VELOCIDADE_FRENTE_CORPORATIVA_MN_H * novoRelogioHoras * 100) / 100;
+    Math.round(velFrente * novoRelogioHoras * 100) / 100;
 
   // Se viajou em Modo Deriva ou Sobrepeso, começa o próximo encontro em 2_TOUCHDOWN
   // No Modo Deriva, o Sifão começa em partida a frio exigindo 5.0s totais (progressoSpoolUpSeg = -2.0s para atingir 3.0s)

@@ -114,6 +114,7 @@ export function calcularTempoRecargaEfetivoArma({
   tempoChassiSeg,
   penalidadeOrgaosSeg = 0.0,
   especieOperadorArtilharia = null,
+  nivelMaestriaOperadorArtilharia = 0,
   estadoFisico = '1_NO_FOIL',
 }) {
   const reducaoOperador =
@@ -122,6 +123,8 @@ export function calcularTempoRecargaEfetivoArma({
       : especieOperadorArtilharia !== null
         ? CONSTANTES_SISTEMAS_ARMAS.REDUCAO_RECARGA_OPERADOR_COMUM
         : 0.0;
+  const nvMaestriaArt = especieOperadorArtilharia !== null ? Math.min(2, Math.max(0, Number(nivelMaestriaOperadorArtilharia) || 0)) : 0;
+  const reducaoMaestriaArt = nvMaestriaArt * 0.05;
 
   const emTouchdownOuSpool =
     estadoFisico === '2_TOUCHDOWN' ||
@@ -132,7 +135,7 @@ export function calcularTempoRecargaEfetivoArma({
   // Hierarquia Nível 3 (MUT-O2-01): soma aditiva 1.0 - reducaoOperador - reducaoTouchdown (nunca multiplicativa!)
   const multiplicador = Math.max(
     CONSTANTES_SISTEMAS_ARMAS.PISO_MULTIPLICADOR_RECARGA,
-    1.0 - reducaoOperador - reducaoTouchdown
+    1.0 - reducaoOperador - reducaoMaestriaArt - reducaoTouchdown
   );
   return arredondar4((Number(tempoChassiSeg) + Number(penalidadeOrgaosSeg)) * multiplicador);
 }
@@ -164,15 +167,17 @@ export function calcularEsquivaEfetivaNave(naveJogador) {
     return 0;
   }
 
-  const pilotoNoCortex = naveJogador.tripulacao.some(
+  const pilotoObj = naveJogador.tripulacao.find(
     (t) =>
       t.localizacao === 'NAVE_JOGADOR' &&
       t.hpAtual > 0 &&
       t.camaraAtualId === 2 &&
       t.camaraDestinoId === null &&
       t.acopladoBulbo === true &&
-      !t.inflado
+      !t.inflado &&
+      !(Number(t.atordoadoSeg ?? 0) > 0)
   );
+  const pilotoNoCortex = Boolean(pilotoObj);
 
   // Sem piloto no Córtex Nv. 1, a esquiva cai para 0% (Córtex Nv. 2/3 mantém piloto automático parcial se não tripulado)
   let fatorAutonomo = 1.0;
@@ -185,25 +190,45 @@ export function calcularEsquivaEfetivaNave(naveJogador) {
   const barrasSifao = Math.min(5, barrasSifaoEfetivas);
   const esquivaBaseSifao = CONSTANTES_SISTEMAS_ARMAS.ESQUIVA_BASE_SIFAO_POR_BARRA_PCT[barrasSifao] ?? 0;
 
-  const operadorNoSifao = naveJogador.tripulacao.some(
+  const sifaoObj = naveJogador.tripulacao.find(
     (t) =>
       t.localizacao === 'NAVE_JOGADOR' &&
       t.hpAtual > 0 &&
       t.camaraAtualId === 5 &&
       t.camaraDestinoId === null &&
       t.acopladoBulbo === true &&
-      !t.inflado
+      !t.inflado &&
+      !(Number(t.atordoadoSeg ?? 0) > 0)
   );
+  const operadorNoSifao = Boolean(sifaoObj);
 
-  const bonusPiloto = pilotoNoCortex ? CONSTANTES_SISTEMAS_ARMAS.BONUS_ESQUIVA_PILOTO_CORTEX_PCT : 0;
-  const bonusSifao = operadorNoSifao ? CONSTANTES_SISTEMAS_ARMAS.BONUS_ESQUIVA_OPERADOR_SIFAO_PCT : 0;
+  const nvMaestriaPiloto = pilotoObj ? Math.min(2, Math.max(0, Number(pilotoObj.nivelMaestria ?? 0))) : 0;
+  const nvMaestriaSifao = sifaoObj ? Math.min(2, Math.max(0, Number(sifaoObj.nivelMaestria ?? 0))) : 0;
+  const bonusMaestriaPiloto = nvMaestriaPiloto === 2 ? 5 : nvMaestriaPiloto === 1 ? 3 : 0;
+  const bonusMaestriaSifao = nvMaestriaSifao === 2 ? 5 : nvMaestriaSifao === 1 ? 3 : 0;
+  const bonusPiloto = (pilotoNoCortex ? CONSTANTES_SISTEMAS_ARMAS.BONUS_ESQUIVA_PILOTO_CORTEX_PCT : 0) + bonusMaestriaPiloto;
+  const bonusSifao = (operadorNoSifao ? CONSTANTES_SISTEMAS_ARMAS.BONUS_ESQUIVA_OPERADOR_SIFAO_PCT : 0) + bonusMaestriaSifao;
   const bonusTinta =
     Number(naveJogador.furtividadeAtivaSeg ?? 0) > 0
       ? CONSTANTES_SISTEMAS_ARMAS.BONUS_ESQUIVA_TINTA_FURTIVA_PCT
       : 0;
 
+  let qtdVesiculaHiperbarica = 0;
+  const listaPoraoEvasao = [
+    ...(Array.isArray(naveJogador.porao) ? naveJogador.porao : []),
+    ...(Array.isArray(naveJogador.poraoCarga) ? naveJogador.poraoCarga : []),
+    ...(Array.isArray(naveJogador.implantesPassivos) ? naveJogador.implantesPassivos : []),
+  ];
+  for (const itemBruto of listaPoraoEvasao) {
+    if (!itemBruto) continue;
+    const itemRef = typeof itemBruto === 'object' && 'item' in itemBruto ? itemBruto.item : itemBruto;
+    const idItem = typeof itemRef === 'string' ? itemRef : itemRef?.id;
+    if (idItem === 'VESICULA_HIPERBARICA') qtdVesiculaHiperbarica += 1;
+  }
+  const bonusVesiculaPassiva = qtdVesiculaHiperbarica * 8;
+
   const esquivaAntesFator = esquivaBaseSifao + bonusPiloto + bonusSifao;
-  return Math.min(100, Math.floor(esquivaAntesFator * fatorAutonomo) + bonusTinta);
+  return Math.min(100, Math.floor(esquivaAntesFator * fatorAutonomo) + bonusTinta + bonusVesiculaPassiva);
 }
 
 /**
@@ -217,11 +242,16 @@ export function calcularTempoRegenBarreiraSeg(naveJogador) {
       t.camaraAtualId === 4 &&
       t.camaraDestinoId === null &&
       t.acopladoBulbo === true &&
-      !t.inflado
+      !t.inflado &&
+      !(Number(t.atordoadoSeg ?? 0) > 0)
   );
   if (!operadorBarreira) return CONSTANTES_SISTEMAS_ARMAS.TEMPO_REGEN_BARREIRA_SEM_OPERADOR_SEG;
-  if (operadorBarreira.especie === 'POLVO') return CONSTANTES_SISTEMAS_ARMAS.TEMPO_REGEN_BARREIRA_POLVO_SEG;
-  return CONSTANTES_SISTEMAS_ARMAS.TEMPO_REGEN_BARREIRA_OPERADOR_COMUM_SEG;
+  const baseSeg =
+    operadorBarreira.especie === 'POLVO'
+      ? CONSTANTES_SISTEMAS_ARMAS.TEMPO_REGEN_BARREIRA_POLVO_SEG
+      : CONSTANTES_SISTEMAS_ARMAS.TEMPO_REGEN_BARREIRA_OPERADOR_COMUM_SEG;
+  const nvMaestriaBar = Math.min(2, Math.max(0, Number(operadorBarreira.nivelMaestria ?? 0)));
+  return Math.max(1.1, arredondar4(baseSeg - nvMaestriaBar * 0.12));
 }
 
 /**
@@ -234,6 +264,29 @@ export function validarTrincaBeam(trincaSalasBeam, grafoOrtogonal = GRAFOS_BEAM_
   const vizS1 = grafoOrtogonal[s1] ?? [];
   const vizS2 = grafoOrtogonal[s2] ?? [];
   return vizS1.includes(s2) && vizS2.includes(s3);
+}
+
+/**
+ * Valida caminhos ortogonais simples de feixe de comprimento 1, 2 ou 3 salas (usado pelos feixes AE focais/duplos).
+ */
+export function validarCaminhoBeamAdjacente(
+  caminhoSalasBeam,
+  grafoOrtogonal = GRAFOS_BEAM_CANONICOS.BIONAVE_2X4,
+  tamEsperado = null
+) {
+  if (!Array.isArray(caminhoSalasBeam) || caminhoSalasBeam.length < 1 || caminhoSalasBeam.length > 3) return false;
+  if (tamEsperado !== null && caminhoSalasBeam.length !== tamEsperado) return false;
+  const vistos = new Set();
+  for (let i = 0; i < caminhoSalasBeam.length; i += 1) {
+    const atual = caminhoSalasBeam[i];
+    if (vistos.has(atual) || !(atual in grafoOrtogonal)) return false;
+    vistos.add(atual);
+    if (i > 0) {
+      const ant = caminhoSalasBeam[i - 1];
+      if (!(grafoOrtogonal[ant] ?? []).includes(atual)) return false;
+    }
+  }
+  return true;
 }
 
 /**
@@ -311,7 +364,12 @@ export function sincronizarEnergiaArmasComCamaraArtilharia(nave, opcoes = {}) {
       ...arma,
       energiaAlocada: 0,
       progressoRecargaSeg: 0.0,
+      cargasEstocadas: 0,
       disparoManualAutorizado: false,
+      ...(arma.ciclosCadeiaAtivos !== undefined ? { ciclosCadeiaAtivos: 0 } : {}),
+      ...(arma.tempoRecargaOriginalSeg !== undefined
+        ? { tempoRecargaBaseSeg: arma.tempoRecargaOriginalSeg }
+        : {}),
     };
     novasArmas[idx] = temWrapper ? { ...slot, arma: armaDesligada } : armaDesligada;
   }
@@ -395,6 +453,7 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25, opcoesDebug = {}
       camara.tempoRestanteIonSeg = novoIonSeg;
       if (novoIonSeg === 0) {
         camara.danoIonizado = 0;
+        camara.barrasIonizadas = 0;
         camara.isolamentoResidualChoqueSeg = 5.0;
       }
     } else if (camara.isolamentoResidualChoqueSeg > 0) {
@@ -456,7 +515,8 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25, opcoesDebug = {}
       t.camaraAtualId === 1 &&
       t.camaraDestinoId === null &&
       t.acopladoBulbo === true &&
-      !t.inflado
+      !t.inflado &&
+      !(Number(t.atordoadoSeg ?? 0) > 0)
   );
   const especieOpArt = operadorArtilharia ? operadorArtilharia.especie : null;
 
@@ -465,19 +525,37 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25, opcoesDebug = {}
     const arma = slot.arma;
     if (arma.energiaAlocada < arma.energiaCusto) {
       arma.progressoRecargaSeg = 0.0;
+      arma.cargasEstocadas = 0;
       continue;
     }
+    const cargasMax = Math.max(1, Number(arma.cargasMaximas ?? 1));
     const tempoEfetivo = calcularTempoRecargaEfetivoArma({
       tempoChassiSeg: arma.tempoRecargaBaseSeg,
       penalidadeOrgaosSeg: arma.penalidadeOrgaosSeg ?? 0.0,
       especieOperadorArtilharia: especieOpArt,
+      nivelMaestriaOperadorArtilharia: operadorArtilharia?.nivelMaestria ?? 0,
       estadoFisico: nave.estadoFisico,
     });
     const fatorVelocidadeRecarga = arma.tempoRecargaBaseSeg / tempoEfetivo;
-    arma.progressoRecargaSeg = Math.min(
-      arma.tempoRecargaBaseSeg,
-      arredondar4(arma.progressoRecargaSeg + dtSeg * fatorVelocidadeRecarga)
-    );
+    if (cargasMax > 1) {
+      let cargasAtuais = Math.max(0, Number(arma.cargasEstocadas ?? 0));
+      if (cargasAtuais >= cargasMax) {
+        arma.progressoRecargaSeg = arma.tempoRecargaBaseSeg;
+      } else {
+        let progNovo = arredondar4(arma.progressoRecargaSeg + dtSeg * fatorVelocidadeRecarga);
+        while (progNovo >= arma.tempoRecargaBaseSeg && cargasAtuais < cargasMax) {
+          cargasAtuais += 1;
+          progNovo = cargasAtuais >= cargasMax ? arma.tempoRecargaBaseSeg : arredondar4(progNovo - arma.tempoRecargaBaseSeg);
+        }
+        arma.cargasEstocadas = cargasAtuais;
+        arma.progressoRecargaSeg = Math.min(arma.tempoRecargaBaseSeg, progNovo);
+      }
+    } else {
+      arma.progressoRecargaSeg = Math.min(
+        arma.tempoRecargaBaseSeg,
+        arredondar4(arma.progressoRecargaSeg + dtSeg * fatorVelocidadeRecarga)
+      );
+    }
   }
 
   // 5. Carga de Salto de Fuga (Seção 8.5.A e Matriz 6.2 Linha G: 20.0s base, 15.0s c/ operador no Sifão, 0.5x em Touchdown/Spool-up)
@@ -496,7 +574,8 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25, opcoesDebug = {}
         t.camaraAtualId === 2 &&
         t.camaraDestinoId === null &&
         t.acopladoBulbo === true &&
-        !t.inflado
+        !t.inflado &&
+        !(Number(t.atordoadoSeg ?? 0) > 0)
     );
   if (intCortexEfetiva >= 1 && eneSifaoEfetiva >= 1 && pilotoCortexAtivo) {
     const operadorSifaoAtivo = nave.tripulacao.some(
@@ -506,7 +585,8 @@ export function avancarTickSistemasEArmas(estado, dtSeg = 0.25, opcoesDebug = {}
         t.camaraAtualId === 5 &&
         t.camaraDestinoId === null &&
         t.acopladoBulbo === true &&
-        !t.inflado
+        !t.inflado &&
+        !(Number(t.atordoadoSeg ?? 0) > 0)
     );
     const multOperadorSifao = operadorSifaoAtivo ? 20.0 / 15.0 : 1.0;
     const multEstadoFisico = nave.estadoFisico === '1_NO_FOIL' ? 1.0 : 0.5;

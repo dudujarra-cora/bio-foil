@@ -107,8 +107,16 @@ export function resolverImpactoNoAlvo(estado, evento) {
   // Aplica dano de casco, dano de sistema e dano antipessoal (15 HP por ponto de dano de sistema)
   const orgaos = evento.orgaosEnxertados ?? [];
   const temGlandulaBaiacu = orgaos.includes('GLANDULA_BAIACU') || orgaos.includes('GLANDULA_VENENO_BAIACU');
+  const temSanguessuga = orgaos.includes('BOLSA_SIMBIONTE_SANGUESSUGA');
   const temDenteLeviata = orgaos.includes('DENTE_LEVIATA') || orgaos.includes('DENTE_SERRILHADO_LEVIATA');
-  const danoCascoBruto = Number(evento.danoCasco ?? 1);
+  const temBonusCascoPuro = Number(evento.bonusDanoCascoPuro ?? 0) > 0;
+  const salaSemSistema =
+    Boolean(sala.salaVaziaSemSistema) ||
+    Number(sala.integridadeMax ?? sala.barrasMax ?? sala.integridadeAtual ?? 1) === 0 ||
+    (temBonusCascoPuro && Number(sala.integridadeAtual ?? sala.integridade ?? 1) <= 0) ||
+    /CORREDOR|POR[AÃ]O|VAZI[AO]|LASTRO|CARAPA[CÇ]A|CABINE|GUINDASTE|BEXIGA/i.test(String(sala.nome ?? ''));
+  const bonusCascoSalaVazia = salaSemSistema ? Number(evento.bonusDanoCascoPuro ?? 0) : 0;
+  const danoCascoBruto = Number(evento.danoCasco ?? 1) + bonusCascoSalaVazia;
   const danoCasco = Math.max(0, danoCascoBruto - (temGlandulaBaiacu ? 1 : 0));
   const bonusSistemaSemEscudo = temDenteLeviata && Number(alvo.camadasBarreiraAtivas ?? 0) === 0 ? 1 : 0;
   const danoSistema = Number(evento.danoSistema ?? danoCascoBruto) + bonusSistemaSemEscudo;
@@ -157,6 +165,11 @@ export function resolverImpactoNoAlvo(estado, evento) {
     for (const t of sala.tripulantes ?? []) {
       if (t.hpAtual > 0) t.venenoToxinaSeg = 10.0;
     }
+  } else if (temSanguessuga) {
+    sala.venenoToxinaSeg = Math.max(Number(sala.venenoToxinaSeg ?? 0), 6.0);
+    for (const t of sala.tripulantes ?? []) {
+      if (t.hpAtual > 0) t.venenoToxinaSeg = Math.max(Number(t.venenoToxinaSeg ?? 0), 6.0);
+    }
   }
   if (orgaos.includes('GLANDULA_TERMOFILICA')) {
     sala.fervuraTermofilicaSeg = 8.0;
@@ -167,9 +180,17 @@ export function resolverImpactoNoAlvo(estado, evento) {
     for (const s of alvo.salasOuOrgaos ?? []) {
       for (const t of s.tripulantes ?? []) porId.set(t.id, t);
     }
-    alvo.tripulacaoInimiga = alvo.tripulacaoInimiga.map((h) =>
-      porId.has(h.id) ? { ...h, hpAtual: porId.get(h.id).hpAtual } : h
-    );
+    alvo.tripulacaoInimiga = alvo.tripulacaoInimiga.map((h) => {
+      if (!porId.has(h.id)) return h;
+      const refSala = porId.get(h.id);
+      return {
+        ...h,
+        hpAtual: refSala.hpAtual,
+        ...(refSala.atordoadoSeg !== undefined
+          ? { atordoadoSeg: Math.max(Number(h.atordoadoSeg ?? 0), Number(refSala.atordoadoSeg ?? 0)) }
+          : {}),
+      };
+    });
   }
 
   // MUT-O3-02: Se um DISPARO_EXTERNO zerou o casco inimigo, a explosão mata animais aliados que ainda estavam a bordo!

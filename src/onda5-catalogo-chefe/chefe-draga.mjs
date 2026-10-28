@@ -203,16 +203,21 @@ function extrairTripulacaoInimigaSincronizada(alvo) {
   const porIdNasSalas = new Map();
   for (const s of alvo?.salasOuOrgaos ?? []) {
     for (const t of s.tripulantes ?? []) {
-      porIdNasSalas.set(t.id, t);
+      porIdNasSalas.set(t.id, { ...t, salaId: s.id });
     }
   }
   const baseLista = alvo?.tripulacaoInimiga ?? [...porIdNasSalas.values()];
   return baseLista.map((t) => {
     const naSala = porIdNasSalas.get(t.id);
     if (!naSala) return { ...t };
+    const stunMax = Math.max(Number(t.atordoadoSeg ?? 0), Number(naSala.atordoadoSeg ?? 0));
+    const neuroMax = Math.max(Number(t.controleNeuralSeg ?? 0), Number(naSala.controleNeuralSeg ?? 0));
     return {
       ...t,
+      salaId: naSala.salaId ?? t.salaId,
       hpAtual: Math.min(Number(t.hpAtual ?? 100), Number(naSala.hpAtual ?? 100)),
+      ...(t.atordoadoSeg !== undefined || naSala.atordoadoSeg !== undefined ? { atordoadoSeg: stunMax } : {}),
+      ...(t.controleNeuralSeg !== undefined || naSala.controleNeuralSeg !== undefined ? { controleNeuralSeg: neuroMax } : {}),
     };
   });
 }
@@ -230,19 +235,29 @@ export function transicionarFaseChefeDraga(estado) {
   }
   const proximaFase = faseAtual + 1;
 
-  // 1. Atracar Automático entre Fases: recolhe todos os animais aliados sobreviventes a bordo do chefe
-  const tripulacaoAliadaResgatada = estado.naveJogador.tripulacao
-    .filter((t) => t.hpAtual > 0)
-    .map((t) =>
-      t.localizacao === 'BORDO_INIMIGO'
-        ? {
-            ...t,
-            localizacao: 'NAVE_JOGADOR',
-            camaraAtualId: 7,
-            salaInimigaId: null,
-          }
-        : t
-    );
+  // 1. Atracar Automático entre Fases: recolhe todos os animais aliados sobreviventes a bordo do chefe respeitando limitesPorSala
+  const vivosPreTransicao = estado.naveJogador.tripulacao.filter((t) => t.hpAtual > 0);
+  const ocupacaoPorSalaDraga = {};
+  for (const t of vivosPreTransicao) {
+    if (t.localizacao !== 'BORDO_INIMIGO') {
+      ocupacaoPorSalaDraga[t.camaraAtualId] = (ocupacaoPorSalaDraga[t.camaraAtualId] ?? 0) + 1;
+    }
+  }
+  const tripulacaoAliadaResgatada = vivosPreTransicao.map((t) => {
+    if (t.localizacao !== 'BORDO_INIMIGO') return t;
+    const camDestinoResgate =
+      [7, 3, 5, 2, 4, 1, 6, 8].find(
+        (idC) =>
+          (ocupacaoPorSalaDraga[idC] ?? 0) < Math.max(1, Number(estado.naveJogador?.limitesPorSala?.[idC] ?? 2))
+      ) ?? 7;
+    ocupacaoPorSalaDraga[camDestinoResgate] = (ocupacaoPorSalaDraga[camDestinoResgate] ?? 0) + 1;
+    return {
+      ...t,
+      localizacao: 'NAVE_JOGADOR',
+      camaraAtualId: camDestinoResgate,
+      salaInimigaId: null,
+    };
+  });
 
   // 2. Cria o estado da próxima fase preservando apenas os humanos sobreviventes
   const novoAlvoChefe = criarEstadoChefeDraga(
@@ -276,8 +291,35 @@ export function avancarTickChefeDraga(estado, dtSeg = 1.0, opcoesDebug = {}) {
     tripulacao: estado.naveJogador.tripulacao.map((t) => ({ ...t })),
     camaras: estado.naveJogador.camaras.map((c) => ({ ...c })),
   };
-  let salas = alvo.salasOuOrgaos.map((s) => ({ ...s }));
-  const tripulacaoSincronizada = extrairTripulacaoInimigaSincronizada(alvo);
+  let salas = alvo.salasOuOrgaos.map((s) => {
+    const ionSeg = Math.max(Number(s.paralisiaIonSeg ?? 0), Number(s.tempoRestanteIonSeg ?? 0));
+    const novoIon = ionSeg > 0 ? Math.max(0, Math.round((ionSeg - dtSeg) * 10000) / 10000) : 0;
+    const novoIsol =
+      ionSeg > 0 && novoIon === 0
+        ? 5.0
+        : Math.max(0, Math.round((Number(s.isolamentoResidualChoqueSeg ?? 0) - dtSeg) * 10000) / 10000);
+    return {
+      ...s,
+      paralisiaIonSeg: novoIon,
+      tempoRestanteIonSeg: novoIon,
+      isolamentoResidualChoqueSeg: novoIsol,
+      tripulantes: Array.isArray(s.tripulantes) ? s.tripulantes.map((t) => ({ ...t })) : [],
+    };
+  });
+  const tripulacaoSincronizada = extrairTripulacaoInimigaSincronizada(alvo).map((t) => ({
+    ...t,
+    ...(t.atordoadoSeg !== undefined
+      ? { atordoadoSeg: Math.max(0, Math.round((Number(t.atordoadoSeg) - dtSeg) * 10000) / 10000) }
+      : {}),
+    ...(t.controleNeuralSeg !== undefined
+      ? { controleNeuralSeg: Math.max(0, Math.round((Number(t.controleNeuralSeg) - dtSeg) * 10000) / 10000) }
+      : {}),
+  }));
+  const mapaTripDraga = new Map(tripulacaoSincronizada.map((t) => [t.id, t]));
+  salas = salas.map((s) => ({
+    ...s,
+    tripulantes: (s.tripulantes ?? []).map((t) => (mapaTripDraga.has(t.id) ? { ...t, ...mapaTripDraga.get(t.id) } : t)),
+  }));
   const humanosVivos = tripulacaoSincronizada.filter((t) => t.hpAtual > 0);
   const iaBackupAtiva = humanosVivos.length === 0;
 
@@ -432,6 +474,7 @@ export function avancarTickChefeDraga(estado, dtSeg = 1.0, opcoesDebug = {}) {
       camadasBarreiraAtivas,
       barreiraBolhasAtual: camadasBarreiraAtivas,
       progressoRegenBarreiraSeg,
+      tripulacaoInimiga: tripulacaoSincronizada,
       salasOuOrgaos: salas,
     },
   });

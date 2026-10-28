@@ -8,6 +8,7 @@
  *    e primitivas puras (`./primitivas-raster-rgba.mjs`) sem ciclos de importação (`LOAD_1M < 20`, Lei N5).
  */
 import { criarContextoPrimitivasRgba960x540 } from './primitivas-raster-rgba.mjs';
+import { calcularLayoutPlacaCamaras960 } from './geometria-layout-960.mjs';
 import {
   renderizarTelaHangarOuFimDeRun,
   renderizarViewportCampanhaNaoCombate,
@@ -23,6 +24,9 @@ import {
   renderizarHudSuperiorTermometroERodape,
   renderizarTooltipContextualEAvisoToast,
 } from './renderizador-hud-tooltips.mjs';
+import { rasterizarParticulasEJuiceRgba } from '../onda7-steam/particulas-juice-60fps.mjs';
+import { rasterizarCamadasComerciaisSteamRgba } from '../onda7-steam/renderizador-modais-steam.mjs';
+import { obterRotuloCurtoCamara } from '../onda7-steam/i18n-dicionario-ui.mjs';
 
 export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitboxes, tabelas) {
   const cachesFrame = rasterizarQuadroRgba960x540._caches || (rasterizarQuadroRgba960x540._caches = {});
@@ -82,24 +86,57 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
     lock,
     blitIconeHiBit,
     heartOrgan,
+    aplicarPinturaFaccaoTipoB,
     desenharRetratoRecortadoHiBit,
     desenharIconeSis12,
   } = ctx;
 
   if (faseJogo === "INICIO" || faseJogo === "FIM_DE_RUN") {
-    return renderizarTelaHangarOuFimDeRun(ctx);
+    renderizarTelaHangarOuFimDeRun(ctx);
+    if (viewModel.edicaoComercialSteam || viewModel.modalSteamAtivo || viewModel.tutorialSteam?.ativo) {
+      rasterizarCamadasComerciaisSteamRgba(rgba, W, H, viewModel, {
+        escala: 1,
+        idioma: viewModel.configuracoesSteam?.idioma ?? opcoes.idioma ?? "pt-BR",
+        hoverHitboxId: idHoverAtivo,
+        cursorGamepad960: opcoes.cursorGamepad960 ?? null,
+      });
+    }
+    return rgba;
   }
 
+  let deslSubTickCombate = 0;
   if (faseJogo === "MAPA" || faseJogo === "LOJA" || faseJogo === "EVENTO") {
     renderizarViewportCampanhaNaoCombate(ctx);
   } else {
     const { placaEsq, perfilEsq, deslSubTick } = prepararFundoAtmosfericoCombate(ctx, cachesFrame);
+    deslSubTickCombate = deslSubTick;
 
     const hbCamaras = hitboxes.filter((h) => h.tipo === "CAMARA_BIONAVE");
     const hbValvulas = hitboxes.filter((h) => h.tipo === "VALVULA_EXTERNA");
     const specF4 = RECORTES_F4[idCarcaca];
+    const usarEspinhaClassicaOnda6 =
+      !viewModel.edicaoComercialSteam && (!viewModel.layoutId || viewModel.layoutId === 'CARCACA_ALFA_A');
+    const usarSilhuetaMoldadaSteam = Boolean(viewModel.edicaoComercialSteam || viewModel.layoutId);
+    const ehVarianteCascoB = String(viewModel.layoutId ?? '').endsWith('_B');
 
-    if (!specF4 && estadoFisico === "3_SPOOL_UP" && deslSubTick === 0 && hbCamaras.length > 0) {
+    const deslCascoAlfa = (!usarEspinhaClassicaOnda6 && ehTouchdown) ? (deslSubTick + 102) : deslSubTick;
+    if (!specF4 && deslCascoAlfa === 0 && ehVarianteCascoB && aplicarPinturaFaccaoTipoB && hbCamaras.length > 0) {
+      for (let sy = 44; sy <= 326; sy += 1) {
+        for (let sx = 176; sx <= 646; sx += 1) {
+          const pI = (sy * W + sx) * 4;
+          const rA = rgba[pI];
+          const gA = rgba[pI + 1];
+          const bA = rgba[pI + 2];
+          if (rA < 10 && gA < 16 && bA < 22) continue;
+          const ehQuitinaAlfa = rA > bA + 5 || (rA > 34 && rA >= gA - 3 && bA < gA + 6);
+          if (ehQuitinaAlfa) {
+            const [nr, ng, nb] = aplicarPinturaFaccaoTipoB(idCarcaca, rA, gA, bA);
+            putPx(sx, sy, [nr, ng, nb, 255]);
+          }
+        }
+      }
+    }
+    if (!specF4 && estadoFisico === "3_SPOOL_UP" && deslCascoAlfa === 0 && hbCamaras.length > 0) {
       const yAguaSp = 219;
       const minXSp = Math.min(...hbCamaras.map((h) => h.x));
       const maxXSp = Math.max(...hbCamaras.map((h) => h.x + h.largura));
@@ -129,7 +166,7 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       }
     }
 
-    if (!specF4 && deslSubTick !== 0 && hbCamaras.length > 0) {
+    if (!specF4 && deslCascoAlfa !== 0 && hbCamaras.length > 0) {
       const yAguaSub = ehTouchdown ? 219 : ehMonstroAlvo ? 336 : 332;
       let snapCenaLimpa = cachesFrame.snapCenaLimpa;
       if (!snapCenaLimpa || snapCenaLimpa.length !== rgba.length) {
@@ -137,10 +174,13 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
         cachesFrame.snapCenaLimpa = snapCenaLimpa;
       }
       snapCenaLimpa.set(rgba);
-      const minCamXSub = Math.min(...hbCamaras.map((h) => h.x));
-      const maxCamXSub = Math.max(...hbCamaras.map((h) => h.x + h.largura));
-      const minCamYOrig = Math.min(...hbCamaras.map((h) => h.y));
-      const maxCamYOrig = Math.max(...hbCamaras.map((h) => h.y + h.altura));
+      const gradeRefSub = (!usarEspinhaClassicaOnda6 && ehTouchdown)
+        ? calcularLayoutPlacaCamaras960(true, ehMonstroAlvo)
+        : null;
+      const minCamXSub = gradeRefSub ? gradeRefSub.xEsq : Math.min(...hbCamaras.map((h) => h.x));
+      const maxCamXSub = gradeRefSub ? (gradeRefSub.xDir + gradeRefSub.larguraCam) : Math.max(...hbCamaras.map((h) => h.x + h.largura));
+      const minCamYOrig = gradeRefSub ? gradeRefSub.toposY[0] : Math.min(...hbCamaras.map((h) => h.y));
+      const maxCamYOrig = gradeRefSub ? (gradeRefSub.toposY[3] + gradeRefSub.alturasY[3]) : Math.max(...hbCamaras.map((h) => h.y + h.altura));
       const meioCamXSub = Math.round((minCamXSub + maxCamXSub) / 2);
       const colEsqMaxX = hbCamaras
         .filter((h) => h.x + h.largura / 2 < meioCamXSub)
@@ -152,7 +192,7 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       const x0Sub = 166;
       const x1Sub = ehTouchdown ? 666 : 598;
       const y0Sub = 42;
-      const yMaxSub = ehTouchdown ? 332 : 324;
+      const yMaxSub = (!usarEspinhaClassicaOnda6 && ehTouchdown) ? 426 : (ehTouchdown ? 332 : 324);
       const wSub = x1Sub - x0Sub + 1;
       const hSub = yMaxSub - y0Sub + 1;
       const fundoSub = new Uint8Array(wSub * hSub);
@@ -217,7 +257,7 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       let xParedeEsqSub = minCamXSub;
       let xParedeDirSub = maxCamXSub;
       for (let sy = y0Sub; sy <= yMaxSub; sy += 1) {
-        const syOrig = sy - deslSubTick;
+        const syOrig = sy - deslCascoAlfa;
         if (syOrig < y0Sub || syOrig > yMaxSub) continue;
         const lyOrig = syOrig - y0Sub;
         for (let sx = x0Sub; sx <= x1Sub; sx += 1) {
@@ -251,6 +291,9 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
               }
               if (!achouCascoLimpo) continue;
             }
+          }
+          if (ehVarianteCascoB && aplicarPinturaFaccaoTipoB) {
+            [rO, gO, bO] = aplicarPinturaFaccaoTipoB(idCarcaca, rO, gO, bO);
           }
           if (sy >= yAguaSub && syOrig < yAguaSub) {
             putPx(sx, sy, [Math.round(rO * 0.56 + 5), Math.round(gO * 0.68 + 18), Math.round(bO * 0.74 + 26), 255]);
@@ -304,7 +347,7 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       const largBlocoCena = maxCamX - minCamX;
       const altBlocoCena = maxCamY - minCamY;
 
-      const yLimiteLimpeza = ehTouchdown ? 218 : ehMonstroAlvo ? 335 : 331;
+      const yLimiteLimpeza = (ehTouchdown && usarSilhuetaMoldadaSteam) ? 426 : (ehTouchdown ? 218 : ehMonstroAlvo ? 335 : 331);
       const xIniLimpeza = 196;
       const xFimLimpeza = ehChefeDraga ? 604 : 636;
       for (let sy = 42; sy <= yLimiteLimpeza; sy += 1) {
@@ -576,16 +619,81 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
         if (opacosCasco[iClean] > 0 && !conexoCasco[iClean]) opacosCasco[iClean] = 0;
       }
 
+      const camsOrdenadasY = [...hbCamaras].sort((a, b) => (a.y - b.y) || (a.x - b.x));
+      const ancorasAndares = [];
+      for (let idxPar = 0; idxPar < camsOrdenadasY.length; idxPar += 2) {
+        const c0 = camsOrdenadasY[idxPar];
+        const c1 = camsOrdenadasY[idxPar + 1] ?? c0;
+        const y0 = c0.y + deslSubTick + c0.altura * 0.5;
+        const y1 = c1.y + deslSubTick + c1.altura * 0.5;
+        ancorasAndares.push({
+          yMid: (y0 + y1) * 0.5,
+          xMin: Math.min(c0.x, c1.x),
+          xMax: Math.max(c0.x + c0.largura, c1.x + c1.largura),
+        });
+      }
+      const obterLimitesXCamarasLinha = (syLinha) => {
+        if (!usarSilhuetaMoldadaSteam || ancorasAndares.length === 0) {
+          return [minCamX, maxCamX];
+        }
+        let xMinI = ancorasAndares[0].xMin;
+        let xMaxI = ancorasAndares[0].xMax;
+        const ultimo = ancorasAndares[ancorasAndares.length - 1];
+        if (syLinha <= ancorasAndares[0].yMid) {
+          const afunilProa = Math.max(0, (ancorasAndares[0].yMid - syLinha - 16) * 0.45);
+          xMinI = ancorasAndares[0].xMin + afunilProa;
+          xMaxI = ancorasAndares[0].xMax - afunilProa;
+        } else if (syLinha >= ultimo.yMid) {
+          const afunilPopa = Math.max(0, (syLinha - ultimo.yMid - 16) * 0.55);
+          xMinI = ultimo.xMin + afunilPopa;
+          xMaxI = ultimo.xMax - afunilPopa;
+        } else {
+          for (let ia = 0; ia < ancorasAndares.length - 1; ia += 1) {
+            const a0 = ancorasAndares[ia];
+            const a1 = ancorasAndares[ia + 1];
+            if (syLinha >= a0.yMid && syLinha <= a1.yMid) {
+              const tLin = (syLinha - a0.yMid) / Math.max(1, a1.yMid - a0.yMid);
+              const tSuave = 0.5 - 0.5 * Math.cos(tLin * Math.PI);
+              xMinI = a0.xMin + (a1.xMin - a0.xMin) * tSuave;
+              xMaxI = a0.xMax + (a1.xMax - a0.xMax) * tSuave;
+              break;
+            }
+          }
+        }
+        for (let ic = 0; ic < hbCamaras.length; ic += 1) {
+          const hc = hbCamaras[ic];
+          const hy0 = hc.y + deslSubTick;
+          const hy1 = hy0 + hc.altura;
+          if (syLinha >= hy0 - 1 && syLinha <= hy1 + 1) {
+            if (hc.x < xMinI) xMinI = hc.x;
+            if (hc.x + hc.largura > xMaxI) xMaxI = hc.x + hc.largura;
+          }
+        }
+        return [Math.round(xMinI), Math.round(xMaxI)];
+      };
+
       for (let oy = 0; oy < hCascoDst; oy += 1) {
         for (let ox = 0; ox < wCascoDst; ox += 1) {
           const iC = oy * wCascoDst + ox;
           const sx = destX0 + ox;
           const sy = destY0 + oy;
+          const [limX0Casco, limX1Casco] = obterLimitesXCamarasLinha(sy);
           if (opacosCasco[iC] === 1 || opacosCasco[iC] === 2) {
-            putPx(sx, sy, [rgbCasco[iC * 3], rgbCasco[iC * 3 + 1], rgbCasco[iC * 3 + 2], 255]);
+            let cr = rgbCasco[iC * 3];
+            let cg = rgbCasco[iC * 3 + 1];
+            let cb = rgbCasco[iC * 3 + 2];
+            if (ehVarianteCascoB && aplicarPinturaFaccaoTipoB) {
+              [cr, cg, cb] = aplicarPinturaFaccaoTipoB(idCarcaca, cr, cg, cb);
+            }
+            if (ehTouchdown && usarSilhuetaMoldadaSteam && sy >= 220) {
+              cr = Math.round(cr * 0.62 + 6);
+              cg = Math.round(cg * 0.74 + 18);
+              cb = Math.round(cb * 0.82 + 28);
+            }
+            putPx(sx, sy, [cr, cg, cb, 255]);
           } else if (
             opacosCasco[iC] === 0 &&
-            !(sx >= minCamX - 1 && sx <= maxCamX + 1 && sy >= minCamY - 1 && sy <= maxCamY + 1) &&
+            !(sx >= limX0Casco - 1 && sx <= limX1Casco + 1 && sy >= minCamY - 1 && sy <= maxCamY + 1) &&
             ((oy > 0 && opacosCasco[iC - wCascoDst] >= 1 && opacosCasco[iC - wCascoDst] <= 2) ||
               (oy + 1 < hCascoDst && opacosCasco[iC + wCascoDst] >= 1 && opacosCasco[iC + wCascoDst] <= 2) ||
               (ox > 0 && opacosCasco[iC - 1] >= 1 && opacosCasco[iC - 1] <= 2) ||
@@ -596,22 +704,40 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
         }
       }
 
-      const palBainhaF4 = {
+      const palBainhaBase = {
         MANTA_VOLT: { casca: [36, 58, 82], sombra: [20, 34, 52], crista: [64, 152, 184] },
         COURACA_LIMIAR: { casca: [96, 64, 40], sombra: [52, 36, 28], crista: [168, 114, 56] },
         SOMBRA_ABISSAL: { casca: [46, 34, 68], sombra: [24, 20, 40], crista: [118, 68, 176] },
         COLMEIA_VIVA: { casca: [44, 72, 50], sombra: [24, 42, 34], crista: [72, 178, 102] },
       }[idCarcaca] ?? { casca: [58, 44, 48], sombra: [32, 24, 30], crista: [88, 64, 68] };
+      const palBainhaF4 = (ehVarianteCascoB && aplicarPinturaFaccaoTipoB)
+        ? {
+            casca: aplicarPinturaFaccaoTipoB(idCarcaca, palBainhaBase.casca[0], palBainhaBase.casca[1], palBainhaBase.casca[2]),
+            sombra: aplicarPinturaFaccaoTipoB(idCarcaca, palBainhaBase.sombra[0], palBainhaBase.sombra[1], palBainhaBase.sombra[2]),
+            crista: aplicarPinturaFaccaoTipoB(idCarcaca, palBainhaBase.crista[0], palBainhaBase.crista[1], palBainhaBase.crista[2]),
+          }
+        : palBainhaBase;
 
+      let xB0Ant = null;
+      let xB1Ant = null;
       for (let syB = minCamY - 5; syB <= maxCamY + 7; syB += 1) {
+        const [rowMinX, rowMaxX] = obterLimitesXCamarasLinha(syB);
         const relYB = (syB - (minCamY - 5)) / Math.max(1, (maxCamY + 7) - (minCamY - 5));
-        const arcoLat = Math.round(Math.sin(Math.min(1, Math.max(0, relYB)) * Math.PI) * 5);
-        const padLat = (syB > maxCamY ? Math.max(2, 10 - (syB - maxCamY) * 2) : 11 + arcoLat);
-        const xB0 = minCamX - padLat;
-        const xB1 = maxCamX + padLat;
+        const arcoLat = Math.round(Math.sin(Math.min(1, Math.max(0, relYB)) * Math.PI) * (usarSilhuetaMoldadaSteam ? 4 : 5));
+        const basePad = usarSilhuetaMoldadaSteam ? 7 : 11;
+        const padLat = (syB > maxCamY ? Math.max(2, (usarSilhuetaMoldadaSteam ? 8 : 10) - (syB - maxCamY) * 2) : basePad + arcoLat);
+        const xB0 = rowMinX - padLat;
+        const xB1 = rowMaxX + padLat;
         for (let sxB = xB0; sxB <= xB1; sxB += 1) {
-          if (sxB >= minCamX && sxB < maxCamX && syB >= minCamY && syB < maxCamY) continue;
-          const naBordaExtB = sxB === xB0 || sxB === xB1 || syB === minCamY - 5 || syB === maxCamY + 7;
+          if (sxB >= rowMinX && sxB < rowMaxX && syB >= minCamY && syB < maxCamY) continue;
+          const passoDegrauEsq = xB0Ant !== null && sxB <= Math.max(xB0, xB0Ant);
+          const passoDegrauDir = xB1Ant !== null && sxB >= Math.min(xB1, xB1Ant);
+          const naBordaExtB =
+            sxB === xB0 ||
+            sxB === xB1 ||
+            syB === minCamY - 5 ||
+            syB === maxCamY + 7 ||
+            (usarSilhuetaMoldadaSteam && (passoDegrauEsq || passoDegrauDir));
           const oxB = sxB - destX0;
           const oyB = syB - destY0;
           const jaTemAsa =
@@ -625,20 +751,26 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
             const dthB = ((sxB + syB) & 1) === 0 ? 0 : 5;
             const ehNervuraB = ((syB - minCamY) % 14) === 0;
             const cBaseB = distBordaB === 1 ? palBainhaF4.crista : ehNervuraB ? palBainhaF4.sombra : palBainhaF4.casca;
-            putPx(sxB, syB, [
-              Math.min(255, cBaseB[0] + dthB),
-              Math.min(255, cBaseB[1] + dthB),
-              Math.min(255, cBaseB[2] + dthB),
-              255,
-            ]);
+            let brR = Math.min(255, cBaseB[0] + dthB);
+            let brG = Math.min(255, cBaseB[1] + dthB);
+            let brB = Math.min(255, cBaseB[2] + dthB);
+            if (ehTouchdown && usarSilhuetaMoldadaSteam && syB >= 220) {
+              brR = Math.round(brR * 0.65 + 6);
+              brG = Math.round(brG * 0.76 + 16);
+              brB = Math.round(brB * 0.84 + 26);
+            }
+            putPx(sxB, syB, [brR, brG, brB, 255]);
           }
         }
+        xB0Ant = xB0;
+        xB1Ant = xB1;
       }
 
       if (idCarcaca === "COURACA_LIMIAR") {
         const yCentroTubo = Math.round((minCamY + maxCamY) / 2);
-        const xIniTubo = maxCamX + 10;
-        const xFimTubo = maxCamX + 42;
+        const [, rowMaxCentro] = obterLimitesXCamarasLinha(yCentroTubo);
+        const xIniTubo = rowMaxCentro + (usarSilhuetaMoldadaSteam ? 8 : 10);
+        const xFimTubo = xIniTubo + 32;
         for (let dyT = -11; dyT <= 11; dyT += 1) {
           const absDy = Math.abs(dyT);
           const compLinha = absDy <= 6 ? 32 : absDy <= 9 ? 26 - (absDy - 6) * 2 : 16;
@@ -653,8 +785,14 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
             } else if ((dxT % 7) === 4 && absDy <= 8) {
               putPx(pxT, pyT, [182, 122, 48, 255]);
             } else {
-              const cTubo = dyT < -3 ? [126, 86, 52, 255] : dyT <= 3 ? [88, 58, 38, 255] : [52, 36, 28, 255];
-              putPx(pxT, pyT, cTubo);
+              let cTubo = dyT < -3 ? [126, 86, 52] : dyT <= 3 ? [88, 58, 38] : [52, 36, 28];
+              if (ehVarianteCascoB && aplicarPinturaFaccaoTipoB) {
+                cTubo = aplicarPinturaFaccaoTipoB(idCarcaca, cTubo[0], cTubo[1], cTubo[2]);
+              }
+              if (ehTouchdown && usarSilhuetaMoldadaSteam && pyT >= 220) {
+                cTubo = [Math.round(cTubo[0] * 0.65 + 6), Math.round(cTubo[1] * 0.76 + 16), Math.round(cTubo[2] * 0.84 + 26)];
+              }
+              putPx(pxT, pyT, [cTubo[0], cTubo[1], cTubo[2], 255]);
             }
           }
         }
@@ -663,13 +801,42 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       }
 
       for (let sy = minCamY; sy < maxCamY; sy += 1) {
-        for (let sx = minCamX; sx < maxCamX; sx += 1) {
+        const [vaoX0, vaoX1] = obterLimitesXCamarasLinha(sy);
+        for (let sx = vaoX0; sx < vaoX1; sx += 1) {
           const dentroCam = hbCamaras.some(
             (hc) => sx >= hc.x && sx < hc.x + hc.largura && sy >= hc.y + deslSubTick && sy < hc.y + hc.altura + deslSubTick
           );
           if (dentroCam) continue;
           const dthVao = ((sx + sy) & 1) === 0 ? 0 : 4;
-          putPx(sx, sy, [palBainhaF4.sombra[0] + dthVao, palBainhaF4.sombra[1] + dthVao, palBainhaF4.sombra[2] + dthVao, 255]);
+          let vr = palBainhaF4.sombra[0] + dthVao;
+          let vg = palBainhaF4.sombra[1] + dthVao;
+          let vb = palBainhaF4.sombra[2] + dthVao;
+          if (ehTouchdown && usarSilhuetaMoldadaSteam && sy >= 220) {
+            vr = Math.round(vr * 0.65 + 6);
+            vg = Math.round(vg * 0.76 + 16);
+            vb = Math.round(vb * 0.84 + 26);
+          }
+          putPx(sx, sy, [vr, vg, vb, 255]);
+        }
+      }
+      if (ehTouchdown && usarSilhuetaMoldadaSteam) {
+        const yAguaTdF4 = 219;
+        for (let sxW4 = 186; sxW4 <= (ehChefeDraga ? 602 : 634); sxW4 += 1) {
+          const yOnda4 = yAguaTdF4 + Math.round(Math.sin(sxW4 * 0.09 + tempoSeg * 4.2) * 1.1);
+          const ox4 = sxW4 - destX0;
+          const oy4 = yOnda4 - destY0;
+          const tocaCascoF4 =
+            ox4 >= 0 && ox4 < wCascoDst && oy4 >= 0 && oy4 < hCascoDst &&
+            (opacosCasco[oy4 * wCascoDst + ox4] === 1 || opacosCasco[oy4 * wCascoDst + ox4] === 2);
+          if (tocaCascoF4) {
+            putPx(sxW4, yOnda4 - 1, (sxW4 % 3) === 0 ? TXT : CYAN);
+            putPx(sxW4, yOnda4, (sxW4 & 1) === 0 ? TXT : CYAN);
+            putPx(sxW4, yOnda4 + 1, [48, 152, 180, 235]);
+          } else {
+            putPx(sxW4, yOnda4, (sxW4 % 4) === 0 ? CYAN : TXT);
+            putPx(sxW4, yOnda4 + 1, (sxW4 & 1) === 0 ? TXT : CYAN);
+            if ((sxW4 % 3) === 0) putPx(sxW4, yOnda4 + 2, [44, 138, 166, 255]);
+          }
         }
       }
       if (idCarcaca === "COURACA_LIMIAR") {
@@ -792,7 +959,7 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
     const sysBrqCena = (viewModel.caixaSistemas ?? []).find((s) => (s.id ?? s.sistemaId) === "BOMBA_BRANQUIAL");
     const brqLigadoCena = Number(sysBrqCena?.barrasEnergiaAlocada ?? 0) >= 1;
 
-    if (hbCamPorId.has(1) && hbCamPorId.has(7) && hbCamPorId.has(6) && hbCamPorId.has(8)) {
+    if (usarEspinhaClassicaOnda6 && hbCamPorId.has(1) && hbCamPorId.has(7) && hbCamPorId.has(6) && hbCamPorId.has(8)) {
       const hb1 = hbCamPorId.get(1);
       const hb7 = hbCamPorId.get(7);
       const hb6 = hbCamPorId.get(6);
@@ -839,6 +1006,68 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
               putPx(pxR, pyR, ((pxR + pyR) & 1) === 0 ? [68, 44, 46, 255] : [54, 34, 38, 255]);
             } else {
               putPx(pxR, pyR, [38, 26, 32, 255]);
+            }
+          }
+        }
+      }
+    } else if (!specF4 && hbCamaras.length > 0) {
+      // Na Edição Steam, CARCACA_ALFA_A/B usa câmaras moldadas assimétricas; mascara o wireframe 2x4 legado assado em f1Play/f2Touchdown
+      const gradeLegado = calcularLayoutPlacaCamaras960(ehTouchdown, ehMonstroAlvo);
+      const gx0 = gradeLegado.xEsq - 2;
+      const gx1 = gradeLegado.xDir + gradeLegado.larguraCam + 1;
+      const gy0 = gradeLegado.toposY[0] - 2 + deslCascoAlfa;
+      const gy1 = gradeLegado.toposY[3] + gradeLegado.alturasY[3] + 1 + deslCascoAlfa;
+      const cxMeioAlfa = Math.round((gx0 + gx1) * 0.5);
+      for (let pyM = gy0; pyM <= gy1; pyM += 1) {
+        if (pyM < 42 || pyM > 426) continue;
+        const ehNervuraM = ((pyM - gy0) % 11) === 0;
+        const naBordaY = pyM === gy0 || pyM === gy1;
+        for (let pxM = gx0; pxM <= gx1; pxM += 1) {
+          const naBordaX = pxM === gx0 || pxM === gx1;
+          if (naBordaX || naBordaY) {
+            putPx(pxM, pyM, [9, 15, 22, 255]);
+          } else {
+            const distC = Math.abs(pxM - cxMeioAlfa);
+            const dthM = ((pxM + pyM) & 1) === 0 ? 0 : 4;
+            const baseM = distC <= 5
+              ? (ehNervuraM ? [74, 46, 48] : [54, 34, 38])
+              : ehNervuraM
+                ? [64, 40, 44]
+                : [42, 26, 32];
+            let mr = baseM[0] + dthM;
+            let mg = baseM[1] + dthM;
+            let mb = baseM[2] + dthM;
+            if (ehVarianteCascoB && aplicarPinturaFaccaoTipoB) {
+              [mr, mg, mb] = aplicarPinturaFaccaoTipoB(idCarcaca, mr, mg, mb);
+            }
+            if (ehTouchdown && pyM >= 220) {
+              mr = Math.round(mr * 0.62 + 6);
+              mg = Math.round(mg * 0.74 + 18);
+              mb = Math.round(mb * 0.82 + 28);
+            }
+            putPx(pxM, pyM, [mr, mg, mb, 255]);
+          }
+        }
+      }
+      for (let andarL = 0; andarL < 4; andarL += 1) {
+        const yMeioAndar = gradeLegado.toposY[andarL] + Math.floor(gradeLegado.alturasY[andarL] / 2) + deslCascoAlfa;
+        for (const xV0 of [gradeLegado.xValvEsq - 1, gradeLegado.xValvDir - 1]) {
+          for (let pyV = yMeioAndar - 10; pyV <= yMeioAndar + 10; pyV += 1) {
+            if (pyV < 42 || pyV > 426) continue;
+            for (let pxV = xV0; pxV <= xV0 + 18; pxV += 1) {
+              const dthV = ((pxV + pyV) & 1) === 0 ? 0 : 5;
+              let vr = 52 + dthV;
+              let vg = 32 + dthV;
+              let vb = 36 + dthV;
+              if (ehVarianteCascoB && aplicarPinturaFaccaoTipoB) {
+                [vr, vg, vb] = aplicarPinturaFaccaoTipoB(idCarcaca, vr, vg, vb);
+              }
+              if (ehTouchdown && pyV >= 220) {
+                vr = Math.round(vr * 0.62 + 6);
+                vg = Math.round(vg * 0.74 + 18);
+                vb = Math.round(vb * 0.82 + 28);
+              }
+              putPx(pxV, pyV, [vr, vg, vb, 255]);
             }
           }
         }
@@ -927,6 +1156,37 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       putPx(ix1 - 1, iy0 + 2, corBioCam);
       putPx(ix0 + 1, iy1 - 2, corBioCam);
       putPx(ix1 - 1, iy1 - 2, corBioCam);
+      if (usarSilhuetaMoldadaSteam) {
+        const yPisoSub = iy1 - 1;
+        if (cam.id === 1) {
+          for (let sxA = ix0 + 4; sxA <= ix1 - 4; sxA += 6) {
+            putPx(sxA, yPisoSub, [196, 118, 42, 165]);
+            putPx(sxA + 1, yPisoSub, [96, 58, 34, 150]);
+          }
+        } else if (cam.id === 2) {
+          for (let sxC = ix0 + 5; sxC <= ix1 - 5; sxC += 8) {
+            putPx(sxC, yPisoSub, [64, 198, 224, 155]);
+            putPx(sxC, iy0 + 2, [44, 136, 164, 130]);
+          }
+        } else if (cam.id === 3) {
+          for (let dyG = 3; dyG <= Math.min(altInt - 3, 12); dyG += 3) {
+            putPx(ix0 + 2, iy0 + dyG, [66, 206, 174, 155]);
+            putPx(ix1 - 2, iy0 + dyG, [66, 206, 174, 155]);
+          }
+        } else if (cam.id === 4) {
+          for (let sxB = ix0 + 6; sxB <= ix1 - 6; sxB += 7) {
+            putPx(sxB, yPisoSub, [72, 224, 146, 155]);
+          }
+        } else if (cam.id === 5) {
+          for (let sxS = ix0 + 4; sxS <= ix1 - 4; sxS += 5) {
+            putPx(sxS, yPisoSub, (sxS & 1) === 0 ? [58, 178, 208, 160] : [188, 118, 44, 155]);
+          }
+        } else if (cam.id === 6) {
+          for (let sxK = ix0 + 3; sxK <= ix1 - 3; sxK += 4) {
+            putPx(sxK, yPisoSub, [92, 62, 54, 175]);
+          }
+        }
+      }
       const nvBlind = Math.max(0, Number(viewModel.nivelBlindagem ?? 0));
       if (nvBlind > 0) {
         const xBlind = cam.coluna === 0 ? hbCam.x - 2 : hbCam.x + hbCam.largura + 1;
@@ -965,8 +1225,18 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
         7: "ENXERTO A",
         8: "ENXERTO B",
       };
+      const idiomaCamBase = viewModel.configuracoesSteam?.idioma ?? opcoes.idioma ?? "pt-BR";
+      const usarRotuloCurtoSteam = Boolean(viewModel.edicaoComercialSteam || idiomaCamBase === "en-US");
+      const subInstaladoCam = Number(cam.barrasNivelMax ?? 0) > 0;
+      const rotuloTopoCam = usarRotuloCurtoSteam
+        ? (cam.id === 7 && subInstaladoCam
+            ? (idiomaCamBase === "en-US" ? "BOARDING" : "ESCLUSA")
+            : cam.id === 8 && subInstaladoCam
+              ? (idiomaCamBase === "en-US" ? "CLOAKING" : "FURTIVA")
+              : obterRotuloCurtoCamara(cam.id, idiomaCamBase))
+        : (mapRotCam[cam.id] ?? "CÂMARA");
       txt(hbCam.x + 4, yTopoCam + 3, String(cam.id), CYAN, 6);
-      txt(hbCam.x + 12, yTopoCam + 3, mapRotCam[cam.id] ?? "CÂMARA", TXT, 6);
+      txt(hbCam.x + 12, yTopoCam + 3, rotuloTopoCam, TXT, 6);
 
       const aliadosSala = cam.tripulantesPresentes ?? [];
       const invasoresSala = cam.invasoresPresentes ?? [];
@@ -993,7 +1263,11 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
           estacionarios.push({ tipo: "INVASOR", dados: inv, pos60: posInv60 });
         }
       }
-      const ocupantes = estacionarios.slice(0, 2);
+      const maxOcupantesSala = viewModel.edicaoComercialSteam
+        ? Math.max(2, Math.min(4, Number(viewModel.limitesPorSala?.[cam.id] ?? 2)))
+        : 2;
+      const ocupantes = estacionarios.slice(0, maxOcupantesSala);
+      const idsSelEsquadrao = Array.isArray(opcoes.tripulantesSelecionadosIds) ? opcoes.tripulantesSelecionadosIds : [];
 
       if (ocupantes.length === 0 && aliadosSala.length === 0 && invasoresSala.length === 0) {
         desenharBulboNeuralHiBit(
@@ -1003,29 +1277,75 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       } else {
         ocupantes.forEach((oc, slotIdx) => {
           const largUtilCam = ix1 - ix0 + 1;
-          const largSlot = ocupantes.length === 1 ? Math.min(36, largUtilCam - 4) : Math.floor((largUtilCam - 4) / 2);
-          const xSlot = ocupantes.length === 1 ? ix0 + Math.floor((largUtilCam - largSlot) / 2) : ix0 + 1 + slotIdx * (largSlot + 2);
+          const grade2x2 = ocupantes.length > 2;
+          const gradeCompactaHoriz =
+            Boolean(viewModel.edicaoComercialSteam) && grade2x2 && altInt <= 44 && largUtilCam >= 54;
+          const colSlot = gradeCompactaHoriz ? slotIdx : grade2x2 ? (slotIdx & 1) : slotIdx;
+          const linSlot = gradeCompactaHoriz ? 0 : grade2x2 ? (slotIdx >> 1) : 0;
+          const largSlot = gradeCompactaHoriz
+            ? Math.max(12, Math.floor((largUtilCam - 2) / ocupantes.length))
+            : ocupantes.length === 1
+              ? Math.min(36, largUtilCam - 4)
+              : Math.floor((largUtilCam - 4) / 2);
+          const xSlot = gradeCompactaHoriz
+            ? ix0 + 1 + colSlot * largSlot
+            : ocupantes.length === 1
+              ? ix0 + Math.floor((largUtilCam - largSlot) / 2)
+              : ix0 + 1 + colSlot * (largSlot + 2);
+          const yCentroGrade = gradeCompactaHoriz
+            ? iy0 + Math.round(altInt * ((slotIdx & 1) === 0 ? 0.42 : 0.60))
+            : grade2x2
+              ? iy0 + (linSlot === 0 ? Math.max(8, Math.floor(altInt * 0.29)) : Math.min(altInt - 7, Math.floor(altInt * 0.74)))
+              : iy0 + altInt / 2;
+          const altSlotRender = gradeCompactaHoriz
+            ? Math.max(13, Math.min(18, altInt - 6))
+            : grade2x2
+              ? Math.max(16, Math.floor(altInt * 0.56))
+              : altInt;
           if (oc.tipo === "ALIADO") {
             const tr = oc.dados;
             const pos60 = oc.pos60;
             const cxTr = ocupantes.length === 1 && pos60 ? pos60.x : xSlot + largSlot / 2;
-            const cyTr = ocupantes.length === 1 && pos60 ? pos60.y + deslSubTick : iy0 + altInt / 2;
+            const cyTr = ocupantes.length === 1 && pos60 ? pos60.y + deslSubTick : yCentroGrade;
             desenharAliadoAnimado(
               tr,
               cxTr,
               cyTr,
-              altInt,
+              altSlotRender,
               largSlot,
               Boolean(!emCombateSala && (cam.brechaAtiva || cam.barrasIntegridade < cam.barrasNivelMax)),
               emCombateSala,
               camSeca,
               pos60
             );
+            if (viewModel.edicaoComercialSteam) {
+              const nvM = Math.max(0, Math.min(2, Number(tr.nivelMaestria ?? 0)));
+              if (nvM > 0) {
+                const sxM = Math.round(cxTr) + 6;
+                const syM = Math.max(iy0 + 2, Math.round(cyTr) - 8);
+                for (let st = 0; st < nvM; st += 1) {
+                  const pxSt = sxM - st * 6;
+                  fillRect(pxSt - 2, syM - 2, pxSt + 2, syM + 2, [10, 14, 20, 236]);
+                  putPx(pxSt, syM - 2, [255, 224, 72, 255]);
+                  hLine(pxSt - 2, pxSt + 2, syM - 1, [255, 214, 52, 255], 1);
+                  hLine(pxSt - 1, pxSt + 1, syM, [255, 232, 112, 255], 1);
+                  putPx(pxSt, syM - 1, [255, 250, 192, 255]);
+                  putPx(pxSt - 1, syM + 1, [242, 174, 34, 255]);
+                  putPx(pxSt + 1, syM + 1, [242, 174, 34, 255]);
+                }
+              }
+              if (idsSelEsquadrao.length > 1 && idsSelEsquadrao.includes(tr.id)) {
+                const bxS = Math.round(cxTr);
+                const byS = Math.round(cyTr);
+                hLine(bxS - 7, bxS - 4, byS - 8, CYAN, 1);
+                hLine(bxS + 4, bxS + 7, byS + 7, CYAN, 1);
+              }
+            }
           } else {
             const inv = oc.dados;
             const cxInv = ocupantes.length === 1 && oc.pos60 ? oc.pos60.x : xSlot + largSlot / 2;
-            const cyInv = ocupantes.length === 1 && oc.pos60 ? oc.pos60.y + deslSubTick : iy0 + altInt / 2;
-            desenharInvasorAnimado(inv, cxInv, cyInv, altInt, largSlot, emCombateSala, oc.pos60);
+            const cyInv = ocupantes.length === 1 && oc.pos60 ? oc.pos60.y + deslSubTick : yCentroGrade;
+            desenharInvasorAnimado(inv, cxInv, cyInv, altSlotRender, largSlot, emCombateSala, oc.pos60);
           }
         });
         if (emCombateSala) {
@@ -1098,7 +1418,7 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       }
     }
 
-    if (hbCamPorId.has(1) && hbCamPorId.has(7) && hbCamPorId.has(6) && hbCamPorId.has(8)) {
+    if (usarEspinhaClassicaOnda6 && hbCamPorId.has(1) && hbCamPorId.has(7) && hbCamPorId.has(6) && hbCamPorId.has(8)) {
       for (const [idE, idD] of [[1, 7], [2, 3], [4, 5], [6, 8]]) {
         const hE = hbCamPorId.get(idE);
         const hD = hbCamPorId.get(idD);
@@ -1263,15 +1583,17 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       desenharInvasorAnimado(invMov.inv, invMov.pos60.x, invMov.pos60.y + deslSubTick, 22, 26, false, invMov.pos60);
     }
 
-    const mapRotCamFrontal = {
-      1: "ARTILHARIA",
-      2: "CÓRTEX",
-      3: "BRANQUIAL",
-      4: "BARREIRA",
-      5: "SIFÃO",
-      6: "POÇO QUILHA",
-      7: "ENXERTO A",
-      8: "ENXERTO B",
+    const idiomaCam = viewModel.configuracoesSteam?.idioma ?? opcoes.idioma ?? 'pt-BR';
+    const usarRotuloCurtoFinal = Boolean(viewModel.edicaoComercialSteam || idiomaCam === 'en-US');
+    const mapRotCamFinal = {
+      1: 'ARTILHARIA',
+      2: 'CÓRTEX',
+      3: 'BRANQUIAL',
+      4: 'BARREIRA',
+      5: 'SIFÃO',
+      6: 'POÇO QUILHA',
+      7: 'ENXERTO A',
+      8: 'ENXERTO B',
     };
     for (const camF of viewModel.camaras ?? []) {
       const hbCF = hbCamaras.find((h) => h.metadados.camaraId === camF.id);
@@ -1280,13 +1602,21 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
       for (let pyHF = yTopF + 2; pyHF <= yTopF + 11; pyHF += 1) {
         const distVHF = pyHF - yTopF;
         const recHF = distVHF === 2 ? 2 : 1;
-        const alphaHF = pyHF <= yTopF + 9 ? 214 : 140;
+        const alphaHF = pyHF <= yTopF + 9 ? 236 : 168;
         for (let pxHF = hbCF.x + 1 + recHF; pxHF <= hbCF.x + hbCF.largura - 2 - recHF; pxHF += 1) {
           putPx(pxHF, pyHF, [7, 13, 20, alphaHF]);
         }
       }
+      const subInstFinal = Number(camF.barrasNivelMax ?? 0) > 0;
+      const rotuloFinalCam = usarRotuloCurtoFinal
+        ? (camF.id === 7 && subInstFinal
+            ? (idiomaCam === 'en-US' ? 'BOARDING' : 'ESCLUSA')
+            : camF.id === 8 && subInstFinal
+              ? (idiomaCam === 'en-US' ? 'CLOAKING' : 'FURTIVA')
+              : obterRotuloCurtoCamara(camF.id, idiomaCam))
+        : (mapRotCamFinal[camF.id] ?? 'CÂMARA');
       txt(hbCF.x + 4, yTopF + 3, String(camF.id), CYAN, 6);
-      txt(hbCF.x + 12, yTopF + 3, mapRotCamFrontal[camF.id] ?? "CÂMARA", TXT, 6);
+      txt(hbCF.x + 12, yTopF + 3, rotuloFinalCam, TXT, 6);
     }
 
     const yLinhaDaguaCena = ehTouchdown ? 219 : ehMonstroAlvo ? 336 : 332;
@@ -1352,12 +1682,71 @@ export function rasterizarQuadroRgba960x540(viewModel, opcoes = {}, assets, hitb
 
   // Modais Táticos de Campanha Completa sobre o Viewport Central (SAQUE, OFICINA & EVENTO_DESFECHO)
   const modalAtivoRender = viewModel.modalCampanhaAtivo ?? null;
+  if (faseJogo === "COMBATE" && !modalAtivoRender && !viewModel.modalSteamAtivo) {
+    const hbCamsJuice = (hitboxes ?? []).filter((h) => h.tipo === "CAMARA_BIONAVE").map((h) => ({
+      camaraId: h.metadados.camaraId,
+      x: h.x,
+      y: h.y,
+      largura: h.largura,
+      altura: h.altura,
+    }));
+    const idiomaJuice = viewModel.configuracoesSteam?.idioma ?? opcoes.idioma ?? "pt-BR";
+    const shDesat =
+      viewModel?.configuracoesSteam?.screenShakeAtivo === false ||
+      viewModel?.configuracoesSteam?.reduzirMovimento === true;
+    const shXJ = shDesat ? 0 : Math.max(-6, Math.min(6, Math.round(Number(ev60?.shakeX ?? 0))));
+    const shYJ = shDesat ? 0 : Math.max(-5, Math.min(5, Math.round(Number(ev60?.shakeY ?? 0))));
+    rasterizarParticulasEJuiceRgba(rgba, W, H, viewModel, {
+      escala: 1,
+      idioma: idiomaJuice,
+      reduzirMovimento: Boolean(viewModel.configuracoesSteam?.reduzirMovimento ?? opcoes.reduzirMovimento ?? false),
+      retangulosCamaras960: hbCamsJuice,
+      hitboxes,
+      shakeX: shXJ,
+      shakeY: shYJ,
+      deslocamentoVerticalPx: deslSubTickCombate,
+      estadoVisual60Fps: opcoes.estadoVisual60Fps ?? null,
+    });
+    if (viewModel.edicaoComercialSteam || idiomaJuice === "en-US") {
+      for (const camZ of viewModel.camaras ?? []) {
+        const hbCZ = hbCamsJuice.find((h) => h.camaraId === camZ.id);
+        if (!hbCZ) continue;
+        const xTopZ = hbCZ.x + shXJ;
+        const yTopZ = hbCZ.y + deslSubTickCombate + shYJ;
+        for (let pyZ = yTopZ + 2; pyZ <= yTopZ + 10; pyZ += 1) {
+          const recZ = (pyZ - yTopZ) === 2 ? 2 : 1;
+          for (let pxZ = xTopZ + 1 + recZ; pxZ <= xTopZ + hbCZ.largura - 2 - recZ; pxZ += 1) {
+            putPx(pxZ, pyZ, [7, 13, 20, 232]);
+          }
+        }
+        const subInstZ = Number(camZ.barrasNivelMax ?? 0) > 0;
+        const rotCamZ =
+          camZ.id === 7 && subInstZ
+            ? (idiomaJuice === "en-US" ? "BOARDING" : "ESCLUSA")
+            : camZ.id === 8 && subInstZ
+              ? (idiomaJuice === "en-US" ? "CLOAKING" : "FURTIVA")
+              : obterRotuloCurtoCamara(camZ.id, idiomaJuice);
+        txt(xTopZ + 4, yTopZ + 3, String(camZ.id), CYAN, 6);
+        txt(xTopZ + 12, yTopZ + 3, rotCamZ, TXT, 6);
+      }
+    }
+  }
   if (modalAtivoRender === "SAQUE") {
     renderizarModalSaqueOverlay(ctx);
   } else if (modalAtivoRender === "OFICINA") {
     renderizarModalOficinaOverlay(ctx);
   } else if (modalAtivoRender === "EVENTO_DESFECHO") {
     renderizarModalDesfechoEventoOverlay(ctx);
+  }
+
+  if (viewModel.edicaoComercialSteam || viewModel.layoutId || viewModel.modalSteamAtivo || viewModel.tutorialSteam?.ativo) {
+    rasterizarCamadasComerciaisSteamRgba(rgba, W, H, viewModel, {
+      escala: 1,
+      idioma: viewModel.configuracoesSteam?.idioma ?? opcoes.idioma ?? "pt-BR",
+      hoverHitboxId: idHoverAtivo,
+      deslocamentoVerticalPx: faseJogo === "COMBATE" ? deslSubTickCombate : 0,
+      cursorGamepad960: opcoes.cursorGamepad960 ?? null,
+    });
   }
 
   renderizarTooltipContextualEAvisoToast(ctx);

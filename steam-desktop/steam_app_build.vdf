@@ -1,0 +1,31 @@
+"AppBuild"
+{
+  "AppID" "2894510"
+  "Desc" "Bio-Foil Steam Commercial Build — Self-Contained Depot Stage (Windows x64 / macOS Universal / SteamOS Linux)"
+  "ContentRoot" "./output/depot-stage"
+  "BuildOutput" "./output"
+  "Depots"
+  {
+    "2894511"
+    {
+      "FileMapping"
+      {
+        "LocalPath" "*"
+        "DepotPath" "."
+        "recursive" "1"
+      }
+      "FileMapping"
+      {
+        "LocalPath" "runtime/*"
+        "DepotPath" "./runtime"
+        "recursive" "1"
+      }
+      "FileExclusion" "*.git*"
+      "FileExclusion" "*.DS_Store"
+      "FileExclusion" "tests/*"
+      "FileExclusion" "padrao/*"
+      "FileExclusion" "*.test.mjs"
+      "FileExclusion" "*.tmp*"
+    }
+  }
+}

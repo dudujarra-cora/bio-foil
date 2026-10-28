@@ -21,6 +21,8 @@ import {
   calcularRetangulosModaisCampanha960,
   calcularRetangulosSalasAlvo960,
 } from './geometria-layout-960.mjs';
+import { calcularRetangulosCamarasMoldadas960 } from '../onda7-steam/topologias-naves-ab.mjs';
+import { obterHitboxesModaisEControlesSteam } from '../onda7-steam/renderizador-modais-steam.mjs';
 
 export { COORDENADAS_GRADE_CAMARAS_16A };
 
@@ -103,13 +105,19 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
   const ehMonstroAlvo = classeAlvo.includes('MONSTRO');
   const hitboxes = [];
 
+  if (viewModel.modalSteamAtivo === 'OPCOES' || viewModel.modalSteamAtivo === 'CONQUISTAS') {
+    return clonarProfundoCongelado(obterHitboxesModaisEControlesSteam(viewModel));
+  }
+
+  const usarBotaoAudioSteam = Boolean(viewModel.edicaoComercialSteam || viewModel.configuracoesSteam);
+
   if (faseJogo === 'INICIO') {
     hitboxes.push({
       idHitbox: 'BTN_ALTERNAR_AUDIO',
       tipo: 'CONTROLE_CAMPANHA',
-      x: 888 + desalinhamentoMutacao,
+      x: (usarBotaoAudioSteam ? 884 : 888) + desalinhamentoMutacao,
       y: 10,
-      largura: 60,
+      largura: usarBotaoAudioSteam ? 68 : 60,
       altura: 22,
       metadados: { acaoCampanha: 'ALTERNAR_AUDIO_MUDO' },
     });
@@ -159,6 +167,9 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
         disponivel: Boolean(viewModel.hangarResumo?.temRunSalvaDisponivel),
       },
     });
+    if (viewModel.edicaoComercialSteam || viewModel.configuracoesSteam) {
+      hitboxes.push(...obterHitboxesModaisEControlesSteam(viewModel));
+    }
     return clonarProfundoCongelado(hitboxes);
   }
 
@@ -166,9 +177,9 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
     hitboxes.push({
       idHitbox: 'BTN_ALTERNAR_AUDIO',
       tipo: 'CONTROLE_CAMPANHA',
-      x: 888 + desalinhamentoMutacao,
+      x: (usarBotaoAudioSteam ? 884 : 888) + desalinhamentoMutacao,
       y: 10,
-      largura: 60,
+      largura: usarBotaoAudioSteam ? 68 : 60,
       altura: 22,
       metadados: { acaoCampanha: 'ALTERNAR_AUDIO_MUDO' },
     });
@@ -276,16 +287,34 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
       },
     });
 
+    const usarTopologiaMoldadaSteam = Boolean(
+      viewModel.edicaoComercialSteam || (viewModel.layoutId && viewModel.layoutId !== 'CARCACA_ALFA_A')
+    );
+    const idLayoutMoldadoHb =
+      viewModel.layoutId ?? `${viewModel.idCarcaca ?? viewModel.idArquitetura ?? 'CARCACA_ALFA'}_A`;
+    const mapaMoldadoPorId = usarTopologiaMoldadaSteam
+      ? new Map(
+          Object.values(
+            calcularRetangulosCamarasMoldadas960({
+              idArquitetura: idLayoutMoldadoHb,
+              ehTouchdown,
+              ehMonstroAlvo,
+            }).camaras
+          ).map((r) => [r.camaraId, { ...r, xValvula: r.valvulaExterna.x, yValvula: r.valvulaExterna.y }])
+        )
+      : null;
+
     for (const cam of viewModel.camaras ?? []) {
+      const retMoldado = mapaMoldadoPorId ? mapaMoldadoPorId.get(cam.id) : null;
       const coordPadrao = COORDENADAS_GRADE_CAMARAS_16A[cam.id] ?? { coluna: 0, andar: 0 };
-      const col = Number(cam.coluna ?? coordPadrao.coluna);
-      const andar = Math.max(0, Math.min(3, Number(cam.andar ?? coordPadrao.andar)));
-      const xCam = (col === 0 ? layoutPlacaCamaras.xEsq : layoutPlacaCamaras.xDir) + desalinhamentoMutacao;
-      const yCam = layoutPlacaCamaras.toposY[andar];
-      const larguraCam = layoutPlacaCamaras.larguraCam;
-      const alturaCam = layoutPlacaCamaras.alturasY[andar];
-      const xValvula = (col === 0 ? layoutPlacaCamaras.xValvEsq : layoutPlacaCamaras.xValvDir) + desalinhamentoMutacao;
-      const yValvula = yCam + Math.floor((alturaCam - 20) / 2);
+      const col = retMoldado ? retMoldado.coluna : Number(cam.coluna ?? coordPadrao.coluna);
+      const andar = retMoldado ? retMoldado.andar : Math.max(0, Math.min(3, Number(cam.andar ?? coordPadrao.andar)));
+      const xCam = (retMoldado ? retMoldado.x : (col === 0 ? layoutPlacaCamaras.xEsq : layoutPlacaCamaras.xDir)) + desalinhamentoMutacao;
+      const yCam = retMoldado ? retMoldado.y : layoutPlacaCamaras.toposY[andar];
+      const larguraCam = retMoldado ? retMoldado.largura : layoutPlacaCamaras.larguraCam;
+      const alturaCam = retMoldado ? retMoldado.altura : layoutPlacaCamaras.alturasY[andar];
+      const xValvula = (retMoldado ? retMoldado.xValvula : (col === 0 ? layoutPlacaCamaras.xValvEsq : layoutPlacaCamaras.xValvDir)) + desalinhamentoMutacao;
+      const yValvula = retMoldado ? retMoldado.yValvula : yCam + Math.floor((alturaCam - 20) / 2);
 
       hitboxes.push({
         idHitbox: `VALVULA_CAMARA_${cam.id}`,
@@ -386,6 +415,7 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
         hpAtual: trip.hpAtual,
         hpMax: trip.hpMax,
         inflado: Boolean(trip.inflado),
+        nivelMaestria: Number(trip.nivelMaestria ?? 0),
       },
     });
   });
@@ -556,6 +586,7 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
       ehMonstroAlvo,
       ehTouchdown,
       classeAlvo,
+      arquetipoAlvoId: viewModel.painelAlvo?.arquetipoAlvoId ?? viewModel.painelAlvo?.arquetipoId ?? '',
       desalinhamentoPx: desalinhamentoMutacao,
       modoVitrineBestiario: Boolean(opcoesDebug.modoVitrineBestiario),
     });
@@ -577,6 +608,18 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
           canalPermissao: sala.canalPermissao,
           marcadorExplicito: sala.marcadorExplicito,
         },
+      });
+    }
+    if (viewModel.painelAlvo?.ofertaRendicaoAtiva) {
+      const temArmasInim = Boolean(viewModel.edicaoComercialSteam && (viewModel.painelAlvo?.armasInimigas ?? []).length > 0);
+      hitboxes.push({
+        idHitbox: 'BTN_ACEITAR_RENDICAO_INIMIGA',
+        tipo: 'CONTROLE_CAMPANHA',
+        x: 716 + desalinhamentoMutacao,
+        y: temArmasInim ? 148 : 136,
+        largura: 240,
+        altura: 20,
+        metadados: { acaoCampanha: 'ACEITAR_RENDICAO_INIMIGA' },
       });
     }
   } else if (viewModel.faseJogo === 'MAPA') {
@@ -752,6 +795,13 @@ export function obterMapaHitboxesNativo(viewModel, opcoesDebug = {}) {
     });
   }
 
+  if (
+    viewModel.tutorialSteam?.ativo ||
+    (viewModel.edicaoComercialSteam && faseJogo === 'COMBATE' && !modalAtivo)
+  ) {
+    hitboxes.unshift(...obterHitboxesModaisEControlesSteam(viewModel));
+  }
+
   return clonarProfundoCongelado(hitboxes);
 }
 
@@ -791,6 +841,7 @@ export function calcularGhostPreviewTermometro(estado, idHitboxHover = null, opc
     });
   }
 
+  const ehEnGhost = estado?.meta?.configuracoesSteam?.idioma === 'en-US';
   const travadoHidrostatico =
     ehTouchdown &&
     (idHitboxHover === 'BTN_DRENAR_SEGURO' || idHitboxHover === 'BTN_DRENAR_TUDO' || ehValvulaHover);
@@ -807,7 +858,7 @@ export function calcularGhostPreviewTermometro(estado, idHitboxHover = null, opc
       sustentacaoProjetadaKg: Math.round(sustentacaoAtualKg * 100) / 100,
       causariaQuedaNoMar: false,
       travadoHidrostatico: true,
-      rotuloFantasma: '[TRAVA HIDROSTÁTICA]',
+      rotuloFantasma: ehEnGhost ? '[HYDROSTATIC LOCK]' : '[TRAVA HIDROSTÁTICA]',
     });
   }
 
@@ -831,8 +882,10 @@ export function calcularGhostPreviewTermometro(estado, idHitboxHover = null, opc
       causariaQuedaNoMar: quedaM,
       travadoHidrostatico: false,
       rotuloFantasma: ehTouchdown
-        ? (pesoAtualKg <= sustProjM ? '[EMERGIR -> FOIL]' : '[PESADO DEMAIS!]')
-        : '[MERGULHO -> MAR]',
+        ? (pesoAtualKg <= sustProjM
+            ? (ehEnGhost ? '[SURFACE -> FOIL]' : '[EMERGIR -> FOIL]')
+            : (ehEnGhost ? '[TOO HEAVY!]' : '[PESADO DEMAIS!]'))
+        : (ehEnGhost ? '[DIVE -> SEA]' : '[MERGULHO -> MAR]'),
     });
   }
 
@@ -898,18 +951,29 @@ export function calcularGhostPreviewTermometro(estado, idHitboxHover = null, opc
   const sustentacaoProjetadaKg = calcularSustentacaoFoil(naveSimulada);
   const causariaQuedaNoMar = !ehTouchdown && pesoProjetadoKg > sustentacaoProjetadaKg;
 
-  const rotuloFantasma =
-    ehTouchdown
-      ? '[EM TOUCHDOWN]'
-      : causariaQuedaNoMar && entrariaEmCavitacao
-        ? '[CAVITAÇÃO -> QUEDA]'
-        : entrariaEmCavitacao
-          ? `[CAVITAÇÃO -${Math.round(perdaSustentacaoCavitacaoKg)}kg]`
-          : causariaQuedaNoMar
-            ? '[QUEDA NO MAR]'
-            : idHitboxHover === 'BTN_DRENAR_SEGURO'
-              ? '[SEGURO >=63kg]'
-              : '[ESTÁVEL NO FOIL]';
+  const rotuloFantasma = ehEnGhost
+    ? (ehTouchdown
+        ? '[IN TOUCHDOWN]'
+        : causariaQuedaNoMar && entrariaEmCavitacao
+          ? '[CAVITATION -> DROP]'
+          : entrariaEmCavitacao
+            ? `[CAVITATION -${Math.round(perdaSustentacaoCavitacaoKg)}kg]`
+            : causariaQuedaNoMar
+              ? '[DROP TO SEA]'
+              : idHitboxHover === 'BTN_DRENAR_SEGURO'
+                ? '[SAFE >=63kg]'
+                : '[STABLE ON FOIL]')
+    : (ehTouchdown
+        ? '[EM TOUCHDOWN]'
+        : causariaQuedaNoMar && entrariaEmCavitacao
+          ? '[CAVITAÇÃO -> QUEDA]'
+          : entrariaEmCavitacao
+            ? `[CAVITAÇÃO -${Math.round(perdaSustentacaoCavitacaoKg)}kg]`
+            : causariaQuedaNoMar
+              ? '[QUEDA NO MAR]'
+              : idHitboxHover === 'BTN_DRENAR_SEGURO'
+                ? '[SEGURO >=63kg]'
+                : '[ESTÁVEL NO FOIL]');
 
   return clonarProfundoCongelado({
     ativo: true,

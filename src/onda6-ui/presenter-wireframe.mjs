@@ -68,6 +68,14 @@ import {
 } from './renderizador-canvas2d-primitivas.mjs';
 import { rasterizarQuadroRgba960x540 } from './renderizador-canvas.mjs';
 import { exportarSpreadAnimacaoSteamPngBufferComHooks } from './vitrine-spreads.mjs';
+import {
+  CATALOGO_LOJA_STEAM_COMPLETO,
+  resolverArmaCatalogoUnificado,
+  resolverOrgaoCatalogoUnificado,
+  sortearVitrineLojaSteam,
+} from '../onda7-steam/catalogo-armas-orgaos-ae.mjs';
+import { resolverLayoutNaveSteam } from '../onda7-steam/topologias-naves-ab.mjs';
+import { verificarLayoutTipoBDesbloqueado } from '../onda7-steam/dificuldades-conquistas-opcoes.mjs';
 
 export {
   PALETA_PIXEL_ART_BIOFOIL,
@@ -107,6 +115,40 @@ const MAPA_SPRITE_OFERTA_LOJA = Object.freeze({
   TRIPULANTE_CARANGUEJO: 'CARANGUEJO',
   INSUMO_COMBUSTIVEL: 'CELULA_COMBUSTIVEL_LOJA',
   INSUMO_MUNICAO: 'CAIXA_MUNICAO_LOJA',
+  AGULHA_SONICA_RAPIDA: 'EMISSOR_ACUSTICO_I',
+  EMISSOR_RESSONANTE_CADEIA: 'EMISSOR_ACUSTICO_I',
+  VULCAO_HIDROTERMAL_CADEIA: 'RAJADA_HIDROPNEUMATICA_II',
+  BATERIA_CARGA_HIDRAULICA: 'RAJADA_HIDROPNEUMATICA_II',
+  TORPEDO_CARGA_DUPLA: 'LANCADOR_TORPEDO_ABISSAL',
+  CANHAO_PULSO_BIOELETRICO_I: 'EMISSOR_ACUSTICO_I',
+  BOMBARDEIRO_IONICO_PESADO: 'MORTEIRO_ESPOROS',
+  DISPARADOR_ESPINHOS_QUILHA: 'CANHAO_ARPAO_CABO',
+  CANHAO_PRESSAO_HIDRO: 'CANHAO_ARPAO_CABO',
+  RAJADA_HIDROPNEUMATICA_III: 'RAJADA_HIDROPNEUMATICA_II',
+  DISPERSOR_ABISSAL_MK2: 'DISPERSOR_ESTILHACOS',
+  LANCA_TERMICA_FOCAL: 'CORTADOR_TERMICO_PLASMA',
+  FEIXE_NEUROTOXICO_BIO: 'CORTADOR_TERMICO_PLASMA',
+  CORTADOR_CASCO_ABISSAL: 'CORTADOR_TERMICO_PLASMA',
+  TORPEDO_CRIO_TERMAL: 'LANCADOR_TORPEDO_ABISSAL',
+  BOMBA_SIFAO_OSMOTICO: 'MORTEIRO_ESPOROS',
+  MORTEIRO_ACIDO_CORROSIVO: 'MORTEIRO_ESPOROS',
+  SINAPSE_PRE_IGNICAO: 'ELETRO_PLACA_ARRAIA',
+  ALETA_ESTABILIZADORA_FOIL: 'CORACAO_BIO_ELETRICO',
+  BRANQUIA_OSMOSE_REVERSA: 'BEXIGA_PRESSAO_ABISSAL',
+  ENZIMA_DIGESTORA_SUCATA: 'GLANDULA_TERMOFILICA',
+  VESICULA_HIPERBARICA: 'BEXIGA_PRESSAO_ABISSAL',
+  BOLSA_SIMBIONTE_SANGUESSUGA: 'GLANDULA_BAIACU',
+  CRISTA_REFRACAO_ACUSTICA: 'DENTE_LEVIATA_SERRILHADO',
+  GANGLIO_RECICLADOR_MUNICAO: 'CORACAO_BIO_ELETRICO',
+  OLHO_SONAR_ABISSAL: 'BOLSA_TINTA_CEGANTE',
+  MEDULA_REGENERATIVA_CORAL: 'GLANDULA_TERMOFILICA',
+  SUBSISTEMA_SONDA_SABOTAGEM: 'ELETRO_PLACA_ARRAIA',
+  SUBSISTEMA_PARASITA_NEURAL: 'PARASITA',
+  SUBSISTEMA_DRONE_DEFESA: 'CORACAO_BIO_ELETRICO',
+  SUBSISTEMA_DRONE_REPARO: 'GLANDULA_TERMOFILICA',
+  SUBSISTEMA_DRONE_ATAQUE: 'DENTE_LEVIATA_SERRILHADO',
+  SUBSISTEMA_TUBO_PRESSURIZADO: 'VALVULA_ESFINCTER',
+  SUBSISTEMA_TINTA_FURTIVA: 'BOLSA_TINTA_CEGANTE',
 });
 
 const NOMES_ITENS_LOJA_CURTOS = Object.freeze({
@@ -129,6 +171,28 @@ const NOMES_ITENS_LOJA_CURTOS = Object.freeze({
   TRIPULANTE_CARANGUEJO: 'CARANGUEJO GUARDA',
   INSUMO_COMBUSTIVEL: 'CÉLULA COMBUSTÍVEL',
   INSUMO_MUNICAO: 'MUNIÇÃO ABISSAL',
+});
+
+const NOMES_ITENS_LOJA_CURTOS_EN = Object.freeze({
+  TRIPULANTE_POLVO: 'OCTOPUS ENGINEER',
+  TRIPULANTE_ARRAIA: 'ELECTRIC RAY',
+  TRIPULANTE_BAIACU: 'SPINY PUFFER',
+  TRIPULANTE_CARANGUEJO: 'AMPHIBIOUS CRAB',
+  INSUMO_COMBUSTIVEL: 'BIO-FUEL CELL',
+  INSUMO_MUNICAO: 'ABYSSAL AMMO',
+  SUBSISTEMA_TUBO: 'BOARDING LOCK',
+  SUBSISTEMA_TINTA: 'CLOAKING INK',
+});
+
+const RESUMOS_CURTOS_LOJA_EN = Object.freeze({
+  TRIPULANTE_POLVO: '80 HP | 2X REPAIR',
+  TRIPULANTE_ARRAIA: '70 HP | +1 REACTOR',
+  TRIPULANTE_BAIACU: '150 HP | SEALS BREACH',
+  TRIPULANTE_CARANGUEJO: '110 HP | DRY BRAWLER',
+  INSUMO_COMBUSTIVEL: '+1 SECTOR JUMP',
+  INSUMO_MUNICAO: '+1 TORP/BOMB AMMO',
+  SUBSISTEMA_TUBO: 'LAUNCHES BOARDERS',
+  SUBSISTEMA_TINTA: '+60% CLOAK EVADE',
 });
 
 const SIGLAS_ARMAS_HANGAR = Object.freeze({
@@ -167,11 +231,28 @@ function resolverPrecoVendaCatalogoPorao(item) {
   if (!item || typeof item !== 'object') {
     return { valorVenda: 0, moedaVenda: 'SUCATA' };
   }
-  const entradaCat = CATALOGO_LOJA_56B.find((x) => x.id === item.id || x.id === item.chassiId) ?? null;
+  const entradaCat =
+    CATALOGO_LOJA_56B.find((x) => x.id === item.id || x.id === item.chassiId) ??
+    CATALOGO_LOJA_STEAM_COMPLETO.find((x) => x.id === item.id || x.id === item.chassiId) ??
+    null;
   if (entradaCat) {
     return {
-      valorVenda: Number(entradaCat.valorVenda ?? Math.max(1, Math.floor((entradaCat.precoCompra ?? 10) / 2))),
+      valorVenda: Number(entradaCat.valorVenda ?? Math.max(1, Math.floor((entradaCat.precoCompra ?? entradaCat.preco ?? 10) / 2))),
       moedaVenda: entradaCat.moeda === 'BIOMASSA' ? 'BIOMASSA' : 'SUCATA',
+    };
+  }
+  const specArmaAe = resolverArmaCatalogoUnificado(item.id ?? item.chassiId);
+  if (specArmaAe) {
+    return {
+      valorVenda: Number(specArmaAe.valorVenda ?? Math.max(1, Math.floor((specArmaAe.precoCompra ?? 20) / 2))),
+      moedaVenda: 'SUCATA',
+    };
+  }
+  const specOrgaoAe = resolverOrgaoCatalogoUnificado(item.id);
+  if (specOrgaoAe) {
+    return {
+      valorVenda: Number(specOrgaoAe.valorVenda ?? Math.max(1, Math.floor((specOrgaoAe.precoCompra ?? 16) / 2))),
+      moedaVenda: 'BIOMASSA',
     };
   }
   const ehBiomassa = item.tipo === 'ORGAO' || String(item.id ?? '').startsWith('GLANDULA') || String(item.id ?? '').startsWith('BOLSA');
@@ -185,6 +266,72 @@ function construirLojaResumoDeterministico(estado) {
   const seed = String(estado.meta?.seedPartida ?? 'seed-loja');
   const setor = Math.max(1, Number(estado.mapaSetorial?.setorNumero ?? 1));
   const noId = String(estado.mapaSetorial?.noAtualId ?? 'NO_LOJA');
+  const idioma = estado.meta?.configuracoesSteam?.idioma === 'en-US' ? 'en-US' : 'pt-BR';
+  const precoReparo1Hp = setor <= 3 ? 2 : setor <= 6 ? 3 : 4;
+  const compradosUnicos = new Set(estado.lojaAtual?.itensCompradosIds ?? []);
+  const contagemInsumos = estado.lojaAtual?.contagemInsumosComprados ?? {};
+
+  if (estado.meta?.edicaoComercialSteam || Array.isArray(estado.lojaAtual?.ofertasSteam)) {
+    const noIdxNum = Number((noId.match(/\d+/) ?? ['0'])[0]) || 0;
+    const vitrineAe = Array.isArray(estado.lojaAtual?.ofertasSteam)
+      ? estado.lojaAtual.ofertasSteam
+      : sortearVitrineLojaSteam(seed, setor, noIdxNum, estado.naveJogador);
+    return {
+      nomeDoca:
+        idioma === 'en-US'
+          ? `SYMBIOTIC FORGE-REEF — SECTOR ${setor}`
+          : `RECIFE-FORJA SIMBIÓTICO — SETOR ${setor}`,
+      precoReparo1Hp,
+      taxaDigestao: '2:1',
+      ofertas: vitrineAe.map((raw) => {
+        const idNorm =
+          raw.id === 'COMBUSTIVEL_1UN'
+            ? 'INSUMO_COMBUSTIVEL'
+            : raw.id === 'MUNICAO_1UN'
+              ? 'INSUMO_MUNICAO'
+              : raw.id;
+        const catSteam = CATALOGO_LOJA_STEAM_COMPLETO.find((x) => x.id === idNorm) ?? raw;
+        const specArma = resolverArmaCatalogoUnificado(idNorm);
+        const specOrgao = resolverOrgaoCatalogoUnificado(idNorm);
+        const ehInsumo = idNorm === 'INSUMO_COMBUSTIVEL' || idNorm === 'INSUMO_MUNICAO' || raw.categoria === 'SUPRIMENTO' || raw.categoria === 'INSUMO';
+        const qtdComp = Number(contagemInsumos[idNorm] ?? contagemInsumos[raw.id] ?? 0);
+        const estBase = Number(raw.estoqueInicial ?? raw.estoqueRestante ?? raw.estoqueMax ?? (ehInsumo ? 6 : 1));
+        const estoqueRestante = ehInsumo
+          ? Math.max(0, estBase - qtdComp)
+          : compradosUnicos.has(idNorm) || compradosUnicos.has(raw.id)
+            ? 0
+            : 1;
+        const nomeCurto =
+          idioma === 'en-US'
+            ? (specArma?.cardEn ?? specOrgao?.cardEn ?? catSteam.nomeCurtoEn ?? NOMES_ITENS_LOJA_CURTOS_EN[idNorm] ?? NOMES_ITENS_LOJA_CURTOS[idNorm] ?? String(idNorm).slice(0, 18))
+            : (specArma?.cardPt ?? specOrgao?.cardPt ?? catSteam.nomeCurtoPt ?? NOMES_ITENS_LOJA_CURTOS[idNorm] ?? String(idNorm).slice(0, 18));
+        const resumoCurto =
+          idioma === 'en-US'
+            ? (specArma?.resumoEn ?? specOrgao?.resumoEn ?? catSteam.resumoCurtoEn ?? RESUMOS_CURTOS_LOJA_EN[idNorm] ?? RESUMOS_CURTOS_LOJA[idNorm] ?? `${raw.pesoKg ?? 0}kg`)
+            : (specArma?.resumoPt ?? specOrgao?.resumoPt ?? catSteam.resumoCurtoPt ?? RESUMOS_CURTOS_LOJA[idNorm] ?? `${raw.pesoKg ?? 0}kg`);
+        const chaveSprite =
+          MAPA_SPRITE_OFERTA_LOJA[idNorm] ??
+          specArma?.id ??
+          specOrgao?.id ??
+          'BULBO_NEURAL';
+        return {
+          id: idNorm,
+          nomeCurto: String(nomeCurto).slice(0, 19),
+          categoria: ehInsumo ? 'INSUMO' : raw.categoria,
+          ehPassivoPorao: Boolean(specOrgao?.categoriaEnxerto === 'CASCO_PASSIVO'),
+          moeda: raw.moeda ?? catSteam.moeda ?? 'SUCATA',
+          preco: Number(raw.preco ?? catSteam.precoCompra ?? catSteam.preco ?? 10),
+          valorVenda: Number(raw.valorVenda ?? catSteam.valorVenda ?? 5),
+          pesoKg: Number(raw.pesoKg ?? catSteam.pesoKg ?? 0),
+          chaveSprite,
+          resumoCurto: String(resumoCurto).slice(0, 22),
+          estoqueRestante,
+          esgotado: estoqueRestante <= 0,
+        };
+      }),
+    };
+  }
+
   const sorteio = gerarEstoqueLojaForja(seed, setor, noId);
   const armasCat = CATALOGO_LOJA_56B.filter((i) => i.categoria === 'ARMA');
   const orgaosCat = CATALOGO_LOJA_56B.filter((i) => i.categoria === 'ORGAO');
@@ -206,9 +353,6 @@ function construirLojaResumoDeterministico(estado) {
     insMun,
   ].filter(Boolean);
 
-  const precoReparo1Hp = setor <= 3 ? 2 : setor <= 6 ? 3 : 4;
-  const compradosUnicos = new Set(estado.lojaAtual?.itensCompradosIds ?? []);
-  const contagemInsumos = estado.lojaAtual?.contagemInsumosComprados ?? {};
   return {
     nomeDoca: `RECIFE-FORJA SIMBIÓTICO — SETOR ${setor}`,
     precoReparo1Hp,
@@ -274,12 +418,28 @@ const PAPEIS_CURTOS_HANGAR = Object.freeze({
   COLMEIA_VIVA: 'SIMBIOSE & REGENERAÇÃO',
 });
 
+const PAPEIS_CURTOS_HANGAR_EN = Object.freeze({
+  CARCACA_ALFA: 'HYDROFOIL BALANCE',
+  MANTA_VOLT: 'BIO-ELECTRIC WARFARE',
+  COURACA_LIMIAR: 'HEAVY BOARDING ASSAULT',
+  SOMBRA_ABISSAL: 'STEALTH & NEUROTOXIN',
+  COLMEIA_VIVA: 'SYMBIOSIS & REGEN',
+});
+
 const REQUISITOS_CURTOS_HANGAR = Object.freeze({
   CARCACA_ALFA: 'DESBLOQUEADA',
   MANTA_VOLT: 'SETOR 4+ SEM DANO',
   COURACA_LIMIAR: '5 CAPTURAS INTACTAS',
   SOMBRA_ABISSAL: '4 ÓRGÃOS EXTRAÍDOS',
   COLMEIA_VIVA: 'CHEGAR AO SETOR 8',
+});
+
+const REQUISITOS_CURTOS_HANGAR_EN = Object.freeze({
+  CARCACA_ALFA: 'UNLOCKED',
+  MANTA_VOLT: 'SECTOR 4+ ZERO HULL DMG',
+  COURACA_LIMIAR: '5 INTACT CAPTURES',
+  SOMBRA_ABISSAL: '4 EXTRACTED ORGANS',
+  COLMEIA_VIVA: 'REACH SECTOR 8',
 });
 
 const REATOR_INICIAL_POR_CARCACA = Object.freeze({
@@ -303,6 +463,19 @@ const NOMES_CURTOS_ARVORES_OFICINA = Object.freeze({
   CORACAO_BIO_ELETRICO: '10. REATOR BIO-EL.',
 });
 
+const NOMES_CURTOS_ARVORES_OFICINA_EN = Object.freeze({
+  MASTRO_FOIL: '1. HYDROFOIL MAST',
+  ARTILHARIA_DORSAL: '2. DORSAL WEAPONS',
+  PLACAS_BLINDAGEM: '3. CHITIN +15kg',
+  GLANDULA_BARREIRA: '4. BUBBLE SHIELD',
+  SIFAO_PROPULSAO: '5. SIPHON THRUST',
+  BOMBA_BRANQUIAL: '6. GILL DRAIN PUMP',
+  CORTEX_NAVEGACAO: '7. SONAR CORTEX',
+  TUBO_PRESSURIZADO: '8. BOARDING LOCK',
+  GLANDULA_TINTA_FURTIVA: '9. CLOAKING INK',
+  CORACAO_BIO_ELETRICO: '10. BIO-REACTOR',
+});
+
 const DETALHES_CURTOS_ARVORES_OFICINA = Object.freeze({
   MASTRO_FOIL: '+SUSTENTAÇÃO',
   ARTILHARIA_DORSAL: 'ENERGIA ARMAS',
@@ -316,6 +489,19 @@ const DETALHES_CURTOS_ARVORES_OFICINA = Object.freeze({
   CORACAO_BIO_ELETRICO: 'SUC OU BIO',
 });
 
+const DETALHES_CURTOS_ARVORES_OFICINA_EN = Object.freeze({
+  MASTRO_FOIL: '+FOIL LIFT',
+  ARTILHARIA_DORSAL: 'WEAPON POWER',
+  PLACAS_BLINDAGEM: '+5HP +15%DEF',
+  GLANDULA_BARREIRA: 'UP TO 4 SHLD',
+  SIFAO_PROPULSAO: 'EVADE +LIFT',
+  BOMBA_BRANQUIAL: 'FAST DRAIN',
+  CORTEX_NAVEGACAO: 'ROOM INTEL',
+  TUBO_PRESSURIZADO: 'LOCK COOLDWN',
+  GLANDULA_TINTA_FURTIVA: '+60% EVADE',
+  CORACAO_BIO_ELETRICO: 'SCRP OR BIO',
+});
+
 function expandirTripulacaoInicialHangar(mapaTrip) {
   const lista = [];
   for (const esp of ['POLVO', 'ARRAIA', 'BAIACU', 'CARANGUEJO']) {
@@ -325,10 +511,25 @@ function expandirTripulacaoInicialHangar(mapaTrip) {
   return lista.length > 0 ? lista : ['POLVO', 'ARRAIA', 'BAIACU'];
 }
 
-function formatarArmasIniciaisHangar(armasIniciais = []) {
+function formatarArmasIniciaisHangar(armasIniciais = [], ehEn = false) {
   const lista = Array.isArray(armasIniciais) && armasIniciais.length > 0
     ? armasIniciais
     : ['EMISSOR_ACUSTICO_I'];
+  if (ehEn) {
+    const rotuloEn = (idArma) =>
+      resolverArmaCatalogoUnificado(idArma)?.siglaHudEn ??
+      resolverArmaCatalogoUnificado(idArma)?.cardEn ??
+      NOMES_ITENS_LOJA_CURTOS_EN[idArma] ??
+      idArma;
+    if (lista.length === 1) {
+      const a0 = lista[0];
+      return resolverArmaCatalogoUnificado(a0)?.cardEn ?? NOMES_ITENS_LOJA_CURTOS_EN[a0] ?? a0;
+    }
+    if (lista.every((idArma) => idArma === lista[0])) {
+      return `${lista.length}x ${rotuloEn(lista[0])}`;
+    }
+    return lista.map(rotuloEn).join(' + ');
+  }
   if (lista.length === 1) {
     const arma0 = lista[0];
     return NOMES_ITENS_LOJA_CURTOS[arma0] ?? arma0;
@@ -347,23 +548,69 @@ function construirHangarResumoDeterministico(estado, idCarcacaPadrao) {
   const desbloqueios = perfil?.carcacasDesbloqueadas ?? { CARCACA_ALFA: true };
   const stats = perfil?.estatisticasGlobais ?? perfil?.estatisticas ?? {};
   const idSel = estado.meta?.carcacaSelecionadaHangar ?? estado.meta?.idArquiteturaHangar ?? idCarcacaPadrao;
+  const varianteSelecionada = estado.meta?.varianteHangar === 'B' ? 'B' : 'A';
+  const ehEnHangar = estado.meta?.configuracoesSteam?.idioma === 'en-US';
+  const conqsDesbloq = estado.meta?.conquistasDesbloqueadas ?? perfil?.conquistasSteam ?? [];
+  const layoutsBDesbloq = estado.meta?.layoutsTipoBDesbloqueados ?? perfil?.layoutsTipoBDesbloqueados ?? [];
   const naves = CATALOGO_NAVES_54.map((arq) => {
+    const layoutA = resolverLayoutNaveSteam(arq.idArquitetura, 'A');
+    const layoutB = resolverLayoutNaveSteam(arq.idArquitetura, 'B');
+    const kitB = layoutB?.kitVariante ?? {};
+    const tripB = Array.isArray(kitB.tripulacaoInicial) && kitB.tripulacaoInicial.length > 0
+      ? [...kitB.tripulacaoInicial]
+      : expandirTripulacaoInicialHangar(arq.tripulacaoInicial);
+    const qtdArraiasB = tripB.filter((esp) => esp === 'ARRAIA').length;
+    const reatorB = Number(kitB.reatorBarrasCompradas ?? 7) + qtdArraiasB;
+    const pesoArmasB = (kitB.armasIniciais ?? []).reduce(
+      (acc, idA) => acc + Number(resolverArmaCatalogoUnificado(idA)?.pesoKg ?? 12),
+      0
+    );
+    const pesoOrgaosB = (kitB.orgaosIniciaisPorao ?? []).reduce(
+      (acc, idO) => acc + Number(resolverOrgaoCatalogoUnificado(idO)?.pesoKg ?? 5),
+      0
+    );
+    const pesoTotalB = Number(arq.pesoChassiKg ?? 90) + Number(arq.aguaInicialKg ?? 100) + pesoArmasB + pesoOrgaosB;
+    const usarStatsB = varianteSelecionada === 'B';
+    const layoutAtivo = usarStatsB ? layoutB : layoutA;
+    const desbloqA = arq.idArquitetura === 'CARCACA_ALFA' ? true : Boolean(desbloqueios[arq.idArquitetura]);
+    const desbloqB = desbloqA && verificarLayoutTipoBDesbloqueado(`${arq.idArquitetura}_B`, {
+      conquistasDesbloqueadas: conqsDesbloq,
+      layoutsDesbloqueados: layoutsBDesbloq,
+    });
     return {
       id: arq.idArquitetura,
-      nome: String(arq.nome ?? arq.idArquitetura).replace(/^\d+\.\s*/, '').toUpperCase(),
-      papel: PAPEIS_CURTOS_HANGAR[arq.idArquitetura] ?? String(arq.estiloTatico ?? 'BIO-CAÇA').toUpperCase(),
-      hpMax: Number(arq.hpCascoMax ?? 30),
-      reator: REATOR_INICIAL_POR_CARCACA[arq.idArquitetura] ?? 8,
-      pesoBaseKg: Number(arq.pesoTotalInicialKg ?? 225),
-      armaInicial: formatarArmasIniciaisHangar(arq.armasIniciais),
-      armasIniciaisIds: [...(arq.armasIniciais ?? ['EMISSOR_ACUSTICO_I'])],
-      tripulacao: expandirTripulacaoInicialHangar(arq.tripulacaoInicial),
-      desbloqueada: arq.idArquitetura === 'CARCACA_ALFA' ? true : Boolean(desbloqueios[arq.idArquitetura]),
-      requisito: REQUISITOS_CURTOS_HANGAR[arq.idArquitetura] ?? 'BLOQUEADA',
+      nome: ehEnHangar
+        ? String(layoutAtivo?.nomeCurtoCardEn ?? layoutAtivo?.nomeEn ?? arq.idArquitetura).toUpperCase()
+        : String(arq.nome ?? arq.idArquitetura).replace(/^\d+\.\s*/, '').toUpperCase(),
+      papel: ehEnHangar
+        ? (PAPEIS_CURTOS_HANGAR_EN[arq.idArquitetura] ?? String(layoutAtivo?.papelCurtoEn ?? 'BIO-INTERCEPTOR').toUpperCase())
+        : (PAPEIS_CURTOS_HANGAR[arq.idArquitetura] ?? String(arq.estiloTatico ?? 'BIO-CAÇA').toUpperCase()),
+      hpMax: usarStatsB ? Number(kitB.hpCascoMax ?? arq.hpCascoMax ?? 30) : Number(arq.hpCascoMax ?? 30),
+      reator: usarStatsB ? reatorB : (REATOR_INICIAL_POR_CARCACA[arq.idArquitetura] ?? 8),
+      pesoBaseKg: usarStatsB ? pesoTotalB : Number(arq.pesoTotalInicialKg ?? 225),
+      armaInicial: ehEnHangar
+        ? (usarStatsB
+            ? (layoutB?.armaResumoCardEn ?? formatarArmasIniciaisHangar(kitB.armasIniciais, true))
+            : (layoutA?.armaResumoCardEn ?? formatarArmasIniciaisHangar(arq.armasIniciais, true)))
+        : (usarStatsB
+            ? (layoutB?.armaResumoCardPt ?? formatarArmasIniciaisHangar(kitB.armasIniciais, false))
+            : formatarArmasIniciaisHangar(arq.armasIniciais, false)),
+      armasIniciaisIds: usarStatsB
+        ? [...(kitB.armasIniciais ?? ['EMISSOR_ACUSTICO_I'])]
+        : [...(arq.armasIniciais ?? ['EMISSOR_ACUSTICO_I'])],
+      tripulacao: usarStatsB ? tripB : expandirTripulacaoInicialHangar(arq.tripulacaoInicial),
+      desbloqueada: desbloqA,
+      desbloqueadaVarianteB: desbloqB,
+      requisito: ehEnHangar
+        ? (REQUISITOS_CURTOS_HANGAR_EN[arq.idArquitetura] ?? 'LOCKED')
+        : (REQUISITOS_CURTOS_HANGAR[arq.idArquitetura] ?? 'BLOQUEADA'),
     };
   });
   return {
     idArquiteturaSelecionada: idSel,
+    arquiteturaSelecionadaId: idSel,
+    varianteSelecionada,
+    dificuldadeSelecionada: estado.meta?.dificuldade ?? estado.meta?.dificuldadeSteam ?? 'NORMAL',
     seedPartida: String(estado.meta?.seedPartida ?? 'biofoil-campanha-0001'),
     temRunSalvaDisponivel: Boolean(estado.meta?.temRunSalvaDisponivel),
     totalRuns: Number(stats.runsIniciadas ?? stats.totalRunsIniciadas ?? 0),
@@ -372,8 +619,20 @@ function construirHangarResumoDeterministico(estado, idCarcacaPadrao) {
   };
 }
 
+function resolverNomeCurtoItemPorIdioma(itemId, fallbackNome, ehEn) {
+  const id = String(itemId ?? '');
+  const spA = resolverArmaCatalogoUnificado(id);
+  const spO = resolverOrgaoCatalogoUnificado(id);
+  const idLimpo = id.replace(/_/g, ' ');
+  if (ehEn) {
+    return spA?.cardEn ?? spO?.cardEn ?? NOMES_ITENS_LOJA_CURTOS_EN[id] ?? fallbackNome ?? NOMES_ITENS_LOJA_CURTOS[id] ?? idLimpo;
+  }
+  return fallbackNome ?? spA?.cardPt ?? spO?.cardPt ?? NOMES_ITENS_LOJA_CURTOS[id] ?? idLimpo;
+}
+
 function construirOficinaResumoDeterministico(estado, nave, faseJogoAtual, recursos) {
   const emLoja = faseJogoAtual === 'LOJA';
+  const ehEn = estado.meta?.configuracoesSteam?.idioma === 'en-US';
   const moedaReator = String(
     estado.meta?.moedaPreferencialReator ?? estado.meta?.moedaReatorSelecionada ?? 'SUCATA'
   ).toUpperCase() === 'BIOMASSA'
@@ -381,6 +640,8 @@ function construirOficinaResumoDeterministico(estado, nave, faseJogoAtual, recur
     : 'SUCATA';
   const sucSaldo = Number(recursos?.sucata ?? 0);
   const bioSaldo = Number(recursos?.biomassa ?? 0);
+  const tabNomesArv = ehEn ? NOMES_CURTOS_ARVORES_OFICINA_EN : NOMES_CURTOS_ARVORES_OFICINA;
+  const tabDetArv = ehEn ? DETALHES_CURTOS_ARVORES_OFICINA_EN : DETALHES_CURTOS_ARVORES_OFICINA;
   const arvores = ARVORES_UPGRADE_56A.map((arv) => {
     const info = calcularCustoProximoUpgradeNave(nave, arv.id, emLoja);
     const moedaEf = info.moeda === 'FLEXIVEL' ? moedaReator : (info.moeda ?? arv.moeda ?? 'SUCATA');
@@ -389,11 +650,11 @@ function construirOficinaResumoDeterministico(estado, nave, faseJogoAtual, recur
     const podeComprar = !noMaximo && Boolean(info.disponivel) && saldoDisp >= Number(info.custoProximo ?? 999999);
     const detalheCurto =
       !noMaximo && info.motivoBloqueio === 'EXIGE_RECIFE_FORJA_LOJA'
-        ? 'SÓ NA LOJA!'
-        : (DETALHES_CURTOS_ARVORES_OFICINA[arv.id] ?? '');
+        ? (ehEn ? 'STORE ONLY!' : 'SÓ NA LOJA!')
+        : (tabDetArv[arv.id] ?? '');
     return {
       idArvore: arv.id,
-      nomeCurto: NOMES_CURTOS_ARVORES_OFICINA[arv.id] ?? arv.id,
+      nomeCurto: tabNomesArv[arv.id] ?? arv.id,
       nivelAtual: Number(info.nivelAtual ?? 0),
       nivelMax: Number(info.nivelMaximo ?? arv.barrasMax ?? 4),
       custoProximo: info.custoProximo,
@@ -409,11 +670,15 @@ function construirOficinaResumoDeterministico(estado, nave, faseJogoAtual, recur
     const item = slot && typeof slot === 'object' && 'item' in slot ? slot.item : slot;
     if (!item) return null;
     const infoVenda = resolverPrecoVendaCatalogoPorao(item);
+    const specArmaPorao = item.tipo === 'ARMA' ? resolverArmaCatalogoUnificado(item.id ?? item.chassiId) : null;
+    const specOrgaoPorao = item.tipo !== 'ARMA' ? resolverOrgaoCatalogoUnificado(item.id) : null;
+    const ehPassivoPorao = Boolean(specOrgaoPorao?.categoriaEnxerto === 'CASCO_PASSIVO');
     return {
       id: item.id,
       tipo: item.tipo ?? 'ORGAO',
-      nome: item.nome ?? NOMES_ITENS_LOJA_CURTOS[item.id] ?? item.id,
-      pesoKg: Number(item.pesoKg ?? (item.tipo === 'ARMA' ? 15 : 5)),
+      ehPassivoPorao,
+      nome: resolverNomeCurtoItemPorIdioma(item.id, ehEn ? null : item.nome, ehEn),
+      pesoKg: Number(item.pesoKg ?? specArmaPorao?.pesoKg ?? specOrgaoPorao?.pesoKg ?? (item.tipo === 'ARMA' ? 15 : 5)),
       ocupado: true,
       valorVenda: infoVenda.valorVenda,
       moedaVenda: infoVenda.moedaVenda,
@@ -430,25 +695,26 @@ function construirOficinaResumoDeterministico(estado, nave, faseJogoAtual, recur
 function construirSaqueResumoDeterministico(estado) {
   const sq = estado.meta?.saquePendente ?? estado.saquePendente ?? null;
   if (!sq) return null;
+  const ehEn = estado.meta?.configuracoesSteam?.idioma === 'en-US';
   const itemBruto = sq.itemDropado ?? sq.itemRecuperado ?? sq.itemRecuperadoPorao ?? null;
   const itemDropado = itemBruto
     ? typeof itemBruto === 'object'
       ? {
           id: itemBruto.id,
           tipo: itemBruto.tipo ?? 'ORGAO',
-          nome: itemBruto.nome ?? NOMES_ITENS_LOJA_CURTOS[itemBruto.id] ?? itemBruto.id,
+          nome: resolverNomeCurtoItemPorIdioma(itemBruto.id, ehEn ? null : itemBruto.nome, ehEn),
           pesoKg: Number(itemBruto.pesoKg ?? (itemBruto.tipo === 'ARMA' ? 15 : 5)),
         }
       : {
           id: String(itemBruto),
           tipo: 'ORGAO',
-          nome: NOMES_ITENS_LOJA_CURTOS[String(itemBruto)] ?? String(itemBruto),
+          nome: resolverNomeCurtoItemPorIdioma(String(itemBruto), null, ehEn),
           pesoKg: 5,
         }
     : null;
   return {
     modalidadeVitoria: String(sq.modalidadeVitoria ?? sq.modalidade ?? 'DESTRUICAO_BRUTA'),
-    inimigoNome: String(sq.inimigoNome ?? sq.alvoNome ?? 'ALVO HOSTIL'),
+    inimigoNome: String(sq.inimigoNome ?? sq.alvoNome ?? (ehEn ? 'HOSTILE TARGET' : 'ALVO HOSTIL')),
     sucataGanha: Number(sq.sucataGanha ?? sq.sucata ?? 0),
     biomassaGanha: Number(sq.biomassaGanha ?? sq.biomassa ?? 0),
     combustivelGanho: Number(sq.combustivelGanho ?? sq.combustivel ?? 0),
@@ -465,6 +731,7 @@ function construirSaqueResumoDeterministico(estado) {
 function construirDesfechoEventoResumoDeterministico(estado) {
   const df = estado.meta?.desfechoEventoPendente ?? estado.meta?.ultimoResultadoEvento ?? null;
   if (!df) return null;
+  const ehEn = estado.meta?.configuracoesSteam?.idioma === 'en-US';
   const opcaoEscolhida = String(df.opcaoEscolhida ?? df.opcao ?? 'A');
   const deltaSucata = Number(df.deltaSucata ?? df.ganhoSucata ?? 0);
   const deltaBiomassa = Number(df.deltaBiomassa ?? df.ganhoBiomassa ?? 0);
@@ -477,21 +744,28 @@ function construirDesfechoEventoResumoDeterministico(estado) {
   const deltaMunicao = Number(df.deltaMunicao ?? df.ganhoMunicao ?? 0);
   const iniciouCombate =
     Boolean(df.iniciouCombate ?? df.combateObrigatorio) || estado.meta?.faseJogo === 'COMBATE';
-  const titulo =
-    df.titulo ??
-    (iniciouCombate
-      ? `OPÇÃO [${opcaoEscolhida}] — CONTATO HOSTIL IMEDIATO!`
-      : deltaHpCasco < 0
-        ? `OPÇÃO [${opcaoEscolhida}] — EXTRAÇÃO COM AVARIA NO CASCO`
-        : deltaSucata > 0 || deltaBiomassa > 0 || deltaHpCasco > 0
-          ? `OPÇÃO [${opcaoEscolhida}] — MANOBRA CONCLUÍDA COM ÊXITO`
-          : `OPÇÃO [${opcaoEscolhida}] — ROTA MANTIDA EM SILÊNCIO`);
+  const tituloPadrao = ehEn
+    ? (iniciouCombate
+        ? `OPTION [${opcaoEscolhida}] — HOSTILE CONTACT ENGAGED!`
+        : deltaHpCasco < 0
+          ? `OPTION [${opcaoEscolhida}] — SALVAGE WITH HULL DAMAGE`
+          : deltaSucata > 0 || deltaBiomassa > 0 || deltaHpCasco > 0
+            ? `OPTION [${opcaoEscolhida}] — MANEUVER SUCCESSFUL`
+            : `OPTION [${opcaoEscolhida}] — SILENT COURSE MAINTAINED`)
+    : (iniciouCombate
+        ? `OPÇÃO [${opcaoEscolhida}] — CONTATO HOSTIL IMEDIATO!`
+        : deltaHpCasco < 0
+          ? `OPÇÃO [${opcaoEscolhida}] — EXTRAÇÃO COM AVARIA NO CASCO`
+          : deltaSucata > 0 || deltaBiomassa > 0 || deltaHpCasco > 0
+            ? `OPÇÃO [${opcaoEscolhida}] — MANOBRA CONCLUÍDA COM ÊXITO`
+            : `OPÇÃO [${opcaoEscolhida}] — ROTA MANTIDA EM SILÊNCIO`);
+  const titulo = (ehEn ? df.tituloEn : df.titulo) ?? (!ehEn ? df.titulo : null) ?? tituloPadrao;
   return {
     idEvento: String(df.idEvento ?? 'EVENTO_MARITIMO'),
     opcaoEscolhida,
     titulo,
-    narrativaPrincipal: df.narrativaPrincipal ?? null,
-    bonusEspecialTexto: df.bonusEspecialTexto ?? null,
+    narrativaPrincipal: (ehEn ? (df.narrativaPrincipalEn ?? null) : df.narrativaPrincipal) ?? null,
+    bonusEspecialTexto: (ehEn ? (df.bonusEspecialTextoEn ?? null) : df.bonusEspecialTexto) ?? null,
     novoTripulanteEspecie: df.novoTripulanteEspecie ?? null,
     itemRecuperadoNome: df.itemRecuperadoNome ?? null,
     blueOptionAtivada: Boolean(df.blueOptionAtivada ?? opcaoEscolhida === 'B'),
@@ -507,16 +781,23 @@ function construirDesfechoEventoResumoDeterministico(estado) {
 
 function construirFimDeRunResumoDeterministico(estado, recursos) {
   const desfecho = estado.meta?.desfechoRun ?? null;
+  const ehEn = estado.meta?.configuracoesSteam?.idioma === 'en-US';
   const met = estado.meta?.metricasRun ?? {};
   const vitoria =
     desfecho === 'VITORIA_CAMPANHA' ||
     Boolean(met.derrotouDragaFase3) ||
     (desfecho === null && Number(estado.naveJogador?.hpCascoAtual ?? 0) > 0 && estado.meta?.faseJogo === 'FIM_DE_RUN');
-  const motivoEncerramento = vitoria
-    ? 'DRAGA CONTINENTAL FASE 3 DESTRUÍDA!'
-    : desfecho === 'PERMADEATH_TRIPULACAO_EXTINTA'
-      ? 'TRIPULAÇÃO SIMBIÓTICA EXTINTA EM COMBATE'
-      : 'CASCO ROMPIDO A 0 HP — BIO-NAVE PERDIDA';
+  const motivoEncerramento = ehEn
+    ? (vitoria
+        ? 'CONTINENTAL DREDGE PHASE 3 DESTROYED!'
+        : desfecho === 'PERMADEATH_TRIPULACAO_EXTINTA'
+          ? 'SYMBIOTIC CREW WIPED OUT IN COMBAT'
+          : 'HULL RUPTURED AT 0 HP — BIO-SHIP LOST')
+    : (vitoria
+        ? 'DRAGA CONTINENTAL FASE 3 DESTRUÍDA!'
+        : desfecho === 'PERMADEATH_TRIPULACAO_EXTINTA'
+          ? 'TRIPULAÇÃO SIMBIÓTICA EXTINTA EM COMBATE'
+          : 'CASCO ROMPIDO A 0 HP — BIO-NAVE PERDIDA');
   const antesRun = estado.meta?.carcacasDesbloqueadasAntesDaRun ?? null;
   const novosDesbloqueios = Array.isArray(met.novosDesbloqueiosNestaRun)
     ? met.novosDesbloqueiosNestaRun
@@ -542,6 +823,7 @@ function construirFimDeRunResumoDeterministico(estado, recursos) {
  * Assinatura Pura N1 #5: Projeta o GameState num ViewModel 16:9 imutável para renderização na grade nativa 960x540 (upscale 2x -> 1920x1080).
  */
 export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
+  const ehIdiomaEnVm = estado?.meta?.configuracoesSteam?.idioma === 'en-US';
   const nave = estado?.naveJogador ?? criarEstadoInicialPartida('seed-fallback', 'CARCACA_ALFA').naveJogador;
   const emNoFoil = nave.estadoFisico === '1_NO_FOIL';
   const desabilitarTravaValvulaMutacao = opcoesDebug.desabilitarTravaValvulaTouchdown === true;
@@ -636,6 +918,9 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
           hpMax: t.hpMax ?? 100,
           inflado: Boolean(t.inflado),
           acopladoBulbo: Boolean(t.acopladoBulbo),
+          atordoadoSeg: Number(t.atordoadoSeg ?? 0),
+          nivelMaestria: Number(t.nivelMaestria ?? 0),
+          disciplinaMaestria: t.disciplinaMaestria ?? null,
           camaraDestinoId: t.camaraDestinoId ?? null,
           proximaCamaraId: t.proximaCamaraId ?? null,
           rotaAtiva: Array.isArray(t.rotaAtiva) ? t.rotaAtiva : [],
@@ -683,12 +968,15 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
       larguraNativaPx: ORCAMENTO_LAYOUT_NATIVO_85C.CAMARA_LARGURA,
       alturaNativaPx: ORCAMENTO_LAYOUT_NATIVO_85C.CAMARA_ALTURA,
       aguaKg,
+      massaAguaKg: aguaKg,
       nivelAguaPct,
       oxigenioPct: Number(c.oxigenioPct ?? 100),
       rombosCasco: Math.max(Number(c.rombosCasco ?? 0), c.brechaAtiva || c.arrombouCasco ? 1 : 0),
+      brechasCasco: Math.max(Number(c.rombosCasco ?? 0), c.brechaAtiva || c.arrombouCasco ? 1 : 0),
       brechaAtiva: Boolean(c.brechaAtiva || c.arrombouCasco) || Number(c.rombosCasco ?? 0) > 0,
       curtoCircuitoAtivo: Boolean(c.curtoCircuitoAtivo),
       valvulaExternaAberta: Boolean(c.valvulaExternaAberta),
+      valvulaAberta: Boolean(c.valvulaExternaAberta),
       statusValvulaExterna,
       botaoValvulaDesabilitado: travadoHidrost,
       iconeCadeadoVisivel: travadoHidrost,
@@ -732,6 +1020,17 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
     const energiaAlocada = armaObj
       ? Number(armaObj.energiaAlocada !== undefined ? armaObj.energiaAlocada : energiaCusto)
       : 0;
+    const specArmaSlot = armaObj ? resolverArmaCatalogoUnificado(armaObj.chassiId ?? armaObj.id) : null;
+    const mecanicaEspecial = armaObj?.mecanicaEspecial ?? specArmaSlot?.mecanicaEspecial ?? null;
+    const cargasMaximas = Number(armaObj?.cargasMaximas ?? specArmaSlot?.cargasMaximas ?? 0);
+    const cargasEstocadas = Number(armaObj?.cargasEstocadas ?? 0);
+    const estagioCadeiaAtual = Number(
+      armaObj?.ciclosCadeiaAtivos ??
+        armaObj?.ciclosCadeiaAcumulados ??
+        armaObj?.disparosCadeia ??
+        armaObj?.acertosCadeia ??
+        0
+    );
     return {
       slotIndex: slotIdx,
       ocupado: Boolean(armaObj),
@@ -744,6 +1043,10 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
       energizada: Boolean(armaObj) && energiaAlocada >= Math.max(1, energiaCusto),
       progressoRecargaSeg: armaObj?.progressoRecargaSeg ?? 0,
       tempoRecargaBaseSeg: armaObj?.tempoRecargaBaseSeg ?? armaObj?.recargaSeg ?? 9,
+      mecanicaEspecial,
+      cargasMaximas,
+      cargasEstocadas,
+      estagioCadeiaAtual,
       salaAlvoId: armaObj?.salaAlvoId ?? null,
       trincaSalasBeam: armaObj?.trincaSalasBeam ?? null,
       modoDisparoManual,
@@ -835,11 +1138,26 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
   const modalCampanhaAtivo = estado.meta?.modalCampanhaAtivo ?? null;
   const modoCampanhaCompleta = Boolean(estado.meta?.modoCampanhaCompleta);
   const setorAtualVm = Number(estado.mapaSetorial?.setorNumero ?? estado.meta?.setorAtual ?? 1);
-  const nomeBiomaVm = String(
-    estado.mapaSetorial?.nomeBioma ??
-      estado.meta?.nomeBioma ??
-      (setorAtualVm === 8 ? 'FOSSA DA DRAGA CONTINENTAL' : 'ÁGUAS COSTEIRAS RASAS')
-  );
+  const biomaIdVm = estado.mapaSetorial?.biomaId ?? estado.meta?.biomaId ?? null;
+  const mapaBiomaEnVm = {
+    BIOMA_1_ATOIS_SUCATA: '1. Sector 1 — Shallow Scrap Atolls',
+    BIOMA_2_RECIFES_BIOLUMINESCENTES: '2. Green Biome — Bioluminescent Reefs',
+    BIOMA_3_FLORESTA_KELP: '3. Green Biome — Giant Kelp Forest',
+    BIOMA_4_ESTREITO_ARRASTOES: '4. Red Biome — Trawler Strait (Industrial)',
+    BIOMA_5_FOSSA_ABISSAL: '5. Red Biome — Abyssal Pressure Trench',
+    BIOMA_6_CRATERA_USINA: '6. Purple Biome — Submerged Reactor Crater',
+    BIOMA_7_MAR_SARGACOS_QUIMICOS: '7. Purple Biome — Chemical Sargasso Sea',
+    BIOMA_8_CRATERA_DRAGA: '8. Sector 8 — Continental Dredge Crater',
+  };
+  const nomeBiomaVm = ehIdiomaEnVm && biomaIdVm && mapaBiomaEnVm[biomaIdVm]
+    ? mapaBiomaEnVm[biomaIdVm]
+    : String(
+        estado.mapaSetorial?.nomeBioma ??
+          estado.meta?.nomeBioma ??
+          (ehIdiomaEnVm
+            ? setorAtualVm === 8 ? 'CONTINENTAL DREDGE TRENCH' : 'SHALLOW COASTAL WATERS'
+            : setorAtualVm === 8 ? 'FOSSA DA DRAGA CONTINENTAL' : 'ÁGUAS COSTEIRAS RASAS')
+      );
   const arquetipoAlvoId =
     estado.alvoCombate?.arquetipoId ??
     (typeof estado.alvoCombate?.idInimigo === 'string'
@@ -862,17 +1180,29 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
     caixaArmas.find((s) => s.ocupado && s.salaAlvoId)?.salaAlvoId ??
     salasInspecionadas[0]?.salaId ??
     1;
-  const statusCurtoAbordagem = !tuboInstaladoAb
-    ? 'S/ TUBO'
-    : blindagemAlvoAtiva
-      ? 'BLINDAGEM'
-      : energiaEfetivaTubo < 1
-        ? '0 ENERGIA'
-        : recargaTuboRestSeg > 0
-          ? 'RECARGA'
-          : tripProntosTuboIds.length === 0
-            ? 'S/ TRIP C7'
-            : 'PRONTO';
+  const statusCurtoAbordagem = ehIdiomaEnVm
+    ? !tuboInstaladoAb
+      ? 'NO TUBE'
+      : blindagemAlvoAtiva
+        ? 'SHIELDED'
+        : energiaEfetivaTubo < 1
+          ? '0 POWER'
+          : recargaTuboRestSeg > 0
+            ? 'COOLDOWN'
+            : tripProntosTuboIds.length === 0
+              ? 'NO CREW C7'
+              : 'READY'
+    : !tuboInstaladoAb
+      ? 'S/ TUBO'
+      : blindagemAlvoAtiva
+        ? 'BLINDAGEM'
+        : energiaEfetivaTubo < 1
+          ? '0 ENERGIA'
+          : recargaTuboRestSeg > 0
+            ? 'RECARGA'
+            : tripProntosTuboIds.length === 0
+              ? 'S/ TRIP C7'
+              : 'PRONTO';
   const resumoAbordagem = {
     tuboInstalado: tuboInstaladoAb,
     energiaEfetivaTubo,
@@ -903,6 +1233,7 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
         especie: t.especie,
         hpAtual: t.hpAtual,
         hpMax: t.hpMax ?? HP_MAX_POR_ESPECIE[t.especie] ?? 100,
+        nivelMaestria: Number(t.nivelMaestria ?? 0),
         salaInimigaId: salaInimigaNum,
         salaInimigaDestinoId: salaDestNum,
         proximaSalaInimigaId: t.proximaSalaInimigaId ?? null,
@@ -913,16 +1244,98 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
       };
     });
 
+  const edicaoComercialSteam = Boolean(estado.meta?.edicaoComercialSteam);
+  const layoutIdResolvido =
+    estado.meta?.layoutId ??
+    nave.layoutId ??
+    (edicaoComercialSteam ? `${idCarcaca}_${estado.meta?.varianteHangar === 'B' ? 'B' : 'A'}` : null);
+  const camadasBarreiraAtual = Number(
+    nave.barreiraBolhas ?? nave.camadasBarreiraAtivas ?? nave.barreira?.bolhasAtuais ?? 0
+  );
+  const armasAtivasJuice = slotsBase
+    .filter((s) => s.ocupado)
+    .map((s) => {
+      const specA = resolverArmaCatalogoUnificado(s.chassiId);
+      const fam = specA?.ehFeixe
+        ? 'FEIXE'
+        : String(specA?.familiaVisual ?? '').includes('ION')
+          ? 'ION'
+          : String(specA?.familiaVisual ?? '').includes('FLAK')
+            ? 'FLAK'
+            : String(specA?.familiaVisual ?? '').includes('TORPEDO')
+              ? 'TORPEDO'
+              : String(specA?.familiaVisual ?? '').includes('BOMBA')
+                ? 'BOMBA'
+                : 'PROJETIL';
+      return {
+        ...s,
+        alvoSalaId: s.salaAlvoId,
+        familia: fam,
+        progressoRecargaPct: Math.min(
+          100,
+          Math.round((Number(s.progressoRecargaSeg ?? 0) / Math.max(0.1, Number(s.tempoRecargaBaseSeg ?? 9))) * 100)
+        ),
+      };
+    });
+
   return clonarProfundoCongelado({
     idCarcaca,
     idArquitetura: idCarcaca,
+    edicaoComercialSteam,
+    layoutId: layoutIdResolvido,
+    dificuldadeSteam: estado.meta?.dificuldade ?? estado.meta?.dificuldadeSteam ?? 'NORMAL',
+    configuracoesSteam: estado.meta?.configuracoesSteam ?? null,
+    modalSteamAtivo: estado.meta?.modalSteamAtivo ?? null,
+    aguardandoRebindAcao: estado.meta?.aguardandoRebindAcao ?? null,
+    conquistaInspecionadaId: estado.meta?.conquistaInspecionadaId ?? null,
+    tutorialSteam: estado.meta?.tutorialSteam ?? null,
+    conquistasDesbloqueadas:
+      estado.meta?.conquistasDesbloqueadas ??
+      estado.perfilJogador?.conquistasSteamDesbloqueadas ??
+      estado.perfilJogador?.conquistasSteam ??
+      [],
+    layoutsTipoBDesbloqueados:
+      estado.meta?.layoutsTipoBDesbloqueados ?? estado.perfilJogador?.layoutsTipoBDesbloqueados ?? [],
+    popupConquistaRecente: estado.meta?.popupConquistaRecente ?? null,
+    limitesPorSala: nave.limitesPorSala ?? null,
+    subsistemasTaticosSteam: nave.subsistemasTaticosSteam ?? null,
+    postosSalvosTripulacao: nave.postosSalvosTripulacao ?? null,
+    emTouchdown: !emNoFoil,
+    mergulhoTaticoAtivo: Boolean(nave.mergulhoTaticoAtivo || nave.estadoFisico === '5_FURTIVO_AGUA'),
+    barreiraBolhas: { camadasAtuais: camadasBarreiraAtual },
+    projeteisAtivos: estado.meta?.projeteisAtivos ?? [],
+    armasAtivas: armasAtivasJuice,
     faseJogo: faseJogoAtual,
     modoCampanhaCompleta,
     modalCampanhaAtivo,
     audioMutado: Boolean(estado.meta?.audioMutado),
     setorAtual: setorAtualVm,
     nomeBioma: nomeBiomaVm,
-    ultimoAvisoCampanha: estado.meta?.ultimoAvisoCampanha ?? null,
+    ultimoAvisoCampanha: (() => {
+      const av = estado.meta?.ultimoAvisoCampanha ?? null;
+      if (!av || !ehIdiomaEnVm || typeof av !== 'string') return av;
+      return av
+        .replace(/^SETOR (\d+)/i, 'SECTOR $1')
+        .replace(/^CONTATO HOSTIL:/i, 'HOSTILE CONTACT:')
+        .replace(/^SINAL (\S+) DETECTADO/i, '$1 SIGNAL DETECTED')
+        .replace('1. Setor 1 — Atóis de Sucata Rasos (Obrigatório)', 'Shallow Scrap Atolls')
+        .replace('2. Bioma Verde — Recifes Bioluminescentes (Território Aliado)', 'Bioluminescent Reefs')
+        .replace('3. Bioma Verde — Floresta de Kelp Gigante', 'Giant Kelp Forest')
+        .replace('4. Bioma Vermelho — Estreito dos Arrastões (Zona Industrial)', 'Trawler Strait')
+        .replace('5. Bioma Vermelho — Fossa Abissal de Pressão', 'Abyssal Pressure Trench')
+        .replace('6. Bioma Roxo — Cratera da Usina Submersa (Zona Radioativa)', 'Submerged Reactor Crater')
+        .replace('7. Bioma Roxo — Mar de Sargaços Químicos', 'Chemical Sargasso Sea')
+        .replace('8. Setor 8 — A Cratera da Draga Continental (Confronto Final)', 'Continental Dredge Crater')
+        .replace('RECIFE-FORJA SIMBIÓTICO ATRACADO', 'SYMBIOTIC FORGE-REEF DOCKED')
+        .replace('EMBOSCADA DA FRENTE CORPORATIVA!', 'CORPORATE FLEET AMBUSH!')
+        .replace('SOS EXPIRADO — ZONA MORTA INDUSTRIALIZADA!', 'SOS EXPIRED — INDUSTRIAL DEAD ZONE!')
+        .replace('CONFRONTO FINAL: DRAGA CONTINENTAL — FASE 1!', 'FINAL SHOWDOWN: CONTINENTAL DREDGE — PHASE 1!')
+        .replace('CARCAÇA BLOQUEADA — CUMPRA O REQUISITO DE DESBLOQUEIO!', 'HULL LOCKED — COMPLETE UNLOCK REQUIREMENT!')
+        .replace('CLIQUE NOVAMENTE EM ABANDONAR PARA ENCERRAR A RUN', 'CLICK ABANDON AGAIN TO END CURRENT RUN')
+        .replace('EXPEDIÇÃO ABANDONADA — SELECIONE UMA NOVA CARCAÇA', 'EXPEDITION ABANDONED — SELECT A NEW HULL')
+        .replace(/DRAGA RECUOU! INICIANDO FASE/i, 'DREDGE RETREATED! STARTING PHASE')
+        .replace(/\+(\d+)\s*SUC\b/gi, '+$1 SCRAP');
+    })(),
     nivelBlindagem: Number(nave.nivelBlindagem ?? 0),
     modoSalvaGlobal: String(nave.modoSalvaGlobal ?? 'AUTOMATICO'),
     arquetipoAlvoId,
@@ -941,7 +1354,9 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
     geometria: {
       ...geometriaBase,
       deslocamentoVerticalAtualPx: deslocamentoVerticalPx,
-      filtroPassaBaixaAudioHz: emNoFoil ? null : 400,
+      filtroPassaBaixaAudioHz: edicaoComercialSteam
+        ? (nave.mergulhoTaticoAtivo || nave.estadoFisico === '5_FURTIVO_AGUA' ? 400 : null)
+        : (emNoFoil ? null : 400),
     },
     barraSuperior: {
       hpCascoAtual: nave.hpCascoAtual,
@@ -1012,6 +1427,16 @@ export function projetarViewModelWireframe(estado, opcoesDebug = {}) {
       barreiraBolhas: Number(estado.alvoCombate?.camadasBarreiraAtivas ?? estado.alvoCombate?.barreiraBolhasAtual ?? 0),
       esquivaPct: Number(estado.alvoCombate?.esquivaEfetivaPct ?? estado.alvoCombate?.esquivaBasePct ?? 0),
       blindagemTermicaExternaPts: estado.alvoCombate?.blindagemTermicaExternaPts ?? 0,
+      armasInimigas: Array.isArray(estado.alvoCombate?.armasEquipadasInimigo)
+        ? estado.alvoCombate.armasEquipadasInimigo.map((a) => ({
+            slot: a.slot,
+            id: a.id,
+            nome: resolverNomeCurtoItemPorIdioma(a.id, ehIdiomaEnVm ? a.nomeEn : a.nomePt, ehIdiomaEnVm),
+            familiaVisual: a.familiaVisual,
+            mecanicaEspecial: a.mecanicaEspecial ?? null,
+          }))
+        : [],
+      ofertaRendicaoAtiva: estado.alvoCombate?.ofertaRendicaoAtiva ?? null,
       telemetriaContragolpe: {
         minaMagneticaAtivaSeg: Number(estado.alvoCombate?.minaMagneticaAtivaSeg ?? estado.alvoCombate?.minaMagneticaSuperficieSeg ?? 0),
         protocoloCortaFogoUsado: Boolean(estado.alvoCombate?.protocoloCortaFogoUsado),

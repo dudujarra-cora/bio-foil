@@ -1,0 +1,55 @@
+"In Game Actions"
+{
+  "actions"
+  {
+    "TacticalHydrofoil"
+    {
+      "title" "#Set_TacticalHydrofoil"
+      "StickPadGyro"
+      {
+        "CursorAim"
+        {
+          "title" "#Action_CursorAim"
+          "input_mode" "absolute_mouse"
+        }
+      }
+      "Button"
+      {
+        "ConfirmAction" "#Action_Confirm"
+        "TacticalPause" "#Action_TacticalPause"
+        "TacticalDive400Hz" "#Action_TacticalDive"
+        "SafeDrainValves" "#Action_SafeDrain"
+        "CycleWeaponPrev" "#Action_CycleWeaponPrev"
+        "CycleWeaponNext" "#Action_CycleWeaponNext"
+        "OpenOptionsModal" "#Action_OpenOptions"
+      }
+    }
+  }
+  "localization"
+  {
+    "english"
+    {
+      "Set_TacticalHydrofoil" "Tactical Hydrofoil Bridge"
+      "Action_CursorAim" "Tactical Cursor"
+      "Action_Confirm" "Confirm / Advance Tutorial (A)"
+      "Action_TacticalPause" "Tactical Pause / Close Modal (B)"
+      "Action_TacticalDive" "Tactical Dive 400 Hz (X)"
+      "Action_SafeDrain" "Safe Ballast Drain >=63kg (Y)"
+      "Action_CycleWeaponPrev" "Previous Dorsal Weapon (LB)"
+      "Action_CycleWeaponNext" "Next Dorsal Weapon (RB)"
+      "Action_OpenOptions" "Steam Options & Keybinds (Menu)"
+    }
+    "brazilian"
+    {
+      "Set_TacticalHydrofoil" "Ponte Tática do Hidrofólio"
+      "Action_CursorAim" "Cursor Tático"
+      "Action_Confirm" "Confirmar / Avançar Tutorial (A)"
+      "Action_TacticalPause" "Pausa Tática / Fechar Modal (B)"
+      "Action_TacticalDive" "Mergulho Tático 400 Hz (X)"
+      "Action_SafeDrain" "Dreno Seguro >=63kg (Y)"
+      "Action_CycleWeaponPrev" "Arma Dorsal Anterior (LB)"
+      "Action_CycleWeaponNext" "Próxima Arma Dorsal (RB)"
+      "Action_OpenOptions" "Opções Steam & Teclas (Menu)"
+    }
+  }
+}

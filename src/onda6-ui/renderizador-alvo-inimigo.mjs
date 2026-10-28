@@ -8,8 +8,33 @@
  *    refração subaquática abaixo da linha d'água, colar de espuma viva, salas em corte tático translúcido e retículos bio-sonar;
  *  - Renderizar telegrafias GD-3 (Mina Magnética, Mira Mastro, Aperto de Quilha), trincas de Beam (`B1/B2/B3` ancorados no topo-direito)
  *    e tripulantes abordadores aliados (`BORDO_INIMIGO`) com indicador de travessia sala-a-sala (`→S#`).
- *  - Zero imports externos para serialização direta em `/cliente.js` (`0 bytes diff` Server <-> Browser).
  */
+import { obterBocaDorsalLayout960 } from '../onda7-steam/topologias-naves-ab.mjs';
+
+const MAPA_SALAS_DRAGA_EN = Object.freeze({
+  NUCLEO_COMANDO_DRAGA: 'CMD CORE',
+  TORRE_ARTILHARIA_PESADA: 'ARTILLERY',
+  BATERIA_MISSEIS_TERMICOS: 'THERM. MSL',
+  CALDEIRA_FERVURA_GEOTERMICA: 'GEO BOILER',
+  BROCA_ABISSAL: 'ABYSS DRILL',
+  PROPULSAO_LAGARTA: 'PROPULSION',
+  'PONTE DE COMANDO BLINDADA': 'ARMORED CMD',
+  'TORRE DO CANHÃO DE ARPÃO TRIPLO': 'TRIPLE HARP.',
+  'TORRE DO LANÇADOR DE MÍSSEIS TÉRMICOS': 'THERM. MSL',
+  'TORRE DO GERADOR DE REDE MAGNÉTICA': 'MAGNET NET',
+  'GERADOR DE ESCUDO ACÚSTICO TRIPLO': 'ACOUST. SHLD',
+  'CASA DE MÁQUINAS E BOMBAS DE PORÃO': 'ENGINE ROOM',
+  'PONTE DE COMANDO CENTRAL': 'CMD BRIDGE',
+  'BATERIA DE CANHÃO DE ARPÃO TRIPLO': 'TRIPLE HARP.',
+  'CORTADOR INDUSTRIAL A PLASMA PESADO': 'PLASMA CUT.',
+  'HANGAR DE CONTROLE DE DRONES E SONAR MILITAR': 'DRONES/SONAR',
+  'REATOR HIDRÁULICO E BOMBAS SUBMERSAS': 'HYDR. REACT.',
+  'NÚCLEO DE COMANDO AUTÔNOMO': 'AUTO CORE',
+  'BATERIA DE ARPÃO TRIPLO DE ALTA PRESSÃO': 'TRIPLE HARP.',
+  'LANÇADOR DE MÍSSEIS TÉRMICOS PESADOS': 'THERM. MSL',
+  'GERADOR DE ESCUDO QUÁDRUPLO E BLINDAGEM TÉRMICA': 'QUAD SHIELD',
+  'BROCA GEOTÉRMICA E PROPULSÃO ABISSAL': 'ABYSS DRILL',
+});
 
 export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
   const {
@@ -181,7 +206,7 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
       for (const hbSala of hbSalasAlvo) {
         if (!salasMiradas.has(hbSala.metadados.salaId)) continue;
         const slotMir = (viewModel.caixaArmas ?? []).findIndex((s) => s.ocupado && s.salaAlvoId === hbSala.metadados.salaId);
-        const [mxOrig, myOrig] = obterBocaDorsalRender(slotMir === 1 ? 1 : 0);
+        const [mxOrig, myOrig] = obterBocaDorsalRender(slotMir >= 0 ? slotMir : 0);
         const xAncSala = hbSala.x - 1;
         const yAncSala = hbSala.y + Math.round(hbSala.altura * 0.5);
         lineSeg(mxOrig, myOrig, xAncSala, yAncSala, CYAN, true);
@@ -189,6 +214,7 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
       }
     }
 
+    const ehEnDragaSala = viewModel.configuracoesSteam?.idioma === 'en-US';
     for (const hbSala of hbSalasAlvo) {
       const infoSala = viewModel.painelAlvo.salasInspecionadas.find((s) => s.salaId === hbSala.metadados.salaId);
       const mirada = salasMiradas.has(hbSala.metadados.salaId);
@@ -209,12 +235,14 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
       hLine(hbSala.x + 2, hbSala.x + hbSala.largura - 3, hbSala.y + 13 + dyPS, [38, 66, 84, 175], 1);
 
       const chaveSala = String(infoSala?.nomeSala ?? '');
-      let rotCan = NOMES_SALAS[chaveSala] ?? chaveSala.replace(/_/g, ' ');
+      let rotCan = ehEnDragaSala
+        ? (MAPA_SALAS_DRAGA_EN[chaveSala.toUpperCase()] ?? chaveSala.replace(/_/g, ' '))
+        : (NOMES_SALAS[chaveSala] ?? chaveSala.replace(/_/g, ' '));
       const numIdDr = Number(hbSala.metadados.salaId);
       const reservadoBeam = (salasEmBeam.has(numIdDr) ? 18 : 0) + (salaAlvoAbId === numIdDr ? 19 : 0);
       const pitchSala = rotCan.length * 7 > hbSala.largura - 7 - reservadoBeam ? 6 : 7;
       const maxChars = Math.max(4, Math.floor((hbSala.largura - 6 - reservadoBeam) / pitchSala));
-      if (rotCan.length > maxChars) {
+      if (!ehEnDragaSala && rotCan.length > maxChars) {
         if (/M[ÍI]SSEIS/i.test(rotCan)) rotCan = maxChars >= 10 ? 'MÍSSEIS T.' : 'MÍSSEIS';
         else if (/ARP[ÃA]O/i.test(rotCan)) rotCan = maxChars >= 8 ? 'ARPÃO 3X' : 'ARPÃO';
         else if (/REDE/i.test(rotCan)) rotCan = maxChars >= 9 ? 'REDE MAG.' : 'REDE';
@@ -224,6 +252,16 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
         else if (/BROCA/i.test(rotCan)) rotCan = maxChars >= 10 ? 'BROCA ABI.' : 'BROCA';
         else if (/N[ÚU]CLEO|PONTE|COMANDO/i.test(rotCan)) rotCan = maxChars >= 10 ? 'NÚCLEO CMD' : 'PONTE';
         else if (/REATOR|M[ÁA]QUINAS/i.test(rotCan)) rotCan = 'MOTOR';
+      } else if (ehEnDragaSala && rotCan.length > maxChars) {
+        if (/MSL|MISSILE/i.test(rotCan)) rotCan = maxChars >= 7 ? 'MISSILE' : 'MSL';
+        else if (/HARP/i.test(rotCan)) rotCan = maxChars >= 7 ? 'HARPOON' : 'HARP';
+        else if (/MAGNET|NET/i.test(rotCan)) rotCan = maxChars >= 7 ? 'MAG NET' : 'NET';
+        else if (/PLASMA/i.test(rotCan)) rotCan = 'PLASMA';
+        else if (/DRONE/i.test(rotCan)) rotCan = 'DRONES';
+        else if (/SHIELD|SHLD/i.test(rotCan)) rotCan = maxChars >= 6 ? 'SHIELD' : 'SHLD';
+        else if (/DRILL/i.test(rotCan)) rotCan = 'DRILL';
+        else if (/CMD|CORE|BRIDGE/i.test(rotCan)) rotCan = maxChars >= 8 ? 'CMD CORE' : 'BRIDGE';
+        else if (/REACT|ENGINE|PROP/i.test(rotCan)) rotCan = 'ENGINE';
       }
       txt(hbSala.x + 4, hbSala.y + 4 + dyPS, rotCan.slice(0, maxChars), hovS ? YELLOW : TXT, pitchSala);
       if (infoSala) {
@@ -247,10 +285,12 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
               }
             }
           }
-          const rotTrp = hbSala.largura < 76 ? `${qtdT}T` : `${qtdT} TRP`;
-          txt(hbSala.x + 4, hbSala.y + 28 + dyPS, rotTrp, AMBER, 6);
+          const rotTrp = hbSala.largura < 76 ? `${qtdT}C` : (ehEnDragaSala ? `${qtdT} CRW` : `${qtdT} TRP`);
+          txt(hbSala.x + 4, hbSala.y + 28 + dyPS, hbSala.largura < 76 && !ehEnDragaSala ? `${qtdT}T` : rotTrp, AMBER, 6);
         } else {
-          const rotVis = infoSala.canalPermissao === 'OCULTO_TURVO' ? 'TURVO' : 'CEGO';
+          const rotVis = infoSala.canalPermissao === 'OCULTO_TURVO'
+            ? (ehEnDragaSala ? 'MURKY' : 'TURVO')
+            : (ehEnDragaSala ? 'BLIND' : 'CEGO');
           txt(hbSala.x + 4, hbSala.y + 28 + dyPS, rotVis.slice(0, maxChars), DIM, 6);
         }
       }
@@ -351,6 +391,7 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
     }
 
     // 2) Telegrafias GD-3 (Mina Magnética Hi-Bit / Mira Mastro / Aperto de Quilha)
+    const ehEnMonstro = viewModel.configuracoesSteam?.idioma === 'en-US';
     if ((contragolpe.minaMagneticaAtivaSeg ?? 0) > 0) {
       const xm = 636;
       const ym = yLinhaDaguaCena - 2 + Math.round(Math.sin(tempoSeg * 6) * 1.5);
@@ -367,16 +408,51 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
         fillRect(xm - 2, ym - 2, xm + 2, ym + 2, ((Math.floor(tempoSeg * 8) & 1) === 0) ? RED : YELLOW);
       }
       chanfradoBezel(580, ym - 28, 700, ym - 15, [64, 8, 14, 244], RED, 2, AMBER);
-      txt(584, ym - 24, `MINA ${contragolpe.minaMagneticaAtivaSeg.toFixed(1)}s! FOIL!`, YELLOW, 6);
+      txt(
+        584,
+        ym - 24,
+        ehEnMonstro
+          ? `MINE ${contragolpe.minaMagneticaAtivaSeg.toFixed(1)}s! FOIL!`
+          : `MINA ${contragolpe.minaMagneticaAtivaSeg.toFixed(1)}s! FOIL!`,
+        YELLOW,
+        6
+      );
     }
 
     if (ehMonstroAlvo && !modoVitrine) {
-      const dyMiraM = ehTouchdown ? -96 : 0;
-      lineSeg(758, 303 + dyMiraM, 604, 309 + Math.round(dyMiraM * 0.5), RED, true);
-      lineSeg(604, 309 + Math.round(dyMiraM * 0.5), 454, ehTouchdown ? 248 : 324, RED, true);
-      chanfradoBezel(451, (ehTouchdown ? 248 : 324) - 3, 457, (ehTouchdown ? 248 : 324) + 3, null, YELLOW, 1);
-      chanfradoBezel(504, 292 + Math.round(dyMiraM * 0.5), 604, 305 + Math.round(dyMiraM * 0.5), [52, 8, 14, 244], RED, 2, AMBER);
-      txt(508, 295 + Math.round(dyMiraM * 0.5), 'MIRANDO: MASTRO', YELLOW, 6);
+      const ehSteamMira = Boolean(viewModel?.edicaoComercialSteam);
+      if (ehSteamMira) {
+        const hbCam6 = (hitboxes ?? []).find(
+          (h) => h.idHitbox === 'CAMARA_6' || (h.tipo === 'CAMARA_NAVE' && Number(h.metadados?.camaraId) === 6)
+        );
+        const hbOrgBico =
+          (hitboxes ?? []).find((h) => h.idHitbox === 'SALA_ALVO_2' || h.idHitbox === 'SALA_INIMIGA_2') ??
+          (hitboxes ?? []).find((h) => h.idHitbox === 'SALA_ALVO_1' || h.idHitbox === 'SALA_INIMIGA_1');
+        const xOrigMonstro = hbOrgBico ? Math.max(664, hbOrgBico.x - 3) : 708;
+        const yOrigMonstro = hbOrgBico ? Math.round(hbOrgBico.y + hbOrgBico.altura * 0.5) : (ehTouchdown ? 336 : 303);
+        const xAncEsq = ehTouchdown ? 566 : 512;
+        const xAncDir = ehTouchdown ? 670 : 616;
+        const yAncoraDir = ehTouchdown ? 396 : 336;
+        const xMiraMastro = hbCam6 ? Math.round(hbCam6.x + hbCam6.largura * 0.5) : (ehTouchdown ? 448 : 454);
+        const yMiraMastro = hbCam6 ? Math.round(hbCam6.y + hbCam6.altura * 0.5) : (ehTouchdown ? 378 : 324);
+        lineSeg(xOrigMonstro, yOrigMonstro, xAncDir, yAncoraDir, RED, true);
+        lineSeg(xAncEsq, yAncoraDir, xMiraMastro, yMiraMastro, RED, true);
+        chanfradoBezel(xMiraMastro - 3, yMiraMastro - 3, xMiraMastro + 3, yMiraMastro + 3, null, YELLOW, 1);
+        chanfradoBezel(xAncEsq, yAncoraDir - 7, xAncDir, yAncoraDir + 6, [52, 8, 14, 244], RED, 2, AMBER);
+        txt(xAncEsq + 4, yAncoraDir - 4, ehEnMonstro ? 'AIMING: MAST' : 'MIRANDO: MASTRO', YELLOW, 6);
+      } else {
+        const dyMiraM = ehTouchdown ? -96 : 0;
+        const xAncEsq = 512;
+        const xAncDir = 616;
+        const yAncoraDir = 336;
+        const xMiraMastro = ehTouchdown ? 450 : 454;
+        const yMiraMastro = ehTouchdown ? 356 : 324;
+        lineSeg(758, 303 + dyMiraM, xAncDir, yAncoraDir, RED, true);
+        lineSeg(xAncEsq, yAncoraDir, xMiraMastro, yMiraMastro, RED, true);
+        chanfradoBezel(xMiraMastro - 3, yMiraMastro - 3, xMiraMastro + 3, yMiraMastro + 3, null, YELLOW, 1);
+        chanfradoBezel(xAncEsq, yAncoraDir - 7, xAncDir, yAncoraDir + 6, [52, 8, 14, 244], RED, 2, AMBER);
+        txt(xAncEsq + 4, yAncoraDir - 4, ehEnMonstro ? 'AIMING: MAST' : 'MIRANDO: MASTRO', YELLOW, 6);
+      }
     }
 
     if ((contragolpe.apertoQuilhaSeg ?? 0) > 0) {
@@ -433,29 +509,33 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
       }
       const yPillQuilha = Math.min(372, yLinhaDaguaCena + 24);
       chanfradoBezel(468, yPillQuilha, 594, yPillQuilha + 13, [44, 12, 58, 244], AMBER, 2, CYAN);
-      txt(473, yPillQuilha + 4, 'APERTO QUILHA +40kg!', YELLOW, 6);
+      txt(473, yPillQuilha + 4, ehEnMonstro ? 'KEEL GRIP +40kg!' : 'APERTO QUILHA +40kg!', YELLOW, 6);
     }
 
     const dyAncMonstro = ehTouchdown ? -96 : 0;
     const dxAncVit = modoVitrine ? 24 : 0;
     const ancorasBaseMonstro = {
       MONSTRO_2_ENGUIA: {
-        1: [818 + dxAncVit, 248 + dyAncMonstro],
-        2: [804 + dxAncVit, 294 + dyAncMonstro],
-        3: [838 + dxAncVit, 340 + dyAncMonstro],
-        4: [856 + dxAncVit, 380 + dyAncMonstro],
+        1: [818 + dxAncVit, 240 + dyAncMonstro],
+        2: [804 + dxAncVit, 276 + dyAncMonstro],
+        3: [838 + dxAncVit, 314 + dyAncMonstro],
+        4: [852 + dxAncVit, 348 + dyAncMonstro],
+        5: [860 + dxAncVit, 382 + dyAncMonstro],
       },
       MONSTRO_3_CARANGUEJO: {
-        1: [812 + dxAncVit, 242 + dyAncMonstro],
-        2: [806 + dxAncVit, 276 + dyAncMonstro],
-        3: [838 + dxAncVit, 304 + dyAncMonstro],
-        4: [818 + dxAncVit, 330 + dyAncMonstro],
+        1: [812 + dxAncVit, 238 + dyAncMonstro],
+        2: [806 + dxAncVit, 268 + dyAncMonstro],
+        3: [838 + dxAncVit, 298 + dyAncMonstro],
+        4: [818 + dxAncVit, 326 + dyAncMonstro],
+        5: [846 + dxAncVit, 354 + dyAncMonstro],
       },
       MONSTRO_4_HIDRA: {
-        1: [814 + dxAncVit, 248 + dyAncMonstro],
-        2: [822 + dxAncVit, 296 + dyAncMonstro],
-        3: [834 + dxAncVit, 342 + dyAncMonstro],
-        4: [844 + dxAncVit, 382 + dyAncMonstro],
+        1: [814 + dxAncVit, 234 + dyAncMonstro],
+        2: [822 + dxAncVit, 266 + dyAncMonstro],
+        3: [834 + dxAncVit, 298 + dyAncMonstro],
+        4: [844 + dxAncVit, 330 + dyAncMonstro],
+        5: [828 + dxAncVit, 358 + dyAncMonstro],
+        6: [850 + dxAncVit, 386 + dyAncMonstro],
       },
     }[idArqResolvido] ?? {
       1: [764 + dxAncVit, 246 + dyAncMonstro],
@@ -469,11 +549,15 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
       : 0;
     const xDstSprAnc = ehMonstroAlvo ? (modoVitrine ? 746 : 722) : 700;
     const ancorasPorMonstro = {};
-    for (const idK of [1, 2, 3, 4]) {
-      const [axBase, ayBase] = ancorasBaseMonstro[idK];
+    const idsOrgaosMonstro = hbSalasAlvo.length > 4
+      ? hbSalasAlvo.map((h) => Number(h.metadados.salaId))
+      : [1, 2, 3, 4];
+    for (const idK of idsOrgaosMonstro) {
+      const [axBase, ayBase] = ancorasBaseMonstro[idK] ?? [820 + dxAncVit, 240 + idK * 28 + dyAncMonstro];
       let axFinal = axBase;
       let ayFinal = ayBase;
-      const minAyMonotonico = idK > 1 ? ancorasPorMonstro[idK - 1][1] + 16 : 180;
+      const prevAnc = ancorasPorMonstro[idK - 1];
+      const minAyMonotonico = prevAnc ? prevAnc[1] + 14 : 180;
       if (ehMonstroAlvo && sprBestiario) {
         let achou = false;
         for (let dyUp = 0; dyUp <= 32 && !achou; dyUp += 4) {
@@ -499,16 +583,27 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
       ancorasPorMonstro[idK] = [axFinal, ayFinal];
     }
 
-    const titulosPorMonstro = {
-      MONSTRO_2_ENGUIA: { 1: 'CRISTA VOLT', 2: 'PRESAS VOLT', 3: 'NADADEIRAS', 4: 'GÂNGLIO VOLT' },
-      MONSTRO_3_CARANGUEJO: { 1: 'GARRA MAIOR', 2: 'PINÇA DURA', 3: 'PATAS MOTOR', 4: 'GÂNGLIO REAL' },
-      MONSTRO_4_HIDRA: { 1: 'TRÊS BOCAS', 2: 'RAIZ TÉRMICA', 3: 'BOLSA ESPORO', 4: 'GÂNGLIO BASE' },
-    }[idArqResolvido] ?? {
-      1: 'TENTÁCULOS',
-      2: 'BICO CÓRNEO',
-      3: 'SIFÃO MOTOR',
-      4: 'GÂNGLIO VIVO',
-    };
+    const titulosPorMonstro = ehEnMonstro
+      ? ({
+          MONSTRO_2_ENGUIA: { 1: 'VOLT CREST', 2: 'VOLT FANGS', 3: 'FIN DRIVE', 4: 'VOLT GANGLION' },
+          MONSTRO_3_CARANGUEJO: { 1: 'HEAVY CLAW', 2: 'HARD PINCER', 3: 'LEG DRIVE', 4: 'CORE GANGLION' },
+          MONSTRO_4_HIDRA: { 1: 'THREE MAWS', 2: 'HEAT ROOT', 3: 'SPORE SAC', 4: 'BASE GANGLION' },
+        }[idArqResolvido] ?? {
+          1: 'TENTACLES',
+          2: 'CHITIN BEAK',
+          3: 'SIPHON JET',
+          4: 'LIVE GANGLION',
+        })
+      : ({
+          MONSTRO_2_ENGUIA: { 1: 'CRISTA VOLT', 2: 'PRESAS VOLT', 3: 'NADADEIRAS', 4: 'GÂNGLIO VOLT' },
+          MONSTRO_3_CARANGUEJO: { 1: 'GARRA MAIOR', 2: 'PINÇA DURA', 3: 'PATAS MOTOR', 4: 'GÂNGLIO REAL' },
+          MONSTRO_4_HIDRA: { 1: 'TRÊS BOCAS', 2: 'RAIZ TÉRMICA', 3: 'BOLSA ESPORO', 4: 'GÂNGLIO BASE' },
+        }[idArqResolvido] ?? {
+          1: 'TENTÁCULOS',
+          2: 'BICO CÓRNEO',
+          3: 'SIFÃO MOTOR',
+          4: 'GÂNGLIO VIVO',
+        });
 
     for (const hbSala of hbSalasAlvo) {
       const infoSala = viewModel.painelAlvo?.salasInspecionadas?.find((s) => s.salaId === hbSala.metadados.salaId);
@@ -537,17 +632,39 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
           hLine(hbSala.x + 3, hbSala.x + hbSala.largura - 4, hbSala.y + hbSala.altura - 4 + dyPS, [24, 46, 60, 225], 1);
         }
         fillRect(hbSala.x + 2, hbSala.y + 2 + dyPS, hbSala.x + hbSala.largura - 3, hbSala.y + 11 + dyPS, sprBestiario ? [7, 15, 23, 212] : [7, 15, 23, 235]);
+        const ehEnAlvo = viewModel.configuracoesSteam?.idioma === 'en-US';
         const chaveS = String(infoSala?.nomeSala ?? '');
-        let rotSala = NOMES_SALAS[chaveS] ?? chaveS.replace(/_/g, ' ');
+        const mapaSalaEn = {
+          CABINE_COMANDO: 'BRIDGE',
+          PONTE_DE_COMANDO: 'BRIDGE',
+          TORRETA_LEVE: 'TURRET',
+          TORRETA_DUPLA: 'TURRET',
+          CONVES_DE_ARTILHARIA: 'GUN DECK',
+          GERADOR_ESCUDO: 'SHIELD',
+          GERADOR_DE_ESCUDO: 'SHIELD',
+          SONAR_MILITAR: 'SONAR',
+          GUINDASTE_MAGNETICO: 'CRANE',
+          TUBO_TORPEDO: 'TORPEDO',
+          PAIOL_DE_MUNICAO: 'AMMO',
+          SALA_DE_MAQUINAS: 'ENGINE',
+        };
+        let rotSala = ehEnAlvo
+          ? (mapaSalaEn[chaveS] ?? chaveS.replace(/_/g, ' '))
+          : (NOMES_SALAS[chaveS] ?? chaveS.replace(/_/g, ' '));
         const numIdS = Number(hbSala.metadados.salaId);
         const reservadoBeamS = (salasEmBeam.has(numIdS) ? 17 : 0) + (salaAlvoAbId === numIdS ? 18 : 0);
         const maxChS = Math.max(4, Math.floor((hbSala.largura - 10 - reservadoBeamS) / 6));
-        if (rotSala.length > maxChS) {
+        if (!ehEnAlvo && rotSala.length > maxChS) {
           if (/GUINDASTE/i.test(rotSala)) rotSala = maxChS >= 6 ? 'GUIND.' : 'GRUA';
           else if (/TORPEDO/i.test(rotSala)) rotSala = maxChS >= 5 ? 'TORP.' : 'TRP';
           else if (/TORRETA/i.test(rotSala)) rotSala = maxChS >= 5 ? 'TORR.' : 'TRT';
           else if (/CABINE/i.test(rotSala)) rotSala = 'CAB.';
           else if (/ESCUDO/i.test(rotSala)) rotSala = 'ESC.';
+        } else if (ehEnAlvo && rotSala.length > maxChS) {
+          if (/TORPEDO/i.test(rotSala)) rotSala = maxChS >= 5 ? 'TORP.' : 'TRP';
+          else if (/TURRET/i.test(rotSala)) rotSala = 'GUN';
+          else if (/BRIDGE/i.test(rotSala)) rotSala = 'CMD';
+          else if (/SHIELD/i.test(rotSala)) rotSala = 'SHLD';
         }
         txt(hbSala.x + 4, hbSala.y + 3 + dyPS, rotSala.slice(0, maxChS), hovS ? YELLOW : TXT, 6);
         if (infoSala) {
@@ -567,10 +684,10 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
               }
             }
             if (qtdT === 0) {
-              txt(hbSala.x + 4, hbSala.y + hbSala.altura - 10 + dyPS, 'VAZIA', DIM, 6);
+              txt(hbSala.x + 4, hbSala.y + hbSala.altura - 10 + dyPS, ehEnAlvo ? 'EMPTY' : 'VAZIA', DIM, 6);
             }
           } else {
-            const rotL3 = infoSala.canalPermissao === 'OCULTO_TURVO' ? 'TURVO' : 'CEGO';
+            const rotL3 = infoSala.canalPermissao === 'OCULTO_TURVO' ? (ehEnAlvo ? 'MURKY' : 'TURVO') : (ehEnAlvo ? 'BLIND' : 'CEGO');
             txt(hbSala.x + 4, hbSala.y + hbSala.altura - 10 + dyPS, rotL3, DIM, 6);
           }
         }
@@ -587,7 +704,8 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
 
       if (ehMonstroAlvo) {
         const idOrg = hbSala.metadados.salaId;
-        const xBox0 = modoVitrine ? hbSala.x : hbSala.x - 12;
+        const ehGradeMultiCol = hbSalasAlvo.length > 4;
+        const xBox0 = modoVitrine || ehGradeMultiCol ? hbSala.x : hbSala.x - 12;
         const xBox1 = hbSala.x + hbSala.largura - 1;
         const yBox0 = hbSala.y;
         const yBox1 = hbSala.y + hbSala.altura - 1;
@@ -614,32 +732,109 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
         hLine(xBox0 + 2, xBox1 - 2, yBox0 + 13, [34, 60, 78, 185], 1);
 
         const chaveOrg = String(infoSala?.nomeSala ?? '');
-        const ehOrgaoPadrao = /^(TENTACULOS|BICO_QUITINOSO|SIFAO_MUSCULAR|GANGLIO_CENTRAL|)$/i.test(chaveOrg);
+        const mapaOrgaosSteam = ehEnMonstro
+          ? {
+              MANDIBULA_VOLT: 'VOLT JAWS',
+              AMPOLAS_CHOQUE: 'SHOCK SAC',
+              SINAPSE_LATERAL: 'SYNAPSE',
+              CAUDA_PROPULSORA: 'FIN DRIVE',
+              GARRA_ESMAGADORA: 'CRUSH CLAW',
+              BICO_QUITINOSO: 'CHITIN MAW',
+              CARAPACA_DORSAL: 'CARAPACE',
+              BEXIGA_PRESSAO: 'HYDRO SAC',
+              CABECA_TERMICA_A: 'HEAT MAW 1',
+              CABECA_TERMICA_B: 'HEAT MAW 2',
+              BOLSA_ESPOROS: 'SPORE SAC',
+              SIFAO_MUSCULAR: 'JET SIPHON',
+              CORACAO_MAGMA: 'MAGMA CORE',
+              GANGLIO_CENTRAL: 'GANGLION',
+              TENTACULOS: 'TENTACLES',
+              ORGAO_VOLT_ANTERIOR: 'VOLT ORGAN',
+              CAUDA_LAMINA_ELETRICA: 'BLADE TAIL',
+              AMPOLA_BIOELETRICA: 'VOLT AMPULE',
+              PINCA_ESMAGADORA: 'CRUSH CLAW',
+              GARRA_APERTO_QUILHA: 'KEEL GRIP',
+              CARAPACA_DORSAL_ESPESSA: 'DORSAL SHELL',
+              CABECA_ESPORO_ALFA: 'SPORE MAW 1',
+              CABECA_ESPORO_BETA: 'SPORE MAW 2',
+              RAIZ_APERTO_ABISSAL: 'ABYSS ROOT',
+              BOLSA_REGENERATIVA: 'REGEN SAC',
+            }
+          : {
+              MANDIBULA_VOLT: 'MANDÍBULA',
+              AMPOLAS_CHOQUE: 'AMPOLAS',
+              SINAPSE_LATERAL: 'SINAPSE',
+              CAUDA_PROPULSORA: 'CAUDA VIVA',
+              GARRA_ESMAGADORA: 'GARRA DURA',
+              BICO_QUITINOSO: 'BICO DURO',
+              CARAPACA_DORSAL: 'CARAPAÇA',
+              BEXIGA_PRESSAO: 'BEXIGA',
+              CABECA_TERMICA_A: 'CABEÇA T.1',
+              CABECA_TERMICA_B: 'CABEÇA T.2',
+              BOLSA_ESPOROS: 'ESPOROS',
+              SIFAO_MUSCULAR: 'SIFÃO VIVO',
+              CORACAO_MAGMA: 'COR. MAGMA',
+              GANGLIO_CENTRAL: 'GÂNGLIO',
+              TENTACULOS: 'TENTÁCULOS',
+              ORGAO_VOLT_ANTERIOR: 'ÓRGÃO VOLT',
+              CAUDA_LAMINA_ELETRICA: 'CAUDA LÂMINA',
+              AMPOLA_BIOELETRICA: 'AMPOLA VOLT',
+              PINCA_ESMAGADORA: 'PINÇA DURA',
+              GARRA_APERTO_QUILHA: 'GARRA QUILHA',
+              CARAPACA_DORSAL_ESPESSA: 'CARAPAÇA',
+              CABECA_ESPORO_ALFA: 'BOCA ESPORO 1',
+              CABECA_ESPORO_BETA: 'BOCA ESPORO 2',
+              RAIZ_APERTO_ABISSAL: 'RAIZ APERTO',
+              BOLSA_REGENERATIVA: 'BOLSA REGEN.',
+            };
+        const ehOrgaoPadrao = !ehGradeMultiCol && /^(TENTACULOS|BICO_QUITINOSO|SIFAO_MUSCULAR|GANGLIO_CENTRAL|)$/i.test(chaveOrg);
         const rotOrgao = ehOrgaoPadrao
-          ? (titulosPorMonstro[idOrg] ?? 'ÓRGÃO')
-          : (NOMES_SALAS[chaveOrg] ?? chaveOrg.replace(/_/g, ' '));
-        const maxChOrg = modoVitrine ? 12 : 15;
+          ? (titulosPorMonstro[idOrg] ?? (ehEnMonstro ? 'ORGAN' : 'ÓRGÃO'))
+          : (mapaOrgaosSteam[chaveOrg] ?? NOMES_SALAS[chaveOrg] ?? chaveOrg.replace(/_/g, ' '));
+        const maxChOrg = Math.max(6, Math.floor((xBox1 - xBox0 - 8) / 6));
         txt(xBox0 + 4, yBox0 + 4, rotOrgao.slice(0, maxChOrg), hovS ? YELLOW : TXT, 6);
 
         const intOrg = Math.max(0, Number(infoSala?.integridade ?? (idOrg === 4 ? 3 : 2)));
         const maxOrg = Math.max(1, Number(infoSala?.integridadeMax ?? (idOrg === 4 ? 3 : 2)));
-        if (idOrg === 3) {
+        const ehGanglioCard = ehGradeMultiCol
+          ? /GANGLIO/i.test(chaveOrg)
+          : (idOrg === 4 || /GANGLIO/i.test(chaveOrg));
+        const ehSifaoCard = ehGradeMultiCol
+          ? /SIFAO|CAUDA_PROPULSORA|BEXIGA_PRESSAO/i.test(chaveOrg)
+          : (idOrg === 3 && /SIFAO/i.test(chaveOrg || 'SIFAO'));
+        if (ehSifaoCard) {
           const esqM = Number(viewModel.painelAlvo?.esquivaPct ?? 20);
-          txt(xBox0 + 4, yBox0 + 17, intOrg > 0 ? `ESQUIVA ${esqM}%` : 'SIFÃO ROTO', intOrg > 0 ? CYAN : RED, 6);
-        } else if (idOrg === 4) {
-          const largDispG = modoVitrine ? 38 : 52;
-          segBar(xBox0 + 4, yBox0 + 17, maxOrg, Math.min(maxOrg, intOrg), Math.min(11, Math.max(5, Math.floor(largDispG / maxOrg))), 7, 2, intOrg > 0 ? GREEN : RED);
+          const rotEsqCurta = ehGradeMultiCol
+            ? (intOrg > 0 ? (ehEnMonstro ? `EVD ${esqM}%` : `ESQ ${esqM}%`) : (ehEnMonstro ? 'TORN' : 'ROTO'))
+            : (intOrg > 0 ? (ehEnMonstro ? `EVADE ${esqM}%` : `ESQUIVA ${esqM}%`) : (ehEnMonstro ? 'SIPHON TORN' : 'SIFÃO ROTO'));
+          txt(xBox0 + 4, yBox0 + 17, rotEsqCurta.slice(0, maxChOrg), intOrg > 0 ? CYAN : RED, 6);
+        } else if (ehGanglioCard) {
+          const largDispG = Math.max(20, xBox1 - xBox0 - 29);
+          const largSegG = ehGradeMultiCol
+            ? Math.min(10, Math.max(3, Math.floor((largDispG - Math.max(0, maxOrg - 1) * 2) / maxOrg)))
+            : Math.min(11, Math.max(4, Math.floor(largDispG / maxOrg)));
+          segBar(xBox0 + 4, yBox0 + 17, maxOrg, Math.min(maxOrg, intOrg), largSegG, 7, 2, intOrg > 0 ? GREEN : RED);
           txt(xBox1 - 21, yBox0 + 17, `${intOrg}/${maxOrg}`, GREEN, 6);
         } else {
-          segBar(xBox0 + 4, yBox0 + 17, maxOrg, intOrg, modoVitrine ? 6 : 9, 7, 2, intOrg > 0 ? GREEN : RED);
-          const tagSub = idOrg === 1 ? '8s' : (modoVitrine ? '→MST' : '→MASTRO');
-          txt(xBox1 - tagSub.length * 6 - 3, yBox0 + 17, tagSub, idOrg === 1 ? AMBER : RED, 6);
+          const tagSub = idOrg === 1 || (ehGradeMultiCol && /CABECA_TERMICA_B/i.test(chaveOrg))
+            ? '8s'
+            : idOrg === 2
+              ? (modoVitrine || ehGradeMultiCol ? (ehEnMonstro ? '->MST' : '→MST') : (ehEnMonstro ? '->MAST' : '→MASTRO'))
+              : `${intOrg}/${maxOrg}`;
+          const largDispS = Math.max(16, xBox1 - xBox0 - (tagSub.length * 6 + 10));
+          const largSegM = ehGradeMultiCol
+            ? Math.min(6, Math.max(3, Math.floor((largDispS - Math.max(0, maxOrg - 1) * 2) / maxOrg)))
+            : modoVitrine
+              ? 6
+              : 9;
+          segBar(xBox0 + 4, yBox0 + 17, maxOrg, intOrg, largSegM, 7, 2, intOrg > 0 ? GREEN : RED);
+          txt(xBox1 - tagSub.length * 6 - 3, yBox0 + 17, tagSub, idOrg === 1 ? AMBER : idOrg === 2 ? RED : CYAN, 6);
         }
 
         if ((contragolpe.escudoQuitinaGanglioPts ?? 0) > 0 && idOrg === 4) {
           chanfradoBezel(xBox0 - 2, yBox0 - 2, xBox1 + 2, yBox1 + 2, null, AMBER, 3);
           chanfradoBezel(xBox1 + 5, yBox0 + 3, xBox1 + 57, yBox0 + 15, [58, 30, 8, 246], AMBER, 2, YELLOW);
-          txt(xBox1 + 8, yBox0 + 6, 'QUITINA!', YELLOW, 6);
+          txt(xBox1 + 8, yBox0 + 6, ehEnMonstro ? 'CHITIN!' : 'QUITINA!', YELLOW, 6);
         }
       } else if (hovS && !sprBestiario) {
         chanfradoBezel(hbSala.x - 1, hbSala.y - 1, hbSala.x + hbSala.largura, hbSala.y + hbSala.altura, null, YELLOW, 2);
@@ -650,7 +845,7 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
           chanfradoBezel(hbSala.x, hbSala.y, hbSala.x + hbSala.largura - 1, hbSala.y + hbSala.altura - 1, null, RED, 2);
         }
         const slotMir = (viewModel.caixaArmas ?? []).findIndex((s) => s.ocupado && s.salaAlvoId === hbSala.metadados.salaId);
-        const [mxOrig, myOrig] = obterBocaDorsalRender(slotMir === 1 ? 1 : 0);
+        const [mxOrig, myOrig] = obterBocaDorsalRender(slotMir >= 0 ? slotMir : 0);
         const ancMiraMonstro = ancorasPorMonstro[hbSala.metadados.salaId];
         const txMira = ehMonstroAlvo
           ? (ancMiraMonstro ? ancMiraMonstro[0] : hbSala.x + hbSala.largura + 48)
@@ -666,6 +861,7 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
 
   // 3) Detalhes dinâmicos por arquétipo (holofotes/ocelos vivos na Lancha/Teuthis + banners de fase da Draga)
   if (viewModel.painelAlvo?.presente) {
+    const ehEnBannerAlvo = viewModel.configuracoesSteam?.idioma === 'en-US';
     if (!ehChefeDraga && !sprBestiario && varPre) {
       const dyVar = ehTouchdown ? -110 : 0;
       const cPri = [...varPre.corDestaqueRgb, 255];
@@ -676,6 +872,19 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
         hLine(838, 854, 260 + dyVar, cPri, 2);
         putPx(846, 256 + dyVar, ((Math.floor(tempoSeg * 6) & 1) === 0) ? cPri : TXT);
         hLine(708, 738, 326 + dyVar, cPri, 1);
+        if (viewModel.edicaoComercialSteam) {
+          hLine(694, 892, 328 + dyVar, [92, 134, 158, 220], 1);
+          hLine(698, 888, 330 + dyVar, [28, 48, 64, 235], 1);
+          for (let rxR = 706; rxR <= 880; rxR += 18) {
+            fillRect(rxR, 322 + dyVar, rxR + 2, 324 + dyVar, [156, 206, 228, 225]);
+            putPx(rxR + 1, 323 + dyVar, CYAN);
+          }
+          for (let sxW = 678; sxW <= 908; sxW += 2) {
+            const yWk = yLinhaDaguaCena + Math.round(Math.sin(sxW * 0.13 + tempoSeg * 4.8) * 1.1);
+            putPx(sxW, yWk - 1, (sxW % 4) === 0 ? TXT : CYAN);
+            putPx(sxW + 1, yWk, [62, 184, 212, 230]);
+          }
+        }
       } else if (varPre.morfologia === 'MANTO_BICO_TENTACULOS') {
         for (const [oxT, oyT, rOc] of [[812, 224, 3], [838, 238, 2], [862, 228, 3], [826, 258, 2]]) {
           for (let dyO = -rOc; dyO <= rOc; dyO += 1) {
@@ -686,16 +895,29 @@ export function renderizarAlvoInimigoESalasCombate(ctx, paramsAlvo) {
             }
           }
         }
+        if (viewModel.edicaoComercialSteam) {
+          for (let vIdx = 0; vIdx < 4; vIdx += 1) {
+            const vx0 = 796 + vIdx * 18;
+            const vy0 = 212 + dyVar + (vIdx % 2) * 8;
+            lineSeg(vx0, vy0, vx0 + 14, vy0 + 28, [168, 86, 214, 195], false);
+            lineSeg(vx0 + 1, vy0, vx0 + 15, vy0 + 28, [88, 234, 246, 155], true);
+          }
+          for (let sxM = 742; sxM <= 906; sxM += 2) {
+            const ySpM = yLinhaDaguaCena + Math.round(Math.sin(sxM * 0.15 + tempoSeg * 5.4) * 1.2);
+            putPx(sxM, ySpM - 1, (sxM % 6) === 0 ? TXT : CYAN);
+            putPx(sxM + 1, ySpM, [122, 74, 188, 215]);
+          }
+        }
       }
     } else if (ehChefeDraga) {
       const faseDragaVis = Number(viewModel.painelAlvo?.faseChefe ?? 1);
       const dyDrV = ehTouchdown ? -88 : 0;
       if (faseDragaVis === 2) {
         chanfradoBezel(642, 204 + dyDrV, 728, 224 + dyDrV, [48, 22, 12, 236], AMBER, 2, YELLOW);
-        txt(647, 211 + dyDrV, 'DRONES + FERVURA', YELLOW, 6);
+        txt(647, 211 + dyDrV, ehEnBannerAlvo ? 'DRONES + BOIL' : 'DRONES + FERVURA', YELLOW, 6);
       } else if (faseDragaVis >= 3) {
-        chanfradoBezel(636, 204 + dyDrV, 742, 224 + dyDrV, [58, 12, 18, 242], RED, 2, YELLOW);
-        txt(641, 211 + dyDrV, 'SURGE GEOTÉRMICO!', YELLOW, 6);
+        chanfradoBezel(636, 204 + dyDrV, 746, 224 + dyDrV, [58, 12, 18, 242], RED, 2, YELLOW);
+        txt(641, 211 + dyDrV, ehEnBannerAlvo ? 'GEOTHERMAL SURGE!' : 'SURGE GEOTÉRMICO!', YELLOW, 6);
       }
     }
 
@@ -890,13 +1112,20 @@ export function prepararFundoAtmosfericoCombate(ctx, cachesFrame) {
         g = Math.round(placaEsq.rgba[srcB + 1] * (1 - pesoDraga) + cG * pesoDraga);
         b = Math.round(placaEsq.rgba[srcB + 2] * (1 - pesoDraga) + cB * pesoDraga);
       } else if (ehTouchdown && ehMonstroAlvo && px >= 456) {
-        const pyF3 = Math.min(assets.f3Play.altura - 1, py + 108);
-        const srcM = (pyF3 * assets.f3Play.largura + px) * 4;
-        let rM = assets.f3Play.rgba[srcM];
-        let gM = assets.f3Play.rgba[srcM + 1];
-        let bM = assets.f3Play.rgba[srcM + 2];
-        if (pyF3 < 160 && px < 620 && gM > 155 && bM > 170) {
-          [rM, gM, bM] = amostrarCeuMar(perfilF3, pyF3, sx, sy);
+        const pyF3 = py + 108;
+        let rM;
+        let gM;
+        let bM;
+        if (pyF3 >= assets.f3Play.altura) {
+          [rM, gM, bM] = amostrarCeuMar(perfilEsq, py, sx, sy);
+        } else {
+          const srcM = (pyF3 * assets.f3Play.largura + px) * 4;
+          rM = assets.f3Play.rgba[srcM];
+          gM = assets.f3Play.rgba[srcM + 1];
+          bM = assets.f3Play.rgba[srcM + 2];
+          if (pyF3 < 160 && px < 620 && gM > 155 && bM > 170) {
+            [rM, gM, bM] = amostrarCeuMar(perfilF3, pyF3, sx, sy);
+          }
         }
         if (px < 470) {
           const pesoM = (px - 456) / 14;
@@ -954,6 +1183,23 @@ export function prepararFundoAtmosfericoCombate(ctx, cachesFrame) {
   };
 
   if (!ehTouchdown) {
+    if (viewModel.edicaoComercialSteam) {
+      for (let syTop = 44; syTop <= 72; syTop += 1) {
+        const pyTop = syTop - 40;
+        for (let sxTop = 166; sxTop < 470; sxTop += 1) {
+          const idxT = (syTop * W + sxTop) * 4;
+          const rT = snapInpaint[idxT];
+          const gT = snapInpaint[idxT + 1];
+          const bT = snapInpaint[idxT + 2];
+          if (rT > 55 || gT > 85 || bT > 105) {
+            const [cR, cG, cB] = amostrarCeuMar(perfilEsq, pyTop, sxTop, syTop);
+            rgba[idxT] = cR;
+            rgba[idxT + 1] = cG;
+            rgba[idxT + 2] = cB;
+          }
+        }
+      }
+    }
     const maxSxInpaint = ehChefeDraga && assets.dragaPlay ? 565 : 868;
     for (let sy = 44; sy <= 386; sy += 1) {
       const pyPlaca = sy - 40;
@@ -1003,6 +1249,8 @@ export function prepararFundoAtmosfericoCombate(ctx, cachesFrame) {
       txt(739, 310, 'TORRETA', TXT, 6);
     }
   } else {
+    const modoTdClassicoOnda6 =
+      !viewModel.edicaoComercialSteam && (!viewModel.layoutId || viewModel.layoutId === 'CARCACA_ALFA_A');
     for (let sy = 222; sy <= 294; sy += 1) {
       const pyPlaca = Math.max(0, Math.min(placaEsq.altura - 1, sy - 40));
       const pyF1 = Math.max(0, Math.min(assets.f1Play.altura - 1, sy + 14 - 40));
@@ -1024,6 +1272,7 @@ export function prepararFundoAtmosfericoCombate(ctx, cachesFrame) {
         const gF1 = assets.f1Play.rgba[srcF1 + 1];
         const bF1 = assets.f1Play.rgba[srcF1 + 2];
         const ehPixelCascoF1 =
+          modoTdClassicoOnda6 &&
           sy >= 223 &&
           sy <= 268 &&
           sx <= maxSxCurva &&
@@ -1049,7 +1298,7 @@ export function prepararFundoAtmosfericoCombate(ctx, cachesFrame) {
             rgba[idxDst + 1] = Math.round(gF1 * 0.68 + 24);
             rgba[idxDst + 2] = Math.round(bF1 * 0.74 + 34);
           }
-        } else if (sx >= 546) {
+        } else if (sx >= 546 || !modoTdClassicoOnda6) {
           const pesoMar = sx <= 600 ? 1 : (611 - sx) / 11;
           rgba[idxDst] = Math.round(snapInpaint[idxDst] * (1 - pesoMar) + marR * pesoMar);
           rgba[idxDst + 1] = Math.round(snapInpaint[idxDst + 1] * (1 - pesoMar) + marG * pesoMar);
@@ -1075,19 +1324,21 @@ export function prepararFundoAtmosfericoCombate(ctx, cachesFrame) {
           }
         }
       }
-      for (let syM2 = 344; syM2 <= 406; syM2 += 1) {
-        putPx(447, syM2, [7, 18, 26, 255]);
-        putPx(448, syM2, [48, 118, 140, 255]);
-        putPx(449, syM2, [34, 88, 108, 255]);
-        putPx(450, syM2, [24, 68, 86, 255]);
-        putPx(451, syM2, [16, 48, 64, 255]);
-        putPx(452, syM2, [7, 18, 26, 255]);
-      }
-      for (const [bxT, byT, rT] of [
-        [432, 374, 2], [440, 382, 1], [457, 376, 2], [464, 385, 1],
-        [426, 388, 1], [456, 392, 1], [444, 395, 1],
-      ]) {
-        fillRect(bxT, byT, bxT + rT, byT + rT, (bxT & 1) === 0 ? CYAN : TXT);
+      if (modoTdClassicoOnda6) {
+        for (let syM2 = 344; syM2 <= 406; syM2 += 1) {
+          putPx(447, syM2, [7, 18, 26, 255]);
+          putPx(448, syM2, [48, 118, 140, 255]);
+          putPx(449, syM2, [34, 88, 108, 255]);
+          putPx(450, syM2, [24, 68, 86, 255]);
+          putPx(451, syM2, [16, 48, 64, 255]);
+          putPx(452, syM2, [7, 18, 26, 255]);
+        }
+        for (const [bxT, byT, rT] of [
+          [432, 374, 2], [440, 382, 1], [457, 376, 2], [464, 385, 1],
+          [426, 388, 1], [456, 392, 1], [444, 395, 1],
+        ]) {
+          fillRect(bxT, byT, bxT + rT, byT + rT, (bxT & 1) === 0 ? CYAN : TXT);
+        }
       }
     }
   }
@@ -1165,20 +1416,21 @@ export function renderizarSobrecomposicaoCombate60Fps(ctx, paramsCombate) {
       2,
       prontoAb ? TXT : RIM
     );
+    const ehEnAb = viewModel.configuracoesSteam?.idioma === 'en-US';
     const rotAb =
       resAb.tuboInstalado === false || stCurtoAb === 'S/ TUBO'
-        ? '[G] S/ TUBO'
+        ? (ehEnAb ? '[G] NO LOCK' : '[G] S/ TUBO')
         : domoAtivoAb
-          ? '[G] DOMO ATIVO'
+          ? (ehEnAb ? '[G] DOME ON' : '[G] DOMO ATIVO')
           : semEnergiaAb
-            ? '[G] TUBO 0 ENE'
+            ? (ehEnAb ? '[G] LOCK 0 PW' : '[G] TUBO 0 ENE')
             : recAb > 0.05
-              ? `[G] TUBO ${recAb.toFixed(0)}s`
+              ? `[G] ${ehEnAb ? 'LOCK' : 'TUBO'} ${recAb.toFixed(0)}s`
               : prontoAb
-                ? `[G] ABORDAR S${salaAlvoAb}`
+                ? `[G] ${ehEnAb ? 'BOARD' : 'ABORDAR'} S${salaAlvoAb}`
                 : nBordo > 0
-                  ? `[G] BORDO (${nBordo})`
-                  : '[G] C7 VAZIA';
+                  ? `[G] ${ehEnAb ? 'ABOARD' : 'BORDO'} (${nBordo})`
+                  : (ehEnAb ? '[G] C7 EMPTY' : '[G] C7 VAZIA');
     txt(
       hbAbordar.x + 5,
       hbAbordar.y + 7 + dyAb,
@@ -1187,21 +1439,38 @@ export function renderizarSobrecomposicaoCombate60Fps(ctx, paramsCombate) {
       6
     );
   }
+  const ehEnBioRef = viewModel.configuracoesSteam?.idioma === 'en-US';
   const yBanHip = tipNoCantoSupEsq ? 78 : hbAbordar ? 70 : 44;
   if ((viewModel.telemetriaBioReflexo?.alertaReflexoBranquialSeg ?? 0) > 0) {
     if (brqLigadoCena) {
       chanfradoBezel(162, yBanHip, 368, yBanHip + 14, [10, 40, 26, 244], GREEN, 2, [110, 255, 152, 255]);
-      txt(168, yBanHip + 4, 'REFLEXO BRANQUIAL: +1 BRQ AUTO!', GREEN, 6);
+      txt(168, yBanHip + 4, ehEnBioRef ? 'GILL REFLEX: +1 GILL AUTO!' : 'REFLEXO BRANQUIAL: +1 BRQ AUTO!', GREEN, 6);
     } else {
       chanfradoBezel(162, yBanHip, 356, yBanHip + 14, [56, 14, 20, 244], RED, 2, AMBER);
-      txt(168, yBanHip + 4, 'HIPÓXIA! ENERGIZE [B] BRQ!', YELLOW, 6);
+      txt(168, yBanHip + 4, ehEnBioRef ? 'HYPOXIA! POWER [B] GILL!' : 'HIPÓXIA! ENERGIZE [B] BRQ!', YELLOW, 6);
     }
   } else if (viewModel.telemetriaBioReflexo?.alertaPreHipoxia) {
     chanfradoBezel(162, yBanHip, 368, yBanHip + 14, [44, 14, 58, 242], VIOLET, 2, CYAN);
-    txt(168, yBanHip + 4, `O2 BAIXO (${Math.round(viewModel.telemetriaBioReflexo.menorOxigenioOcupadoPct)}%) — APERTE [B]!`, YELLOW, 6);
+    txt(
+      168,
+      yBanHip + 4,
+      ehEnBioRef
+        ? `LOW O2 (${Math.round(viewModel.telemetriaBioReflexo.menorOxigenioOcupadoPct)}%) — PRESS [B]!`
+        : `O2 BAIXO (${Math.round(viewModel.telemetriaBioReflexo.menorOxigenioOcupadoPct)}%) — APERTE [B]!`,
+      YELLOW,
+      6
+    );
   }
 
   const obterBocaDorsalRender = (slotIdx) => {
+    if (viewModel.layoutId) {
+      const [bxS, byS] = obterBocaDorsalLayout960(viewModel.layoutId, undefined, slotIdx, {
+        ehTouchdown,
+        ehMonstroAlvo,
+        deslSubTick,
+      });
+      return [bxS, byS];
+    }
     const dyBaseBoca = ehTouchdown ? 10 : ehMonstroAlvo ? -12 : 0;
     const dxTdBoca = ehTouchdown ? -24 : 0;
     const tabBocasRender = {
@@ -1215,17 +1484,19 @@ export function renderizarSobrecomposicaoCombate60Fps(ctx, paramsCombate) {
     const [bxD, byD] = parBocas[slotIdx === 1 ? 1 : 0];
     return [bxD + dxTdBoca, byD + dyBaseBoca + deslSubTick];
   };
-  const [boca0X, boca0Y] = obterBocaDorsalRender(0);
-  const [boca1X, boca1Y] = obterBocaDorsalRender(1);
   const projsRecentesJog = (ev60?.projeteisAtivos ?? []).filter((p) => p.lado === 'JOGADOR' && p.progresso0a1 < 0.25);
-  if (disparandoDorsal || projsRecentesJog.some((p) => (p.slotIndex ?? 0) === 0)) {
-    fillRect(boca0X - 3, boca0Y - 3, boca0X + 7, boca0Y + 3, CYAN);
-    fillRect(boca0X, boca0Y - 1, boca0X + 9, boca0Y + 1, YELLOW);
-    putPx(boca0X + 10, boca0Y, TXT);
-  }
-  if (disparandoDorsal || projsRecentesJog.some((p) => p.slotIndex === 1)) {
-    fillRect(boca1X - 3, boca1Y - 3, boca1X + 7, boca1Y + 3, YELLOW);
-    fillRect(boca1X, boca1Y - 1, boca1X + 9, boca1Y + 1, TXT);
+  const totalBocasFlash = viewModel.layoutId ? Math.max(2, (viewModel.caixaArmas ?? []).length) : 2;
+  for (let sIdx = 0; sIdx < totalBocasFlash; sIdx += 1) {
+    const slotOcupadoCena = sIdx < 2 || Boolean(viewModel.caixaArmas?.[sIdx]?.ocupado);
+    const flashSlot =
+      (disparandoDorsal && slotOcupadoCena && projsRecentesJog.length === 0) ||
+      projsRecentesJog.some((p) => (p.slotIndex ?? 0) === sIdx);
+    if (!flashSlot) continue;
+    const [bocaX, bocaY] = obterBocaDorsalRender(sIdx);
+    const parSlot = (sIdx & 1) === 0;
+    fillRect(bocaX - 3, bocaY - 3, bocaX + 7, bocaY + 3, parSlot ? CYAN : YELLOW);
+    fillRect(bocaX, bocaY - 1, bocaX + 9, bocaY + 1, parSlot ? YELLOW : TXT);
+    if (parSlot) putPx(bocaX + 10, bocaY, TXT);
   }
 
   renderizarAlvoInimigoESalasCombate(ctx, {
@@ -1239,7 +1510,8 @@ export function renderizarSobrecomposicaoCombate60Fps(ctx, paramsCombate) {
     for (const fl of ev60.flashesSalas ?? []) {
       chanfradoBezel(fl.x, fl.y, fl.x + fl.largura - 1, fl.y + fl.altura - 1, fl.cor === 'RED' ? [255, 42, 56, 115] : [79, 242, 255, 115], TXT, 3);
     }
-    for (const proj of ev60.projeteisAtivos ?? []) {
+    const usarJuiceBalisticoSteam = Boolean(viewModel.edicaoComercialSteam || viewModel.layoutId);
+    for (const proj of usarJuiceBalisticoSteam ? [] : (ev60.projeteisAtivos ?? [])) {
       const [origProjX, origProjY] =
         proj.lado === 'JOGADOR' ? obterBocaDorsalRender(proj.slotIndex ?? 0) : [proj.xOrigem, proj.yOrigem];
       if (proj.ehFeixe) {
@@ -1293,8 +1565,11 @@ export function renderizarSobrecomposicaoCombate60Fps(ctx, paramsCombate) {
       txt(tf.x, tf.y, tf.texto, corTf, 7);
     }
 
-    const shX = Math.max(-6, Math.min(6, Math.round(Number(ev60.shakeX ?? 0))));
-    const shY = Math.max(-5, Math.min(5, Math.round(Number(ev60.shakeY ?? 0))));
+    const shakeDesativado =
+      viewModel?.configuracoesSteam?.screenShakeAtivo === false ||
+      viewModel?.configuracoesSteam?.reduzirMovimento === true;
+    const shX = shakeDesativado ? 0 : Math.max(-6, Math.min(6, Math.round(Number(ev60.shakeX ?? 0))));
+    const shY = shakeDesativado ? 0 : Math.max(-5, Math.min(5, Math.round(Number(ev60.shakeY ?? 0))));
     if (shX !== 0 || shY !== 0) {
       const wVp = 808;
       const hVp = 388;

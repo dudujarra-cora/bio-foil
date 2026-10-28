@@ -1,0 +1,45 @@
+{
+  "name": "biofoil-steam-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Bio-Foil — Empacotamento Desktop Nativo Steam (macOS WKWebView App, Electron Steamworks & Tauri v2).",
+  "main": "./electron-main.mjs",
+  "scripts": {
+    "start": "electron ./electron-main.mjs",
+    "build:electron": "electron-builder",
+    "build:tauri": "cargo build --release --manifest-path ./src-tauri/Cargo.toml"
+  },
+  "optionalDependencies": {
+    "steamworks.js": "^0.3.2"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.biofoil.roguelike",
+    "productName": "Bio-Foil",
+    "files": [
+      "electron-main.mjs",
+      "electron-preload.cjs",
+      "steam_appid.txt",
+      "../src/**/*",
+      "../assets/**/*",
+      "../scripts/jogar-biofoil.mjs",
+      "../GDD.md",
+      "../0*.md"
+    ],
+    "mac": {
+      "category": "public.app-category.strategy-games",
+      "target": ["dir", "dmg"]
+    },
+    "win": {
+      "target": ["dir", "nsis"]
+    },
+    "linux": {
+      "category": "Game",
+      "target": ["dir", "AppImage"]
+    }
+  }
+}

@@ -103,10 +103,25 @@ export function calcularPenalidadeCavitacaoKg(aguaInternaNormalKg) {
   return arredondar4(deficit * CONSTANTES_FISICA_HIDRAULICA.PENALIDADE_CAVITACAO_POR_KG);
 }
 
+function contarOrgaoPassivoNave(naveJogador, idOrgaoAlvo) {
+  if (!naveJogador || typeof naveJogador !== 'object') return 0;
+  let qtd = 0;
+  for (const entrada of [
+    ...(naveJogador.porao ?? []),
+    ...(naveJogador.poraoCarga ?? []),
+    ...(naveJogador.implantesPassivos ?? []),
+  ]) {
+    const item = entrada && typeof entrada === 'object' && 'item' in entrada ? entrada.item : entrada;
+    const id = typeof item === 'string' ? item : item?.id;
+    if (id === idOrgaoAlvo) qtd += 1;
+  }
+  return qtd;
+}
+
 /**
- * Equação Mestre de Sustentação do Hidrofólio (Seção 1.1 e 1.2 do Vol. 01):
+ * Equação Mestre de Sustentação do Hidrofólio (Seção 1.1 e 1.2 do Vol. 01 + Aleta Estabilizadora AE):
  * Se Energia no Sifão == 0, Mastro == 0 ou Mergulho Tático ativo -> S_atual = 0 kg.
- * Caso contrário -> S_mastro + bonusArquitetura + S_sifao - C_cavitacao (mínimo 0 kg).
+ * Caso contrário -> S_mastro + bonusArquitetura + bonusAletaFoil + S_sifao - C_cavitacao (mínimo 0 kg).
  */
 export function calcularSustentacaoFoil(naveJogador) {
   if (naveJogador.mergulhoTaticoAtivo) {
@@ -124,6 +139,7 @@ export function calcularSustentacaoFoil(naveJogador) {
 
   const sustentacaoMastroBase = CONSTANTES_FISICA_HIDRAULICA.PATAMARES_MASTRO_KG[barrasMastro];
   const bonusArquitetura = Number(naveJogador.bonusSustentacaoMastroKg ?? 0.0);
+  const bonusAletaFoil = contarOrgaoPassivoNave(naveJogador, 'ALETA_ESTABILIZADORA_FOIL') * 28.0;
   const sustentacaoSifao = barrasSifao * CONSTANTES_FISICA_HIDRAULICA.EMPUXO_POR_BARRA_SIFAO_KG;
   const aguaInterna = calcularAguaInternaNormalTotalKg(naveJogador);
   const cavitacao = calcularPenalidadeCavitacaoKg(aguaInterna);
@@ -131,7 +147,7 @@ export function calcularSustentacaoFoil(naveJogador) {
 
   return Math.max(
     0.0,
-    arredondar4(sustentacaoMastroBase + bonusArquitetura + sustentacaoSifao - cavitacao - penalidadeEvento)
+    arredondar4(sustentacaoMastroBase + bonusArquitetura + bonusAletaFoil + sustentacaoSifao - cavitacao - penalidadeEvento)
   );
 }
 
@@ -293,6 +309,7 @@ export function avancarTickFisicaHidraulica(estado, dtSeg = 0.25) {
   }
 
   const noAr = nave.estadoFisico === '1_NO_FOIL';
+  const multRomboVesicula = contarOrgaoPassivoNave(nave, 'VESICULA_HIPERBARICA') > 0 ? 0.6 : 1.0;
   let camarasExaminadas = 0;
 
   // 2. Processar a hidráulica de cada uma das 8 câmaras
@@ -317,7 +334,7 @@ export function avancarTickFisicaHidraulica(estado, dtSeg = 0.25) {
     if (noAr) {
       let perdaKg = 0.0;
       if (rombosAtivos > 0) {
-        perdaKg += rombosAtivos * CONSTANTES_FISICA_HIDRAULICA.TAXA_VAZAMENTO_ROMBO_AR_KG_S * dtSeg;
+        perdaKg += rombosAtivos * CONSTANTES_FISICA_HIDRAULICA.TAXA_VAZAMENTO_ROMBO_AR_KG_S * multRomboVesicula * dtSeg;
       }
       if (camara.valvulaExternaAberta) {
         perdaKg += CONSTANTES_FISICA_HIDRAULICA.TAXA_DRENO_VALVULA_AR_KG_S * dtSeg;
@@ -362,7 +379,7 @@ export function avancarTickFisicaHidraulica(estado, dtSeg = 0.25) {
 
       if (rombosAtivos > 0) {
         // Rombo submerso não vedado causa Sobrecarga Hidrostática (Alagamento Pesado até +20.0 kg por sala)
-        const invasaoRombo = rombosAtivos * CONSTANTES_FISICA_HIDRAULICA.TAXA_INVASAO_MAR_KG_S * dtSeg;
+        const invasaoRombo = rombosAtivos * CONSTANTES_FISICA_HIDRAULICA.TAXA_INVASAO_MAR_KG_S * multRomboVesicula * dtSeg;
         const usadoParaNormal = Math.min(faltaNormal, invasaoRombo);
         const excesso = Math.max(0.0, invasaoRombo - usadoParaNormal);
         if (excesso > 0 && camara.aguaKg >= CONSTANTES_FISICA_HIDRAULICA.CAPACIDADE_AGUA_CAMARA_KG) {
@@ -418,7 +435,8 @@ export function avancarTickFisicaHidraulica(estado, dtSeg = 0.25) {
     if (!nave.mergulhoTaticoAtivo && sustPosTick > 0 && pesoPosTick <= sustPosTick) {
       nave.estadoFisico = '3_SPOOL_UP';
       nave.progressoSpoolUpSeg = arredondar4(dtSeg);
-      const exigido = Number(nave.tempoSpoolUpExigidoSeg ?? 3.0);
+      const fatorVesicula = Math.max(0.35, 1.0 - 0.40 * contarOrgaoPassivoNave(nave, 'VESICULA_HIPERBARICA'));
+      const exigido = arredondar4(Number(nave.tempoSpoolUpExigidoSeg ?? 3.0) * fatorVesicula);
       if (nave.progressoSpoolUpSeg >= exigido) {
         nave.estadoFisico = '1_NO_FOIL';
         nave.progressoSpoolUpSeg = 0.0;
@@ -445,7 +463,8 @@ export function avancarTickFisicaHidraulica(estado, dtSeg = 0.25) {
     } else {
       nave.tempoTouchdownContinuoSeg = arredondar4(nave.tempoTouchdownContinuoSeg + dtSeg);
       nave.progressoSpoolUpSeg = arredondar4(nave.progressoSpoolUpSeg + dtSeg);
-      const exigido = Number(nave.tempoSpoolUpExigidoSeg ?? 3.0);
+      const fatorVesicula = Math.max(0.35, 1.0 - 0.40 * contarOrgaoPassivoNave(nave, 'VESICULA_HIPERBARICA'));
+      const exigido = arredondar4(Number(nave.tempoSpoolUpExigidoSeg ?? 3.0) * fatorVesicula);
       if (nave.progressoSpoolUpSeg >= exigido) {
         nave.estadoFisico = '1_NO_FOIL';
         nave.progressoSpoolUpSeg = 0.0;

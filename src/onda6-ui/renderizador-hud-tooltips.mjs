@@ -10,6 +10,18 @@
  *  - Zero imports Node.js e zero `structuredClone` para paridade 0-byte entre Servidor e Navegador.
  */
 
+import { obterSiglaHudArma } from '../onda7-steam/i18n-dicionario-ui.mjs';
+
+function rotuloTeclaCurtaHud(codigoBruto, padrao) {
+  if (!codigoBruto || typeof codigoBruto !== 'string') return padrao;
+  const c = codigoBruto.trim();
+  if (!c) return padrao;
+  if (c === 'Space') return 'SPC';
+  if (c.startsWith('Key') && c.length === 4) return c.slice(3).toUpperCase();
+  if (c.startsWith('Digit') && c.length === 6) return c.slice(5);
+  return c.slice(0, 3).toUpperCase();
+}
+
 export function renderizarHudSuperiorTermometroERodape(ctx) {
   const {
     W,
@@ -60,17 +72,18 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
   } = ctx;
 
   // 2. Barra Superior (X=0..959, Y=0..39)
+  const ehEnHud = viewModel.configuracoesSteam?.idioma === 'en-US';
   const cascoAtual = Math.max(0, Number(viewModel.barraSuperior.hpCascoAtual ?? 0));
   const cascoMax = Math.max(1, Number(viewModel.barraSuperior.hpCascoMax ?? 30));
   const rec = viewModel.barraSuperior.recursos ?? { sucata: 0, biomassa: 0, combustivel: 0, municao: 0 };
   const saltoPct = Math.max(0, Math.min(100, Math.round(Number(viewModel.barraSuperior.cargaSaltoPct ?? 0))));
-  const saltoTexto = ehTouchdown ? `${saltoPct}% (x0,5)` : `${saltoPct}%`;
+  const saltoTexto = ehTouchdown ? `${saltoPct}% (${ehEnHud ? 'x0.5' : 'x0,5'})` : `${saltoPct}%`;
 
   panel(0, 0, W - 1, 39);
-  txt(6, 6, `CASCO ${cascoAtual}/${cascoMax}`, TXT);
+  txt(6, 6, `${ehEnHud ? 'HULL' : 'CASCO'} ${cascoAtual}/${cascoMax}`, TXT);
   const wPipCasco = cascoMax <= 28 ? 3 : cascoMax <= 39 ? 2 : 1;
   segBar(104, 6, cascoMax, cascoAtual, wPipCasco, 8, 1, cascoAtual <= 8 ? RED : GREEN);
-  txt(226, 6, 'BARREIRA', TXT);
+  txt(226, 6, ehEnHud ? 'BARRIER' : 'BARREIRA', TXT);
   const bolhasAtivas = Math.max(0, Number(viewModel.barraSuperior.barreiraBolhas ?? 0));
   for (let b = 0; b < Math.max(1, Math.min(4, bolhasAtivas || 1)); b += 1) {
     bolhaBarreira(294 + b * 12, 5, b < bolhasAtivas);
@@ -89,36 +102,58 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       hovAu ? YELLOW : mudoAu ? AMBER : CYAN,
       2
     );
-    txt(hbAudioHud.x + 5, hbAudioHud.y + 4, mudoAu ? 'MUDO' : 'SOM ON', hovAu ? YELLOW : mudoAu ? AMBER : GREEN, 6);
+    txt(
+      hbAudioHud.x + 5,
+      hbAudioHud.y + 4,
+      mudoAu ? (ehEnHud ? 'MUTED' : 'MUDO') : (ehEnHud ? 'AUDIO ON' : 'SOM ON'),
+      hovAu ? YELLOW : mudoAu ? AMBER : GREEN,
+      6
+    );
   }
-  const eco = `SUC ${rec.sucata} BIO ${rec.biomassa} CMB ${rec.combustivel} MUN ${rec.municao}`;
+  const eco = ehEnHud
+    ? `SCR ${rec.sucata} BIO ${rec.biomassa} FUE ${rec.combustivel} AMM ${rec.municao}`
+    : `SUC ${rec.sucata} BIO ${rec.biomassa} CMB ${rec.combustivel} MUN ${rec.municao}`;
   txt(W - 6 - eco.length * 8, 6, eco, TXT);
 
-  const rotEstadoTopo =
-    estadoFisico === '3_SPOOL_UP'
-      ? 'SPOOL-UP - ESQUIVA 0%'
-      : ehTouchdown
-        ? 'TOUCHDOWN - ESQUIVA 0%'
-        : `NO FOIL - ESQUIVA ${viewModel.barraSuperior.esquivaEfetivaPct}%`;
+  const rotEstadoTopo = ehEnHud
+    ? (estadoFisico === '3_SPOOL_UP'
+        ? 'SPOOL-UP - EVASION 0%'
+        : ehTouchdown
+          ? 'TOUCHDOWN - EVASION 0%'
+          : `ON FOIL - EVASION ${viewModel.barraSuperior.esquivaEfetivaPct}%`)
+    : (estadoFisico === '3_SPOOL_UP'
+        ? 'SPOOL-UP - ESQUIVA 0%'
+        : ehTouchdown
+          ? 'TOUCHDOWN - ESQUIVA 0%'
+          : `NO FOIL - ESQUIVA ${viewModel.barraSuperior.esquivaEfetivaPct}%`);
   txt(6, 24, rotEstadoTopo, estadoFisico === '3_SPOOL_UP' ? AMBER : ehTouchdown ? RED : GREEN);
 
   if (ehTouchdown) {
-    txt(238, 24, 'RECARGA -25%', CYAN);
+    txt(238, 24, ehEnHud ? 'RELOAD -25%' : 'RECARGA -25%', CYAN);
   } else if ((viewModel.painelAlvo?.alarmeFervuraAtivoSeg ?? 0) > 0) {
-    txt(238, 24, `ALARME FERVURA ${viewModel.painelAlvo.alarmeFervuraAtivoSeg.toFixed(1)}s`, RED);
+    txt(238, 24, `${ehEnHud ? 'BOIL ALARM' : 'ALARME FERVURA'} ${viewModel.painelAlvo.alarmeFervuraAtivoSeg.toFixed(1)}s`, RED);
   } else if ((viewModel.painelAlvo?.fervuraAtivaSeg ?? 0) > 0) {
-    txt(238, 24, 'MAR EM FERVURA!', RED);
+    txt(238, 24, ehEnHud ? 'BOILING SEA!' : 'MAR EM FERVURA!', RED);
   } else {
-    const nomeCarcacaTopo = NOMES_CARC[idCarcaca] ?? idCarcaca.replace(/_/g, ' ');
+    const mapaCarcEn = {
+      CARCACA_ALFA: 'ALPHA HULL',
+      MANTA_VOLT: 'MANTA-VOLT',
+      COURACA_LIMIAR: 'THRESHOLD HULL',
+      SOMBRA_ABISSAL: 'ABYSSAL SHADOW',
+      COLMEIA_VIVA: 'LIVING HIVE',
+    };
+    const nomeCarcacaTopo = ehEnHud
+      ? (mapaCarcEn[idCarcaca] ?? idCarcaca.replace(/_/g, ' '))
+      : (NOMES_CARC[idCarcaca] ?? idCarcaca.replace(/_/g, ' '));
     txt(238, 24, nomeCarcacaTopo.slice(0, 20), DIM);
   }
 
-  const rotSalto = `SALTO ${saltoTexto}`;
+  const rotSalto = `${ehEnHud ? 'JUMP' : 'SALTO'} ${saltoTexto}`;
   txt(W - 6 - 64 - 6 - rotSalto.length * 8, 24, rotSalto, TXT);
   segBar(W - 6 - 64, 24, 16, Math.round((16 * saltoPct) / 100), 3, 8, 1, AMBER);
 
   // 3. Termômetro Hidrostático Esquerdo (X=0..150, Y=40..429)
-  panel(0, 40, 150, 429, 'SUSTENTAÇÃO');
+  panel(0, 40, 150, 429, ehEnHud ? 'HYDRO-LIFT' : 'SUSTENTAÇÃO');
   const topY = 74;
   const botY = 318;
   const tx = 42;
@@ -262,9 +297,9 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
     }
   }
   txt(60, yRotLim, `${limiteKg} kg`, CYAN);
-  txt(60, yRotLim + 9, 'LIMITE', CYAN);
+  txt(60, yRotLim + 9, ehEnHud ? 'LIMIT' : 'LIMITE', CYAN);
   txt(60, yRotPeso, `${pesoKg} kg`, AMBER);
-  txt(60, yRotPeso + 9, 'PESO', AMBER);
+  txt(60, yRotPeso + 9, ehEnHud ? 'MASS' : 'PESO', AMBER);
 
   if (estadoFisico === '3_SPOOL_UP') {
     chanfradoBezel(60, 290, 145, 304, [52, 34, 8, 255], AMBER, 2, YELLOW);
@@ -282,6 +317,11 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
     7
   );
 
+  const atalhosHud = viewModel.configuracoesSteam?.atalhosTeclado ?? null;
+  const tkMergulho = rotuloTeclaCurtaHud(atalhosHud?.MERGULHO_TATICO, 'M');
+  const tkDreno = rotuloTeclaCurtaHud(atalhosHud?.DRENAR_VALVULAS, 'D');
+  const tkSalva = rotuloTeclaCurtaHud(atalhosHud?.SALVA_MANUAL, 'X');
+
   const hbMergulho = hitboxes.find((h) => h.idHitbox === 'BTN_MERGULHO_TATICO');
   if (hbMergulho) {
     const dyP = idPressAtivo === hbMergulho.idHitbox ? 1 : 0;
@@ -296,8 +336,8 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       3,
       hov ? TXT : [48, 86, 108, 255]
     );
-    txt(hbMergulho.x + 6, hbMergulho.y + 5 + dyP, ehTouchdown ? '[M] EMERGIR' : '[M] MERGULHO', TXT, 7);
-    txt(hbMergulho.x + 6, hbMergulho.y + 15 + dyP, ehTouchdown ? 'AO FOIL' : 'TÁTICO', ehTouchdown ? CYAN : AMBER, 7);
+    txt(hbMergulho.x + 6, hbMergulho.y + 5 + dyP, ehTouchdown ? (ehEnHud ? `[${tkMergulho}] SURFACE` : `[${tkMergulho}] EMERGIR`) : (ehEnHud ? `[${tkMergulho}] TACTICAL` : `[${tkMergulho}] MERGULHO`), TXT, 7);
+    txt(hbMergulho.x + 6, hbMergulho.y + 15 + dyP, ehTouchdown ? (ehEnHud ? 'TO FOIL' : 'AO FOIL') : (ehEnHud ? 'SEA DIVE' : 'TÁTICO'), ehTouchdown ? CYAN : AMBER, 7);
   }
 
   const hbDrenoSeguro = hitboxes.find((h) => h.idHitbox === 'BTN_DRENAR_SEGURO');
@@ -315,8 +355,8 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       3,
       hov ? TXT : [44, 96, 68, 255]
     );
-    txt(hbDrenoSeguro.x + 6, hbDrenoSeguro.y + 4 + dyP, '[D] DRENO SEGURO', desab ? DIM : GREEN, 7);
-    txt(hbDrenoSeguro.x + 6, hbDrenoSeguro.y + 14 + dyP, 'CORTA EM 63 kg', desab ? DIM : CYAN, 7);
+    txt(hbDrenoSeguro.x + 6, hbDrenoSeguro.y + 4 + dyP, ehEnHud ? `[${tkDreno}] SAFE DRAIN` : `[${tkDreno}] DRENO SEGURO`, desab ? DIM : GREEN, 7);
+    txt(hbDrenoSeguro.x + 6, hbDrenoSeguro.y + 14 + dyP, ehEnHud ? 'STOPS AT 63 kg' : 'CORTA EM 63 kg', desab ? DIM : CYAN, 7);
     if (ehTouchdown) {
       lock(hbDrenoSeguro.x + hbDrenoSeguro.largura - 12, hbDrenoSeguro.y + 7 + dyP, AMBER);
     }
@@ -336,8 +376,8 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       3,
       hov ? TXT : [48, 72, 90, 255]
     );
-    txt(hbDrenar.x + 6, hbDrenar.y + 4 + dyP, '[V] DRENAR TUDO', ehTouchdown ? DIM : TXT, 7);
-    txt(hbDrenar.x + 6, hbDrenar.y + 14 + dyP, 'RISCO CAVITAÇÃO', ehTouchdown ? DIM : AMBER, 7);
+    txt(hbDrenar.x + 6, hbDrenar.y + 4 + dyP, ehEnHud ? '[V] PURGE ALL' : '[V] DRENAR TUDO', ehTouchdown ? DIM : TXT, 7);
+    txt(hbDrenar.x + 6, hbDrenar.y + 14 + dyP, ehEnHud ? 'CAVITATION RISK' : 'RISCO CAVITAÇÃO', ehTouchdown ? DIM : AMBER, 7);
     if (ehTouchdown) {
       lock(hbDrenar.x + hbDrenar.largura - 12, hbDrenar.y + 7 + dyP, AMBER);
     }
@@ -345,7 +385,9 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
 
   // 4. Painel Superior Direito do Alvo (em COMBATE)
   if (faseJogo === 'COMBATE' && viewModel.painelAlvo?.presente) {
-    const caixaInimigo = ehChefeDraga ? [620, 44, 956, 118] : [716, 44, 956, 132];
+    const armasInimHud = Array.isArray(viewModel.painelAlvo.armasInimigas) ? viewModel.painelAlvo.armasInimigas : [];
+    const temArmasInimHud = Boolean(viewModel.edicaoComercialSteam && armasInimHud.length > 0 && !ehChefeDraga);
+    const caixaInimigo = ehChefeDraga ? [620, 44, 956, 118] : [716, 44, 956, temArmasInimHud ? 145 : 132];
     const [ex0, ey0, ex1, ey1] = caixaInimigo;
     const maxCharsNome = Math.floor((ex1 - ex0 - 12) / 8);
     const nomeAlvoCru = String(viewModel.painelAlvo.nomeAlvo ?? (ehMonstroAlvo ? 'TEUTHIS COURAÇADA' : 'LANCHA PATRULHEIRA'))
@@ -353,9 +395,50 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       .replace(/_S\d+$/i, '')
       .replace(/_/g, ' ')
       .replace(/\bCOURACADA\b/g, 'COURAÇADA');
+    const mapaInimEn = {
+      'LANCHA PATRULHEIRA': 'PATROL CUTTER',
+      'CORVETA DE SONAR': 'SONAR CORVETTE',
+      'CORVETA DE INTERCEPTACAO': 'INTERCEPTOR CORVETTE',
+      'CORVETA DE INTERCEPTAÇÃO': 'INTERCEPTOR CORVETTE',
+      'ARRASTAO BLINDADO': 'ARMORED TRAWLER',
+      'ARRASTÃO BLINDADO': 'ARMORED TRAWLER',
+      'ARRASTAO CORPORATIVO': 'CORPORATE TRAWLER',
+      'ARRASTÃO CORPORATIVO': 'CORPORATE TRAWLER',
+      'SUBMARINO TERMICO DE ASSALTO': 'THERMAL ASSAULT SUB',
+      'SUBMARINO TÉRMICO DE ASSALTO': 'THERMAL ASSAULT SUB',
+      'SUBMARINO DE ASSALTO': 'ASSAULT SUBMARINE',
+      'TEUTHIS COURACADA': 'ARMORED TEUTHIS',
+      'TEUTHIS COURAÇADA': 'ARMORED TEUTHIS',
+      'TEUTHIS COURACADA MUTANTE': 'ARMORED TEUTHIS MUTANT',
+      'TEUTHIS COURAÇADA MUTANTE': 'ARMORED TEUTHIS MUTANT',
+      'ENGUIA ELETRICA ABISSAL': 'ABYSSAL ELECTRIC EEL',
+      'ENGUIA ELÉTRICA ABISSAL': 'ABYSSAL ELECTRIC EEL',
+      'ENGUIA BIO-VOLT': 'BIO-VOLT EEL',
+      'CARANGUEJO-TITA DE TRINCHEIRA': 'TITAN TRENCH CRAB',
+      'CARANGUEJO-TITÃ DE TRINCHEIRA': 'TITAN TRENCH CRAB',
+      'CARANGUEJO DE TRINCHEIRA': 'TRENCH CRAB',
+      'HIDRA TERMOFILICA DE CRATERA': 'CRATER THERMO-HYDRA',
+      'HIDRA TERMOFÍLICA DE CRATERA': 'CRATER THERMO-HYDRA',
+      'HIDRA DE ESPOROS': 'SPORE HYDRA',
+    };
+    const traduzirNomeInimEn = (cru) => {
+      if (mapaInimEn[cru]) return mapaInimEn[cru];
+      return cru
+        .replace(/TEUTHIS COURA[CÇ]ADA/g, 'ARMORED TEUTHIS')
+        .replace(/ENGUIA BIO-VOLT/g, 'BIO-VOLT EEL')
+        .replace(/CARANGUEJO DE TRINCHEIRA/g, 'TRENCH CRAB')
+        .replace(/HIDRA DE ESPOROS/g, 'SPORE HYDRA')
+        .replace(/LANCHA PATRULHEIRA/g, 'PATROL CUTTER')
+        .replace(/CORVETA DE INTERCEPTA[CÇ][AÃ]O/g, 'INTERCEPTOR CORVETTE')
+        .replace(/ARRAST[AÃ]O CORPORATIVO/g, 'CORPORATE TRAWLER')
+        .replace(/SUBMARINO DE ASSALTO/g, 'ASSAULT SUBMARINE')
+        .replace(/\bMUTANTE\b/g, 'MUTANT')
+        .replace(/\bPESADO\b|\bPESADA\b/g, 'HEAVY')
+        .replace(/\bELITE\b/g, 'ELITE');
+    };
     const nomeBruto = ehChefeDraga
-      ? `DRAGA CONTINENTAL F${viewModel.painelAlvo.faseChefe ?? 1}`
-      : nomeAlvoCru;
+      ? (ehEnHud ? `CONTINENTAL DREDGE F${viewModel.painelAlvo.faseChefe ?? 1}` : `DRAGA CONTINENTAL F${viewModel.painelAlvo.faseChefe ?? 1}`)
+      : (ehEnHud ? traduzirNomeInimEn(nomeAlvoCru) : nomeAlvoCru);
     const passoFonteNome = nomeBruto.length > maxCharsNome ? 7 : 8;
     const maxCharsEfetivo = Math.floor((ex1 - ex0 - 12) / passoFonteNome);
     const nomeInimigo = nomeBruto.slice(0, maxCharsEfetivo);
@@ -364,7 +447,7 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
 
     panel(ex0, ey0, ex1, ey1);
     txt(ex0 + 6, ey0 + 6, nomeInimigo, RED, passoFonteNome);
-    const rotCascoAlvo = `CASCO ${hpInimigoAtual}/${hpInimigoMax}`;
+    const rotCascoAlvo = `${ehEnHud ? 'HULL' : 'CASCO'} ${hpInimigoAtual}/${hpInimigoMax}`;
     txt(ex0 + 6, ey0 + 20, rotCascoAlvo, TXT);
 
     const xBarraAlvo = ex0 + 6 + rotCascoAlvo.length * 8 + 6;
@@ -392,41 +475,64 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
     const sonarAtivoAlvo = Boolean(viewModel.painelAlvo.sonarMilitarAtivo);
     const linhasInimigo = [];
     linhasInimigo.push(
-      barreiraAlvo > 0 ? `BOLHAS: ${barreiraAlvo} | ESQUIVA: ${esquivaAlvo}%` : `BOLHAS: 0 | ESQUIVA: ${esquivaAlvo}%`
+      ehEnHud
+        ? `BUBBLES: ${barreiraAlvo > 0 ? barreiraAlvo : 0} | EVADE: ${esquivaAlvo}%`
+        : (barreiraAlvo > 0 ? `BOLHAS: ${barreiraAlvo} | ESQUIVA: ${esquivaAlvo}%` : `BOLHAS: 0 | ESQUIVA: ${esquivaAlvo}%`)
     );
     if (ehChefeDraga) {
       if ((viewModel.painelAlvo.blindagemTermicaExternaPts ?? 0) > 0) {
-        linhasInimigo.push(`BLINDAGEM TÉRMICA: ${viewModel.painelAlvo.blindagemTermicaExternaPts} PTS`);
+        linhasInimigo.push(`${ehEnHud ? 'THERMAL DOME' : 'BLINDAGEM TÉRMICA'}: ${viewModel.painelAlvo.blindagemTermicaExternaPts} PTS`);
       }
       if ((viewModel.painelAlvo.alarmeFervuraAtivoSeg ?? 0) > 0) {
-        linhasInimigo.push(`ALARME FERVURA: ${viewModel.painelAlvo.alarmeFervuraAtivoSeg.toFixed(1)}s`);
+        linhasInimigo.push(`${ehEnHud ? 'BOIL ALARM' : 'ALARME FERVURA'}: ${viewModel.painelAlvo.alarmeFervuraAtivoSeg.toFixed(1)}s`);
       } else if ((viewModel.painelAlvo.fervuraAtivaSeg ?? 0) > 0) {
-        linhasInimigo.push(`FERVURA ATIVA: ${viewModel.painelAlvo.fervuraAtivaSeg.toFixed(1)}s`);
+        linhasInimigo.push(`${ehEnHud ? 'BOIL ACTIVE' : 'FERVURA ATIVA'}: ${viewModel.painelAlvo.fervuraAtivaSeg.toFixed(1)}s`);
       } else if (temSalaSonarHud) {
-        linhasInimigo.push(`SALAS: ${totalSalasHud} | ${sonarAtivoAlvo ? '[SONAR ATIVO]' : '[SONAR OFF]'}`);
+        linhasInimigo.push(
+          ehEnHud
+            ? `ROOMS: ${totalSalasHud} | ${sonarAtivoAlvo ? '[SONAR ON]' : '[SONAR OFF]'}`
+            : `SALAS: ${totalSalasHud} | ${sonarAtivoAlvo ? '[SONAR ATIVO]' : '[SONAR OFF]'}`
+        );
       } else {
-        linhasInimigo.push(`SALAS ATIVAS: ${totalSalasHud}`);
+        linhasInimigo.push(ehEnHud ? `ACTIVE ROOMS: ${totalSalasHud}` : `SALAS ATIVAS: ${totalSalasHud}`);
       }
     } else if (ehMonstroAlvo) {
       const ganglio = viewModel.painelAlvo.salasInspecionadas.find((s) => /GANGLIO/i.test(s.nomeSala));
       const intG = ganglio?.integridade ?? 3;
       const maxG = ganglio?.integridadeMax ?? 3;
-      linhasInimigo.push([`GÂNGLIO: ${intG}/${maxG}`, intG]);
-      const linArmaM =
-        idArqHud === 'MONSTRO_2_ENGUIA' ? 'VOLT → MASTRO | CAUDA 8s' :
-        idArqHud === 'MONSTRO_3_CARANGUEJO' ? 'PINÇA → MASTRO | GARRA 8s' :
-        idArqHud === 'MONSTRO_4_HIDRA' ? 'ESPOROS → MASTRO | RAIZ 8s' :
-        'BICO → MASTRO | TENT. 8s';
+      linhasInimigo.push([`${ehEnHud ? 'GANGLION' : 'GÂNGLIO'}: ${intG}/${maxG}`, intG]);
+      const linArmaM = ehEnHud
+        ? (idArqHud === 'MONSTRO_2_ENGUIA' ? 'VOLT -> MAST | TAIL 8s' :
+           idArqHud === 'MONSTRO_3_CARANGUEJO' ? 'CLAW -> MAST | GRIP 8s' :
+           idArqHud === 'MONSTRO_4_HIDRA' ? 'SPORES -> MAST | ROOT 8s' :
+           'BEAK -> MAST | TENT. 8s')
+        : (idArqHud === 'MONSTRO_2_ENGUIA' ? 'VOLT → MASTRO | CAUDA 8s' :
+           idArqHud === 'MONSTRO_3_CARANGUEJO' ? 'PINÇA → MASTRO | GARRA 8s' :
+           idArqHud === 'MONSTRO_4_HIDRA' ? 'ESPOROS → MASTRO | RAIZ 8s' :
+           'BICO → MASTRO | TENT. 8s');
       linhasInimigo.push(linArmaM);
     } else {
-      const linArmaB = temSalaSonarHud
-        ? `${totalSalasHud} SALAS | ${sonarAtivoAlvo ? '[SONAR ATIVO]' : '[SONAR OFF]'}`
-        : idArqHud === 'BARCO_3_ARRASTAO'
-          ? `${totalSalasHud} SALAS | ESCUDO + TORPEDO`
-          : `${totalSalasHud} SALAS | TORRETA + TORPEDO`;
+      const linArmaB = ehEnHud
+        ? (temSalaSonarHud
+            ? `${totalSalasHud} ROOMS | ${sonarAtivoAlvo ? '[SONAR ON]' : '[SONAR OFF]'}`
+            : idArqHud === 'BARCO_3_ARRASTAO'
+              ? `${totalSalasHud} ROOMS | SHIELD + TORPEDO`
+              : `${totalSalasHud} ROOMS | TURRET + TORPEDO`)
+        : (temSalaSonarHud
+            ? `${totalSalasHud} SALAS | ${sonarAtivoAlvo ? '[SONAR ATIVO]' : '[SONAR OFF]'}`
+            : idArqHud === 'BARCO_3_ARRASTAO'
+              ? `${totalSalasHud} SALAS | ESCUDO + TORPEDO`
+              : `${totalSalasHud} SALAS | TORRETA + TORPEDO`);
       linhasInimigo.push(linArmaB);
+      if (temArmasInimHud) {
+        const rotArmasInim = armasInimHud
+          .map((a) => String(a.nome ?? a.id ?? '').replace(/^\d+\.\s*/, '').toUpperCase().slice(0, 15))
+          .join(' + ');
+        linhasInimigo.push(`${ehEnHud ? 'WPN' : 'ARM'}: ${rotArmasInim}`);
+      }
     }
 
+    const maxCharsLinInim = Math.floor((ex1 - ex0 - 12) / 6);
     let lyInimigo = ehChefeDraga ? ey0 + 32 : ey0 + 35;
     for (const lin of linhasInimigo) {
       if (lyInimigo + 8 > ey1 - 2) break;
@@ -441,10 +547,36 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
         }
       } else {
         const strLin = String(lin);
-        const corLin = strLin.includes('[SONAR ATIVO]') ? CYAN : strLin.includes('[SONAR OFF]') ? DIM : AMBER;
-        txt(ex0 + 6, lyInimigo, strLin.slice(0, maxCharsNome), corLin);
+        const ehLinArmasMod = strLin.startsWith('ARM:') || strLin.startsWith('WPN:');
+        const corLin = ehLinArmasMod
+          ? YELLOW
+          : (strLin.includes('[SONAR ATIVO]') || strLin.includes('[SONAR ON]'))
+            ? CYAN
+            : strLin.includes('[SONAR OFF]')
+              ? DIM
+              : AMBER;
+        if (ehLinArmasMod) {
+          txt(ex0 + 6, lyInimigo + 1, strLin.slice(0, maxCharsLinInim), corLin, 6);
+        } else {
+          txt(ex0 + 6, lyInimigo, strLin.slice(0, maxCharsNome), corLin);
+        }
       }
       lyInimigo += 12;
+    }
+
+    const ofRend = viewModel.painelAlvo.ofertaRendicaoAtiva;
+    if (ofRend && !ehChefeDraga) {
+      const hbRend = hitboxes.find((h) => h.idHitbox === 'BTN_ACEITAR_RENDICAO_INIMIGA');
+      const rx0 = hbRend ? hbRend.x : 716;
+      const ry0 = hbRend ? hbRend.y : (temArmasInimHud ? 148 : 136);
+      const rx1 = hbRend ? hbRend.x + hbRend.largura - 1 : 955;
+      const ry1 = hbRend ? hbRend.y + hbRend.altura - 1 : ry0 + 19;
+      const hovRend = idHoverAtivo === 'BTN_ACEITAR_RENDICAO_INIMIGA';
+      chanfradoBezel(rx0, ry0, rx1, ry1, [12, 42, 28, 246], hovRend ? YELLOW : GREEN, 2, TXT);
+      const rotRend = ehEnHud
+        ? `[R] SURRENDER (+${ofRend.sucata}S +${ofRend.combustivel}F +${ofRend.municao}A)`
+        : `[R] RENDIÇÃO (+${ofRend.sucata}S +${ofRend.combustivel}C +${ofRend.municao}M)`;
+      txt(rx0 + 6, ry0 + 6, rotRend.slice(0, 38), hovRend ? YELLOW : GREEN, 6);
     }
   }
 
@@ -453,7 +585,7 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
   if (pausaTaticaAtiva) {
     const pxPausa = ehChefeDraga ? 376 : 446;
     chanfradoBezel(pxPausa, 43, pxPausa + 238, 59, [8, 22, 30, 244], YELLOW, 3, TXT);
-    txt(pxPausa + 10, 48, 'PAUSA TÁTICA — ORDENS EM FILA', YELLOW, 7);
+    txt(pxPausa + 10, 48, ehEnHud ? 'TACTICAL PAUSE — QUEUE ORDERS' : 'PAUSA TÁTICA — ORDENS EM FILA', YELLOW, 7);
     fillRect(152, 41, 158, 43, YELLOW);
     fillRect(152, 41, 154, 47, YELLOW);
     fillRect(951, 41, 957, 43, YELLOW);
@@ -472,7 +604,7 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
   const slotArmaSel = Number.isInteger(opcoes.slotArmaSelecionado) ? opcoes.slotArmaSelecionado : 0;
   const tripSelId = opcoes.tripulanteSelecionadoId ?? null;
 
-  panel(0, y0, 198, H - 1, 'CORAÇÃO BIO-ELÉTRICO');
+  panel(0, y0, 198, H - 1, ehEnHud ? 'BIO-ELECTRIC HEART' : 'CORAÇÃO BIO-ELÉTRICO');
   const pulsoSistole = Math.sin(tempoSeg * 5.2);
   const dyHeart = pulsoSistole > 0.65 ? -1 : 0;
   heartOrgan(10, y0 + 30 + dyHeart);
@@ -498,9 +630,9 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       desenharTuboEnergiaHiBit(50 + col * passoB, by0, 50 + col * passoB + largB - 1, by0 + 19, i < livres);
     }
   }
-  txt(50, y0 + 82, `${livres}/${energiaTotal} LIVRES`, TXT);
+  txt(50, y0 + 82, `${livres}/${energiaTotal} ${ehEnHud ? 'FREE' : 'LIVRES'}`, TXT);
 
-  panel(200, y0, 495, H - 1, 'SISTEMAS');
+  panel(200, y0, 495, H - 1, ehEnHud ? 'SYSTEMS' : 'SISTEMAS');
   const hbSistemas = hitboxes.filter((h) => h.tipo === 'SISTEMA_RODAPE');
   (viewModel.caixaSistemas ?? []).forEach((sys, i) => {
     const hb = hbSistemas[i];
@@ -526,11 +658,14 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       2,
       hov ? TXT : [42, 68, 86, 255]
     );
-    txt(hb.x + 5, hb.y + 4 + dyP, String(sys.sigla).slice(0, 3), hov ? YELLOW : brqReflexo ? GREEN : bloqueado ? DIM : TXT, 7);
-    desenharIconeSis12(String(sys.sigla).slice(0, 3), hb.x + 10, hb.y + 14 + dyP, bloqueado);
+    const siglaPt = String(sys.sigla).slice(0, 3);
+    const mapaSiglaSisEn = { ESC: 'SHD', SIF: 'SIP', BRQ: 'GIL', ART: 'WPN', CTX: 'CTX', MST: 'MST', TUB: 'BRD', TNT: 'CLK' };
+    const siglaExib = ehEnHud ? (mapaSiglaSisEn[siglaPt] ?? siglaPt) : siglaPt;
+    txt(hb.x + 5, hb.y + 4 + dyP, siglaExib, hov ? YELLOW : brqReflexo ? GREEN : bloqueado ? DIM : TXT, 7);
+    desenharIconeSis12(siglaPt, hb.x + 10, hb.y + 14 + dyP, bloqueado);
     if (bloqueado) {
       lock(hb.x + 12, hb.y + 28 + dyP, DIM);
-      txt(hb.x + 5, hb.y + 66 + dyP, 'BLQ', DIM, 7);
+      txt(hb.x + 5, hb.y + 66 + dyP, ehEnHud ? 'LCK' : 'BLQ', DIM, 7);
     } else {
       const tot = Math.min(8, Math.max(0, Number(sys.barrasNivelMax ?? 0)));
       const on = Math.max(0, Number(sys.barrasEnergiaAlocada ?? 0));
@@ -548,7 +683,7 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
     }
   });
 
-  panel(497, y0, 735, H - 1, 'ARMAS');
+  panel(497, y0, 735, H - 1, ehEnHud ? 'WEAPONS' : 'ARMAS');
   const modoSalvaGlobal = String(viewModel.modoSalvaGlobal ?? 'AUTOMATICO');
   const ocupadosArmasHud = (viewModel.caixaArmas ?? []).filter((s) => s.ocupado);
   const algumaSlotManHud = ocupadosArmasHud.some((s) => s.modoDisparo === 'MANUAL');
@@ -567,7 +702,7 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       hovMd ? YELLOW : ehMan ? AMBER : ehMistoHud ? CYAN : GREEN,
       2
     );
-    const rotBtnModo = ehMan ? '[A] MANUAL' : ehMistoHud ? '[A] MISTO' : '[A] AUTO';
+    const rotBtnModo = ehMan ? '[A] MANUAL' : ehMistoHud ? (ehEnHud ? '[A] MIXED' : '[A] MISTO') : '[A] AUTO';
     txt(hbModoDisp.x + 4, hbModoDisp.y + 4, rotBtnModo, hovMd ? YELLOW : ehMan ? YELLOW : ehMistoHud ? CYAN : GREEN, 6);
   }
   const hbSalva = hitboxes.find((h) => h.idHitbox === 'BTN_DISPARAR_SALVA');
@@ -589,7 +724,7 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       hovSv ? YELLOW : algumaPronta ? RED : RIM,
       2
     );
-    txt(hbSalva.x + 5, hbSalva.y + 4, '[X] SALVA!', hovSv || algumaPronta ? YELLOW : DIM, 6);
+    txt(hbSalva.x + 5, hbSalva.y + 4, ehEnHud ? `[${tkSalva}] VOLLEY!` : `[${tkSalva}] SALVA!`, hovSv || algumaPronta ? YELLOW : DIM, 6);
   }
   const hbArmas = hitboxes.filter((h) => h.tipo === 'SLOT_ARMA');
   (viewModel.caixaArmas ?? []).forEach((slot, i) => {
@@ -616,13 +751,15 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       2,
       hov || sel ? TXT : [42, 68, 86, 255]
     );
-    txt(hb.x + 3, hb.y + 4 + dyP, `[${i + 1}]`, hov || sel ? YELLOW : temAlvo && armaLigada ? CYAN : DIM, 7);
+    const tkSlotArma = rotuloTeclaCurtaHud(atalhosHud?.[`ARMA_SLOT_${i + 1}`], String(i + 1));
+    txt(hb.x + 3, hb.y + 4 + dyP, `[${tkSlotArma}]`, hov || sel ? YELLOW : temAlvo && armaLigada ? CYAN : DIM, 7);
     if (!slot.ocupado) {
-      txt(hb.x + 10, hb.y + 36 + dyP, 'VAZIO', DIM, 7);
+      txt(hb.x + 10, hb.y + 36 + dyP, ehEnHud ? 'EMPTY' : 'VAZIO', DIM, 7);
       return;
     }
     txt(hb.x + hb.largura - 21, hb.y + 4 + dyP, ehSlotMan ? 'MAN' : 'AUT', ehSlotMan ? AMBER : armaLigada ? GREEN : DIM, 6);
-    const nomeArma = (NOMES_ARMAS[slot.chassiId] ?? String(slot.chassiId).slice(0, 7)).slice(0, 7);
+    const siglaHud = obterSiglaHudArma(slot.chassiId, viewModel.configuracoesSteam?.idioma);
+    const nomeArma = siglaHud ?? NOMES_ARMAS[slot.chassiId] ?? String(slot.chassiId);
     txt(hb.x + 3, hb.y + 16 + dyP, nomeArma, sel ? CYAN : armaLigada ? TXT : DIM, 7);
 
     for (let e = 0; e < Math.min(4, eneCusto); e += 1) {
@@ -637,28 +774,42 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
     chanfradoBezel(hb.x + 3, hb.y + 38 + dyP, hb.x + hb.largura - 4, hb.y + 43 + dyP, [20, 30, 38, 255], BORDER, 1);
     const largRec = Math.round((hb.largura - 9) * fracRec);
     if (largRec > 0) {
-      const corPronta = fracRec >= 1 ? (Math.sin(tempoSeg * 8) > 0 ? YELLOW : GREEN) : CYAN;
+      const corPronta = fracRec >= 1 || Number(slot.cargasEstocadas ?? 0) > 0 ? (Math.sin(tempoSeg * 8) > 0 ? YELLOW : GREEN) : CYAN;
       fillRect(hb.x + 4, hb.y + 39 + dyP, hb.x + 3 + largRec, hb.y + 42 + dyP, corPronta);
     }
 
     const enxertados = slot.orgaosEnxertados ?? [];
-    for (let s = 0; s < Math.min(3, Number(slot.soquetesMax ?? 0)); s += 1) {
+    const nSoquetes = Math.min(3, Number(slot.soquetesMax ?? 0));
+    for (let s = 0; s < nSoquetes; s += 1) {
       socket(hb.x + 4 + s * 11, hb.y + 49 + dyP, Boolean(enxertados[s]));
+    }
+    const cargasMaxSlot = Number(slot.cargasMaximas ?? 0);
+    const cargasEstSlot = Math.max(0, Number(slot.cargasEstocadas ?? 0));
+    const mecSlot = String(slot.mecanicaEspecial ?? '');
+    if (cargasMaxSlot > 1) {
+      const xCargasIni = hb.x + hb.largura - 4 - cargasMaxSlot * 6;
+      for (let cg = 0; cg < Math.min(4, cargasMaxSlot); cg += 1) {
+        const cheia = cg < cargasEstSlot;
+        fillRect(xCargasIni + cg * 6, hb.y + 50 + dyP, xCargasIni + cg * 6 + 4, hb.y + 55 + dyP, cheia ? YELLOW : PIP_OFF);
+      }
+    } else if (mecSlot.startsWith('CADEIA')) {
+      const estCad = Math.max(0, Number(slot.estagioCadeiaAtual ?? 0));
+      txt(hb.x + hb.largura - 19, hb.y + 49 + dyP, `C+${estCad}`, estCad > 0 ? YELLOW : CYAN, 6);
     }
     const emHoldManual = armaLigada && ehSlotMan && fracRec >= 1;
     const alvoTxt =
       Array.isArray(slot.trincaSalasBeam) && slot.trincaSalasBeam.length >= 2
-        ? `FEIXE${slot.trincaSalasBeam.length}`
-        : `ALV:${slot.salaAlvoId}`;
+        ? `${ehEnHud ? 'BEAM' : 'FEIXE'}${slot.trincaSalasBeam.length}`
+        : `${ehEnHud ? 'TGT' : 'ALV'}:${slot.salaAlvoId}`;
     const rotAlvo = !armaLigada
-      ? 'SEM ENE'
+      ? (ehEnHud ? 'NO PWR' : 'SEM ENE')
       : emHoldManual
-        ? 'RETIDA!'
+        ? (ehEnHud ? 'HOLD!' : 'RETIDA!')
         : temAlvo
           ? alvoTxt
           : fracRec >= 1
-            ? 'PRONTA!'
-            : 'S/MIRA';
+            ? (ehEnHud ? 'READY!' : 'PRONTA!')
+            : (ehEnHud ? 'NO AIM' : 'S/MIRA');
     txt(
       hb.x + 3,
       hb.y + 66 + dyP,
@@ -668,12 +819,13 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
     );
   });
 
-  panel(737, y0, W - 1, H - 1, 'TRIPULAÇÃO');
+  panel(737, y0, W - 1, H - 1, ehEnHud ? 'CREW' : 'TRIPULAÇÃO');
   const hbCards = hitboxes.filter((h) => h.tipo === 'CARD_TRIPULANTE');
+  const idsSelEsquadraoHud = Array.isArray(opcoes.tripulantesSelecionadosIds) ? opcoes.tripulantesSelecionadosIds : [];
   hbCards.forEach((hb) => {
-    const { tripulanteId, especie, hpAtual, hpMax, inflado } = hb.metadados;
+    const { tripulanteId, especie, hpAtual, hpMax, inflado, nivelMaestria } = hb.metadados;
     const hov = idHoverAtivo === hb.idHitbox;
-    const sel = tripSelId && tripSelId === tripulanteId;
+    const sel = Boolean((tripSelId && tripSelId === tripulanteId) || idsSelEsquadraoHud.includes(tripulanteId));
     const dyP = idPressAtivo === hb.idHitbox ? 1 : 0;
     chanfradoBezel(
       hb.x,
@@ -694,6 +846,20 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       const largRet = Math.max(12, hb.largura - 6);
       desenharRetratoRecortadoHiBit(ret, hb.x + 3, hb.y + 4 + dyP, largRet, 45);
     }
+    if (viewModel.edicaoComercialSteam && Number(nivelMaestria ?? 0) > 0) {
+      const nvCard = Math.min(2, Number(nivelMaestria));
+      for (let st = 0; st < nvCard; st += 1) {
+        const pxSt = hb.x + hb.largura - 7 - st * 7;
+        const pySt = hb.y + 8 + dyP;
+        fillRect(pxSt - 2, pySt - 2, pxSt + 2, pySt + 2, [10, 14, 20, 242]);
+        putPx(pxSt, pySt - 2, YELLOW);
+        hLine(pxSt - 2, pxSt + 2, pySt - 1, [255, 214, 52, 255], 1);
+        hLine(pxSt - 1, pxSt + 1, pySt, [255, 232, 112, 255], 1);
+        putPx(pxSt, pySt - 1, TXT);
+        putPx(pxSt - 1, pySt + 1, AMBER);
+        putPx(pxSt + 1, pySt + 1, AMBER);
+      }
+    }
     const fracHp = Math.max(0, Math.min(1, Number(hpAtual) / Math.max(1, Number(hpMax))));
     const corHp = fracHp < 0.5 ? RED : fracHp < 1 ? AMBER : GREEN;
     chanfradoBezel(hb.x + 2, hb.y + 54 + dyP, hb.x + hb.largura - 3, hb.y + 59 + dyP, PIP_OFF, null, 1);
@@ -703,10 +869,13 @@ export function renderizarHudSuperiorTermometroERodape(ctx) {
       hLine(hb.x + 3, hb.x + 1 + largHp, hb.y + 54 + dyP, [156, 255, 178, 255], 1);
     }
     const maxCh = Math.max(3, Math.floor((hb.largura - 4) / 7));
-    const siglaEsp = SIGLAS_ESP[especie] ?? String(especie).slice(0, 3);
+    const mapaEspEn = { POLVO: 'OCT', ARRAIA: 'RAY', BAIACU: 'PUF', CARANGUEJO: 'CRB' };
+    const siglaEsp = ehEnHud
+      ? (mapaEspEn[especie] ?? String(especie).slice(0, 3))
+      : (SIGLAS_ESP[especie] ?? String(especie).slice(0, 3));
     if (hb.metadados.localizacao === 'BORDO_INIMIGO') {
       chanfradoBezel(hb.x + 3, hb.y + 4 + dyP, hb.x + hb.largura - 4, hb.y + 14 + dyP, [54, 14, 20, 240], AMBER, 1);
-      txt(hb.x + 5, hb.y + 6 + dyP, `BORDO S${hb.metadados.salaInimigaId ?? 1}`.slice(0, Math.floor((hb.largura - 8) / 6)), YELLOW, 6);
+      txt(hb.x + 5, hb.y + 6 + dyP, `${ehEnHud ? 'BOARD S' : 'BORDO S'}${hb.metadados.salaInimigaId ?? 1}`.slice(0, Math.floor((hb.largura - 8) / 6)), YELLOW, 6);
     }
     const rotCard = hb.largura >= 52 ? `${siglaEsp} ${hpAtual}` : String(hpAtual);
     txt(hb.x + 3, hb.y + 66 + dyP, rotCard.slice(0, maxCh), sel ? CYAN : corHp, 7);
@@ -742,7 +911,7 @@ export function renderizarTooltipContextualEAvisoToast(ctx) {
   // Banner Toast de Aviso / Rejeição Tática (ex.: Trava Hidrostática, Tubo sem Energia, Saldo Insuficiente, Confirmação)
   const avisoCamp = typeof viewModel.ultimoAvisoCampanha === 'string' ? viewModel.ultimoAvisoCampanha : '';
   const avisoCriticoCamp =
-    /^(CARCAÇA BLOQUEADA|CLIQUE NOVAMENTE|EXPEDIÇÃO ABANDONADA|FALHA|REQUISITO|SEM SALDO|PORÃO LOTADO)/i.test(avisoCamp)
+    /^(CARCAÇA BLOQUEADA|VARIANTE|LAYOUT|CLIQUE NOVAMENTE|CLICK AGAIN|EXPEDIÇÃO ABANDONADA|RUN ABANDONED|FALHA|FAILED|REQUISITO|LOCKED|SEM SALDO|INSUFFICIENT|PORÃO LOTADO|HOLD FULL|IMPLANTE PASSIVO|PASSIVE IMPLANT|SEM MUNIÇÃO|NO AMMO)/i.test(avisoCamp)
       ? avisoCamp
       : '';
   const textoToastCru = String(opcoes.avisoToastTexto ?? '').trim() || avisoCriticoCamp;
@@ -779,111 +948,214 @@ export function renderizarTooltipContextualEAvisoToast(ctx) {
     return;
   }
 
+  const ehEnTip = viewModel.configuracoesSteam?.idioma === 'en-US';
+  const atalhosTip = viewModel.configuracoesSteam?.atalhosTeclado ?? null;
+  const tkTipM = rotuloTeclaCurtaHud(atalhosTip?.MERGULHO_TATICO, 'M');
+  const tkTipD = rotuloTeclaCurtaHud(atalhosTip?.DRENAR_VALVULAS, 'D');
   let lin1 = hbHov.idHitbox.replace(/_/g, ' ');
-  let lin2 = 'CLIQUE PARA INTERAGIR';
+  let lin2 = ehEnTip ? 'CLICK TO INTERACT' : 'CLIQUE PARA INTERAGIR';
   if (hbHov.tipo === 'CAMARA_BIONAVE') {
     const cam = (viewModel.camaras ?? []).find((c) => c.id === hbHov.metadados.camaraId);
     const h2oPct = Math.round(Number(cam?.nivelAguaPct ?? cam?.aguaPct ?? 0));
     const o2Pct = Math.round(Number(cam?.oxigenioPct ?? 100));
-    lin1 = `CÂMARA ${hbHov.metadados.camaraId} — H2O ${h2oPct}% | O2 ${o2Pct}%`;
-    lin2 = '[ESQ] MOVER TRIP. | [SHIFT+ESQ] BULBO';
+    lin1 = ehEnTip
+      ? `CHAMBER ${hbHov.metadados.camaraId} — H2O ${h2oPct}% | O2 ${o2Pct}%`
+      : `CÂMARA ${hbHov.metadados.camaraId} — H2O ${h2oPct}% | O2 ${o2Pct}%`;
+    lin2 = ehEnTip ? '[LMB] MOVE CREW | [SHIFT+LMB] BULB' : '[ESQ] MOVER TRIP. | [SHIFT+ESQ] BULBO';
   } else if (hbHov.tipo === 'VALVULA_EXTERNA') {
     const stValv = hbHov.metadados.travadoTouchdown || ehTouchdown
-      ? 'TRAVADA'
+      ? (ehEnTip ? 'LOCKED' : 'TRAVADA')
       : hbHov.metadados.abertaAtual
-        ? 'ABERTA'
-        : 'ESTANQUE';
-    lin1 = `ESCOTILHA CÂM. ${hbHov.metadados.camaraId} [${stValv}]`;
-    lin2 = ehTouchdown ? 'TRAVA HIDROSTÁTICA — USE [M] EMERGIR' : '[ESQ] ALTERNAR DRENO HIDRÁULICO';
+        ? (ehEnTip ? 'OPEN' : 'ABERTA')
+        : (ehEnTip ? 'SEALED' : 'ESTANQUE');
+    lin1 = ehEnTip
+      ? `HATCH CHM. ${hbHov.metadados.camaraId} [${stValv}]`
+      : `ESCOTILHA CÂM. ${hbHov.metadados.camaraId} [${stValv}]`;
+    lin2 = ehTouchdown
+      ? (ehEnTip ? `HYDROSTATIC LOCK — PRESS [${tkTipM}] SURFACE` : `TRAVA HIDROSTÁTICA — USE [${tkTipM}] EMERGIR`)
+      : (ehEnTip ? '[LMB] TOGGLE HYDRAULIC DRAIN' : '[ESQ] ALTERNAR DRENO HIDRÁULICO');
   } else if (hbHov.idHitbox === 'BTN_DRENAR_SEGURO') {
-    lin1 = '[D] DRENO SEGURO (CORTA 62.5kg)';
-    lin2 = ehTouchdown ? 'TRAVA HIDROSTÁTICA — USE [M] EMERGIR' : 'DESCARREGA LASTRO SEM CAVITAÇÃO';
+    lin1 = ehEnTip ? `[${tkTipD}] SAFE DRAIN (STOPS AT 62.5kg)` : `[${tkTipD}] DRENO SEGURO (CORTA 62.5kg)`;
+    lin2 = ehTouchdown
+      ? (ehEnTip ? `HYDROSTATIC LOCK — PRESS [${tkTipM}] SURFACE` : `TRAVA HIDROSTÁTICA — USE [${tkTipM}] EMERGIR`)
+      : (ehEnTip ? 'DUMPS BALLAST WITHOUT CAVITATION' : 'DESCARREGA LASTRO SEM CAVITAÇÃO');
   } else if (hbHov.idHitbox === 'BTN_DRENAR_TUDO') {
-    lin1 = '[V] DRENAR TUDO (ESVAZIA 100%)';
-    lin2 = ehTouchdown ? 'TRAVA HIDROSTÁTICA — USE [M] EMERGIR' : 'RISCO: <62.5kg CAUSA CAVITAÇÃO!';
+    lin1 = ehEnTip ? '[V] PURGE ALL (EMPTIES 100%)' : '[V] DRENAR TUDO (ESVAZIA 100%)';
+    lin2 = ehTouchdown
+      ? (ehEnTip ? `HYDROSTATIC LOCK — PRESS [${tkTipM}] SURFACE` : `TRAVA HIDROSTÁTICA — USE [${tkTipM}] EMERGIR`)
+      : (ehEnTip ? 'WARNING: <62.5kg CAUSES CAVITATION!' : 'RISCO: <62.5kg CAUSA CAVITAÇÃO!');
   } else if (hbHov.idHitbox === 'BTN_MERGULHO_TATICO') {
-    lin1 = ehTouchdown ? '[M] EMERGIR AO FOIL (SPOOL-UP)' : '[M] MERGULHO TÁTICO AO MAR';
-    lin2 = ehTouchdown ? 'RECUPERA ESQUIVA 40% E EVADE!' : 'ESQUIVA 0% | RECARGA ARMA -25%';
+    const esqFoilAlvo = Math.max(25, Number(viewModel.barraSuperior?.esquivaEfetivaPct || 25));
+    lin1 = ehTouchdown
+      ? (ehEnTip ? `[${tkTipM}] SURFACE TO FOIL (SPOOL-UP)` : `[${tkTipM}] EMERGIR AO FOIL (SPOOL-UP)`)
+      : (ehEnTip ? `[${tkTipM}] TACTICAL DIVE TO SEA` : `[${tkTipM}] MERGULHO TÁTICO AO MAR`);
+    lin2 = ehTouchdown
+      ? (ehEnTip ? `RESTORES FOIL EVASION (${esqFoilAlvo}%)!` : `RECUPERA ESQUIVA NO FOIL (${esqFoilAlvo}%)!`)
+      : (ehEnTip ? '0% EVASION | -25% WEAPON RELOAD' : 'ESQUIVA 0% | RECARGA ARMA -25%');
   } else if (hbHov.tipo === 'SISTEMA_RODAPE') {
-    const idSysH = String(hbHov.metadados.idSistema ?? hbHov.metadados.sistemaId ?? '').replace(/_/g, ' ');
-    lin1 = `SISTEMA ${hbHov.metadados.sigla} (${idSysH})`;
-    lin2 = '[ESQ] +1 ENERGIA | [DIR] -1 ENERGIA';
+    const idCruSys = String(hbHov.metadados.idSistema ?? hbHov.metadados.sistemaId ?? '');
+    const mapSysEn = {
+      GLANDULA_BARREIRA: 'SHD — BUBBLE SHIELD',
+      SIFAO_PROPULSAO: 'SIP — SIPHON THRUST',
+      BOMBA_BRANQUIAL: 'GIL — GILL PUMP',
+      ARTILHARIA_DORSAL: 'WPN — DORSAL WEAPONS',
+      CORTEX_NAVEGACAO: 'CTX — SONAR CORTEX',
+      MASTRO_FOIL: 'MST — HYDROFOIL MAST',
+      TUBO_PRESSURIZADO: 'BRD — BOARDING LOCK',
+      GLANDULA_TINTA_FURTIVA: 'CLK — CLOAKING INK',
+    };
+    const mapSysPt = {
+      GLANDULA_BARREIRA: 'ESC — GLÂNDULA DE BARREIRA',
+      SIFAO_PROPULSAO: 'SIF — SIFÃO PROPULSOR',
+      BOMBA_BRANQUIAL: 'BRQ — BOMBA BRANQUIAL',
+      ARTILHARIA_DORSAL: 'ART — ARTILHARIA DORSAL',
+      CORTEX_NAVEGACAO: 'CTX — CÓRTEX DE SONAR',
+      MASTRO_FOIL: 'MST — MASTRO HIDROFÓLIO',
+      TUBO_PRESSURIZADO: 'TUB — ESCLUSA DE ABORDAGEM',
+      GLANDULA_TINTA_FURTIVA: 'TNT — TINTA FURTIVA',
+    };
+    lin1 = ehEnTip
+      ? `SYSTEM ${mapSysEn[idCruSys] ?? `${hbHov.metadados.sigla} (${idCruSys.replace(/_/g, ' ')})`}`
+      : `SISTEMA ${mapSysPt[idCruSys] ?? `${hbHov.metadados.sigla} (${idCruSys.replace(/_/g, ' ')})`}`;
+    lin2 = ehEnTip ? '[LMB] +1 POWER | [RMB] -1 POWER' : '[ESQ] +1 ENERGIA | [DIR] -1 ENERGIA';
   } else if (hbHov.tipo === 'SLOT_ARMA') {
+    const idxSlotTip = Number(hbHov.metadados.slotIndex ?? 0);
+    const slotVmTip = viewModel.caixaArmas?.[idxSlotTip] ?? null;
+    const tkSlotTip = rotuloTeclaCurtaHud(atalhosTip?.[`ARMA_SLOT_${idxSlotTip + 1}`], String(idxSlotTip + 1));
     const chId = hbHov.metadados.chassiId;
-    const nomeCh = chId ? (NOMES_ARMAS[chId] ?? String(chId).replace(/_/g, ' ')) : 'SLOT VAZIO';
-    lin1 = `ARMA [${hbHov.metadados.slotIndex + 1}] — ${nomeCh}`;
-    lin2 = '[ESQ] SELECIONAR | [DIR] MODO MAN/AUT';
+    const siglaTip = chId ? obterSiglaHudArma(chId, viewModel.configuracoesSteam?.idioma) : null;
+    const nomeCh = chId
+      ? (ehEnTip ? (siglaTip ?? String(chId).replace(/_/g, ' ')) : (NOMES_ARMAS[chId] ?? siglaTip ?? String(chId).replace(/_/g, ' ')))
+      : (ehEnTip ? 'EMPTY SLOT' : 'SLOT VAZIO');
+    const sufixoMecTip = Number(slotVmTip?.cargasMaximas ?? 0) > 1
+      ? (ehEnTip ? ` | CHG ${slotVmTip.cargasEstocadas ?? 0}/${slotVmTip.cargasMaximas}` : ` | CARGAS ${slotVmTip.cargasEstocadas ?? 0}/${slotVmTip.cargasMaximas}`)
+      : String(slotVmTip?.mecanicaEspecial ?? '').startsWith('CADEIA')
+        ? (ehEnTip ? ` | CHAIN +${slotVmTip.estagioCadeiaAtual ?? 0}` : ` | CADEIA +${slotVmTip.estagioCadeiaAtual ?? 0}`)
+        : '';
+    lin1 = ehEnTip ? `WEAPON [${tkSlotTip}] — ${nomeCh}${sufixoMecTip}` : `ARMA [${tkSlotTip}] — ${nomeCh}${sufixoMecTip}`;
+    lin2 = ehEnTip ? '[LMB] SELECT | [RMB] MAN/AUT MODE' : '[ESQ] SELECIONAR | [DIR] MODO MAN/AUT';
   } else if (hbHov.tipo === 'CARD_TRIPULANTE') {
-    lin1 = `${hbHov.metadados.especie} — HP ${hbHov.metadados.hpAtual}/${hbHov.metadados.hpMax}`;
+    const mapEspTipEn = { POLVO: 'OCTOPUS', ARRAIA: 'ELECTRIC RAY', BAIACU: 'SPINY PUFFER', CARANGUEJO: 'AMPHIB CRAB' };
+    const espNomeTip = ehEnTip ? (mapEspTipEn[hbHov.metadados.especie] ?? hbHov.metadados.especie) : hbHov.metadados.especie;
+    lin1 = `${espNomeTip} — HP ${hbHov.metadados.hpAtual}/${hbHov.metadados.hpMax}`;
     lin2 = hbHov.metadados.localizacao === 'BORDO_INIMIGO'
-      ? 'A BORDO! CLIQUE NUMA SALA INIMIGA P/ MOVER'
-      : '[P] BAIACU | [E] ENZIMA | [G] ABORDAR | [B] BRQ';
+      ? (ehEnTip ? 'BOARDING! CLICK ENEMY ROOM TO MOVE' : 'A BORDO! CLIQUE NUMA SALA INIMIGA P/ MOVER')
+      : (ehEnTip ? '[P] PUFF | [E] ENZYME | [G] BOARD | [B] GILL' : '[P] BAIACU | [E] ENZIMA | [G] ABORDAR | [B] BRQ');
   } else if (hbHov.tipo === 'SALA_ALVO') {
-    const nomeLimpoSala =
-      NOMES_SALAS[hbHov.metadados.nomeSala] ?? String(hbHov.metadados.nomeSala ?? '').replace(/_/g, ' ');
+    const mapSalaTipEn = {
+      CABINE_COMANDO: 'COMMAND BRIDGE',
+      PONTE_DE_COMANDO: 'COMMAND BRIDGE',
+      TORRETA_LEVE: 'LIGHT TURRET',
+      TORRETA_DUPLA: 'TWIN TURRET',
+      CONVES_DE_ARTILHARIA: 'GUN DECK',
+      GERADOR_ESCUDO: 'SHIELD GENERATOR',
+      GERADOR_DE_ESCUDO: 'SHIELD GENERATOR',
+      SONAR_MILITAR: 'MILITARY SONAR',
+      GUINDASTE_MAGNETICO: 'MAGNETIC CRANE',
+      TUBO_TORPEDO: 'TORPEDO TUBE',
+      PAIOL_DE_MUNICAO: 'AMMO MAGAZINE',
+      SALA_DE_MAQUINAS: 'ENGINE ROOM',
+      TENTACULOS: 'TENTACLES',
+      BICO_QUITINOSO: 'CHITIN BEAK',
+      SIFAO_MUSCULAR: 'SIPHON JET',
+      GANGLIO_CENTRAL: 'CORE GANGLION',
+      NUCLEO_COMANDO_DRAGA: 'DREDGE CMD CORE',
+      TORRE_ARTILHARIA_PESADA: 'HEAVY ARTILLERY',
+      BATERIA_MISSEIS_TERMICOS: 'THERMAL MISSILES',
+      CALDEIRA_FERVURA_GEOTERMICA: 'GEOTHERMAL BOILER',
+      BROCA_ABISSAL: 'ABYSSAL DRILL',
+      PROPULSAO_LAGARTA: 'CRAWLER DRIVE',
+      'PONTE DE COMANDO BLINDADA': 'ARMORED BRIDGE',
+      'TORRE DO CANHÃO DE ARPÃO TRIPLO': 'TRIPLE HARPOON',
+      'TORRE DO LANÇADOR DE MÍSSEIS TÉRMICOS': 'THERMAL MISSILES',
+      'TORRE DO GERADOR DE REDE MAGNÉTICA': 'MAGNETIC NET',
+      'GERADOR DE ESCUDO ACÚSTICO TRIPLO': 'TRIPLE ACOUSTIC SHIELD',
+      'CASA DE MÁQUINAS E BOMBAS DE PORÃO': 'ENGINE & BILGE PUMPS',
+      'PONTE DE COMANDO CENTRAL': 'CENTRAL BRIDGE',
+      'BATERIA DE CANHÃO DE ARPÃO TRIPLO': 'TRIPLE HARPOON',
+      'CORTADOR INDUSTRIAL A PLASMA PESADO': 'HEAVY PLASMA CUTTER',
+      'HANGAR DE CONTROLE DE DRONES E SONAR MILITAR': 'DRONES & SONAR BAY',
+      'REATOR HIDRÁULICO E BOMBAS SUBMERSAS': 'HYDRAULIC REACTOR',
+      'NÚCLEO DE COMANDO AUTÔNOMO': 'AUTONOMOUS CORE',
+      'BATERIA DE ARPÃO TRIPLO DE ALTA PRESSÃO': 'HIGH-PRESSURE HARPOON',
+      'LANÇADOR DE MÍSSEIS TÉRMICOS PESADOS': 'HEAVY THERMAL MISSILES',
+      'GERADOR DE ESCUDO QUÁDRUPLO E BLINDAGEM TÉRMICA': 'QUAD THERMAL SHIELD',
+      'BROCA GEOTÉRMICA E PROPULSÃO ABISSAL': 'GEOTHERMAL DRILL',
+    };
+    const chaveSalaTip = String(hbHov.metadados.nomeSala ?? '');
+    const nomeLimpoSala = ehEnTip
+      ? (mapSalaTipEn[chaveSalaTip.toUpperCase()] ?? chaveSalaTip.replace(/_/g, ' '))
+      : (NOMES_SALAS[hbHov.metadados.nomeSala] ?? chaveSalaTip.replace(/_/g, ' '));
     const intS = hbHov.metadados.integridade ?? 1;
     const maxS = hbHov.metadados.integridadeMax ?? intS;
-    lin1 = `ALVO: ${nomeLimpoSala} [INT ${intS}/${maxS}]`;
-    lin2 = '[ESQ] MIRAR / BEAM | [DIR] ALVO/MOVER BORDO';
+    lin1 = ehEnTip ? `TARGET: ${nomeLimpoSala} [INT ${intS}/${maxS}]` : `ALVO: ${nomeLimpoSala} [INT ${intS}/${maxS}]`;
+    lin2 = ehEnTip ? '[LMB] AIM / BEAM | [RMB] BOARD TARGET' : '[ESQ] MIRAR / BEAM | [DIR] ALVO/MOVER BORDO';
   } else if (hbHov.idHitbox === 'BTN_LANCAR_ABORDAGEM') {
     const resAb = viewModel.resumoAbordagem ?? {};
     const sAlvoAb = opcoes.salaAlvoAbordagemId ?? resAb.salaAlvoPadraoId ?? 1;
-    lin1 = `[G] CÁPSULA DE ABORDAGEM → SALA S${sAlvoAb}`;
-    lin2 = '[DIR] NUMA SALA INIMIGA MUDA ALVO DA CÁPSULA';
+    lin1 = ehEnTip ? `[G] BOARDING POD -> ROOM S${sAlvoAb}` : `[G] CÁPSULA DE ABORDAGEM → SALA S${sAlvoAb}`;
+    lin2 = ehEnTip ? '[RMB] ON ENEMY ROOM SETS POD TARGET' : '[DIR] NUMA SALA INIMIGA MUDA ALVO DA CÁPSULA';
   } else if (hbHov.idHitbox === 'BTN_MODO_DISPARO') {
-    lin1 = `[A] MODO DE SALVA: ${modoSalvaGlobal}`;
-    lin2 = 'ALTERNA DISPARO AUTOMÁTICO vs RETENÇÃO MANUAL';
+    const modoEn = modoSalvaGlobal === 'MANUAL' ? 'MANUAL' : 'AUTO';
+    lin1 = ehEnTip ? `[A] VOLLEY MODE: ${modoEn}` : `[A] MODO DE SALVA: ${modoSalvaGlobal}`;
+    lin2 = ehEnTip ? 'TOGGLES AUTO-FIRE vs MANUAL HOLD' : 'ALTERNA DISPARO AUTOMÁTICO vs RETENÇÃO MANUAL';
   } else if (hbHov.idHitbox === 'BTN_DISPARAR_SALVA') {
-    lin1 = '[X] DISPARAR SALVA SINCRONIZADA!';
-    lin2 = 'LIBERA TODAS AS ARMAS CARREGADAS SIMULTANEAMENTE';
+    lin1 = ehEnTip ? '[X] FIRE SYNCHRONIZED VOLLEY!' : '[X] DISPARAR SALVA SINCRONIZADA!';
+    lin2 = ehEnTip ? 'RELEASES ALL CHARGED MANUAL WEAPONS' : 'LIBERA TODAS AS ARMAS CARREGADAS SIMULTANEAMENTE';
   } else if (hbHov.idHitbox === 'BTN_ABRIR_OFICINA') {
-    lin1 = '[U] OFICINA BIO-MECÂNICA & PORÃO DE CARGA';
-    lin2 = '10 ÁRVORES DE UPGRADE, ARMAS DORSAIS E ÓRGÃOS';
+    lin1 = ehEnTip ? '[U] BIO-WORKSHOP & CARGO HOLD' : '[U] OFICINA BIO-MECÂNICA & PORÃO DE CARGA';
+    lin2 = ehEnTip ? '10 UPGRADE TREES, WEAPONS & ORGANS' : '10 ÁRVORES DE UPGRADE, ARMAS DORSAIS E ÓRGÃOS';
   } else if (hbHov.idHitbox === 'OFICINA_ABANDONAR_RUN') {
-    lin1 = 'ABANDONAR EXPEDIÇÃO ATUAL (2 ETAPAS)';
-    lin2 = 'ENCERRA A RUN E RETORNA AO HANGAR DE BIO-NAVES';
+    lin1 = ehEnTip ? 'ABANDON CURRENT RUN (2-STEP CONFIRM)' : 'ABANDONAR EXPEDIÇÃO ATUAL (2 ETAPAS)';
+    lin2 = ehEnTip ? 'ENDS EXPEDITION & RETURNS TO HANGAR' : 'ENCERRA A RUN E RETORNA AO HANGAR DE BIO-NAVES';
   } else if (hbHov.idHitbox === 'EVENTO_DESFECHO_CONFIRMAR') {
-    lin1 = '[ENTER] CONFIRMAR RELATÓRIO DO ENCONTRO';
-    lin2 = 'FECHA O DIÁRIO DE BORDO E RETOMA A CARTA ABISSAL';
+    lin1 = ehEnTip ? '[ENTER] CONFIRM ENCOUNTER LOG' : '[ENTER] CONFIRMAR RELATÓRIO DO ENCONTRO';
+    lin2 = ehEnTip ? 'CLOSES REPORT & RETURNS TO CHART' : 'FECHA O DIÁRIO DE BORDO E RETOMA A CARTA ABISSAL';
   } else if (hbHov.idHitbox === 'BTN_ALTERNAR_AUDIO') {
-    lin1 = viewModel.audioMutado ? 'ÁUDIO MARÍTIMO: SILENCIADO [K]' : 'ÁUDIO MARÍTIMO: SINTETIZADOR ATIVO [K]';
-    lin2 = '[ESQ] OU [K] ALTERNAR PAISAGEM + TRILHA + SFX';
+    lin1 = ehEnTip
+      ? (viewModel.audioMutado ? 'AUDIO: MUTED [K]' : 'AUDIO: HYDRO-SYNTH ACTIVE [K]')
+      : (viewModel.audioMutado ? 'ÁUDIO MARÍTIMO: SILENCIADO [K]' : 'ÁUDIO MARÍTIMO: SINTETIZADOR ATIVO [K]');
+    lin2 = ehEnTip ? '[LMB] OR [K] TOGGLE MUSIC + FOLEY SFX' : '[ESQ] OU [K] ALTERNAR PAISAGEM + TRILHA + SFX';
   } else if (hbHov.tipo === 'NO_MAPA') {
     const mN = hbHov.metadados ?? {};
-    const nomeBoiaTip = String(mN.noDestinoId ?? '').replace(/^NO_/, 'BOIA ').replace(/_/g, '-');
-    const tipoNoTip = String(mN.tipoNo ?? mN.tipo ?? 'ROTA').replace(/_/g, ' ');
+    const nomeBoiaTip = String(mN.noDestinoId ?? '')
+      .replace(/^NO_/, ehEnTip ? 'BUOY ' : 'BOIA ')
+      .replace(/_/g, '-');
+    const mapTipoNoEn = { ENTRADA: 'ENTRY', COMBATE: 'COMBAT', LOJA: 'SHOP', SOS: 'SOS', EXPLORACAO: 'EXPLORE', PERIGO: 'HAZARD', SAIDA: 'EXIT' };
+    const brutoTipoTip = String(mN.tipoNo ?? mN.tipo ?? 'ROTA');
+    const tipoNoTip = ehEnTip ? (mapTipoNoEn[brutoTipoTip] ?? brutoTipoTip.replace(/_/g, ' ')) : brutoTipoTip.replace(/_/g, ' ');
     const tagEstado = mN.engolidoCorporacao
-      ? ' — FROTA CORP (0 SAQUE)'
+      ? (ehEnTip ? ' — CORP FLEET (0 LOOT)' : ' — FROTA CORP (0 SAQUE)')
       : mN.sosExpirado
-        ? ' — ZONA MORTA (-50% SUC)'
+        ? (ehEnTip ? ' — DEAD ZONE (-50% SCR)' : ' — ZONA MORTA (-50% SUC)')
         : mN.inteligenciaRevelada && mN.subtipoCurto
           ? ` — ${mN.subtipoCurto}`
           : '';
     lin1 = `${nomeBoiaTip} [${tipoNoTip}]${tagEstado}`.slice(0, 48);
     if (mN.ehAtual) {
-      lin2 = 'POSIÇÃO ATUAL DA BIO-NAVE NESTA CARTA';
+      lin2 = ehEnTip ? 'CURRENT BIO-CRAFT POSITION' : 'POSIÇÃO ATUAL DA BIO-NAVE NESTA CARTA';
     } else if (mN.alcancavel) {
       const rAt = mN.rotaAtiva ?? {};
       const txtCorr =
         rAt.tipoCorrente === 'FAVORAVEL'
           ? 'FAV 0.75x'
           : rAt.tipoCorrente === 'REVOLTO'
-            ? 'REVOLTO 1.35x'
+            ? (ehEnTip ? 'ROUGH 1.35x' : 'REVOLTO 1.35x')
             : 'NORMAL 1.0x';
       const txtH = rAt.horasViagem !== undefined ? `${rAt.horasViagem}h` : '2.0h';
       const alertaExtra = rAt.engolidoNoSalto
-        ? ' | DRAGA ALCANÇA!'
+        ? (ehEnTip ? ' | FLEET CATCHES!' : ' | DRAGA ALCANÇA!')
         : rAt.expiraSosNoSalto
-          ? ' | SOS EXPIRA!'
+          ? (ehEnTip ? ' | SOS EXPIRES!' : ' | SOS EXPIRA!')
           : mN.horasRestantesSos !== null && !mN.sosExpirado
-            ? ` | PRAZO ${mN.horasRestantesSos}h`
+            ? (ehEnTip ? ` | LIMIT ${mN.horasRestantesSos}h` : ` | PRAZO ${mN.horasRestantesSos}h`)
             : '';
-      lin2 = `[ESQ] SALTAR (${txtCorr}, ${txtH})${alertaExtra}`.slice(0, 48);
+      lin2 = `${ehEnTip ? '[LMB] JUMP' : '[ESQ] SALTAR'} (${txtCorr}, ${txtH})${alertaExtra}`.slice(0, 48);
     } else {
       lin2 = (
         mN.inteligenciaRevelada && mN.detalheInteligencia
-          ? `FORA DE ALCANCE | ${mN.detalheInteligencia}`
-          : 'FORA DE ALCANCE DIRETO — SEM ROTA ATUAL'
+          ? `${ehEnTip ? 'OUT OF RANGE' : 'FORA DE ALCANCE'} | ${mN.detalheInteligencia}`
+          : (ehEnTip ? 'OUT OF DIRECT RANGE — NO ACTIVE LANE' : 'FORA DE ALCANCE DIRETO — SEM ROTA ATUAL')
       ).slice(0, 48);
     }
   }

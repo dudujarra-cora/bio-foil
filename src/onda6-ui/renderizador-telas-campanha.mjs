@@ -16,6 +16,11 @@ import {
   calcularGeometriaOficina960,
   calcularRetangulosModaisCampanha960,
 } from './geometria-layout-960.mjs';
+import {
+  resolverLayoutTopologiaNave,
+  calcularRetangulosCamarasMoldadas960,
+} from '../onda7-steam/topologias-naves-ab.mjs';
+import { obterSiglaHudArma } from '../onda7-steam/i18n-dicionario-ui.mjs';
 
 export function renderizarTelaHangarOuFimDeRun(ctx) {
   const {
@@ -84,10 +89,21 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
   }
 
   panel(0, 0, W - 1, 42);
-  const hbSomTopo = hitboxes.find((h) => h.idHitbox === 'BTN_ALTERNAR_AUDIO');
+  const ehEnHangar = viewModel.configuracoesSteam?.idioma === 'en-US';
+  const hbSomTopo =
+    hitboxes.find((h) => h.idHitbox === 'BTN_ALTERNAR_AUDIO') ??
+    (viewModel.modalSteamAtivo
+      ? { idHitbox: 'BTN_ALTERNAR_AUDIO', x: 884, y: 10, largura: 68, altura: 22 }
+      : null);
   if (hbSomTopo) {
     const hovSom = idHoverAtivo === hbSomTopo.idHitbox;
     const mudo = Boolean(viewModel.audioMutado);
+    const rotSomTopo = mudo
+      ? (ehEnHangar ? 'MUTED' : 'MUDO')
+      : (ehEnHangar ? 'AUDIO ON' : 'SOM ON');
+    const padXSom = hbSomTopo.largura >= 68
+      ? Math.max(4, Math.floor((hbSomTopo.largura - (rotSomTopo.length * 7 - 1)) / 2))
+      : 6;
     chanfradoBezel(
       hbSomTopo.x,
       hbSomTopo.y,
@@ -97,7 +113,7 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
       hovSom ? YELLOW : mudo ? AMBER : CYAN,
       2
     );
-    txt(hbSomTopo.x + 6, hbSomTopo.y + 7, mudo ? 'MUDO' : 'SOM ON', hovSom ? YELLOW : mudo ? AMBER : GREEN, 7);
+    txt(hbSomTopo.x + padXSom, hbSomTopo.y + 7, rotSomTopo, hovSom ? YELLOW : mudo ? AMBER : GREEN, 7);
   }
 
   if (faseJogo === 'INICIO') {
@@ -114,13 +130,46 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
       const ext = hangar.naves?.[idx];
       return ext ? { ...pad, ...ext } : pad;
     });
+    const idiomaTela = viewModel.configuracoesSteam?.idioma === 'en-US' ? 'en-US' : 'pt-BR';
     const desbloqCount = navesLista.filter((n) => n.desbloqueada).length;
-    txt(12, 8, 'BIO-FOIL — DOCA SIMBIÓTICA DE BIO-NAVES', CYAN, 8);
-    txt(12, 24, `CAMPANHA 8 SETORES | PERFIL: ${hangar.totalRuns ?? 0} RUNS | ${hangar.totalVitorias ?? 0} VITÓRIAS | ${desbloqCount}/5 BIO-NAVES`, AMBER, 7);
+    txt(
+      12,
+      8,
+      idiomaTela === 'en-US'
+        ? 'BIO-FOIL — SYMBIOTIC BIO-SHIP HANGAR'
+        : 'BIO-FOIL — DOCA SIMBIÓTICA DE BIO-NAVES',
+      CYAN,
+      8
+    );
+    txt(
+      12,
+      24,
+      idiomaTela === 'en-US'
+        ? `8-SECTOR CAMPAIGN | PROFILE: ${hangar.totalRuns ?? 0} RUNS | ${hangar.totalVitorias ?? 0} WINS | ${desbloqCount}/5 SHIPS`
+        : `CAMPANHA 8 SETORES | PERFIL: ${hangar.totalRuns ?? 0} RUNS | ${hangar.totalVitorias ?? 0} VITÓRIAS | ${desbloqCount}/5 BIO-NAVES`,
+      AMBER,
+      7
+    );
 
     chanfradoBezel(24, 52, 935, 98, [8, 16, 25, 240], BORDER, 3, RIM);
-    txt(36, 60, 'ESCOLHA A ARQUITETURA BIOLÓGICA PARA CRUZAR OS 8 SETORES ANTES DA DRAGA CONTINENTAL', TXT, 7);
-    txt(36, 76, 'CADA ESPÉCIE TEM HIDRODINÂMICA, CORAÇÃO BIO-ELÉTRICO, ÓRGÃOS E TRIPULAÇÃO SIMBIÓTICA PRÓPRIOS', CYAN, 7);
+    txt(
+      36,
+      60,
+      idiomaTela === 'en-US'
+        ? 'CHOOSE YOUR BIOLOGICAL HULL ARCHITECTURE TO CROSS ALL 8 SECTORS BEFORE THE DREDGE'
+        : 'ESCOLHA A ARQUITETURA BIOLÓGICA PARA CRUZAR OS 8 SETORES ANTES DA DRAGA CONTINENTAL',
+      TXT,
+      7
+    );
+    txt(
+      36,
+      76,
+      idiomaTela === 'en-US'
+        ? 'EACH SPECIES HAS UNIQUE HYDRODYNAMICS, BIO-ELECTRIC HEART, ORGANS AND SYMBIOTIC CREW'
+        : 'CADA ESPÉCIE TEM HIDRODINÂMICA, CORAÇÃO BIO-ELÉTRICO, ÓRGÃOS E TRIPULAÇÃO SIMBIÓTICA PRÓPRIOS',
+      CYAN,
+      7
+    );
 
     navesLista.forEach((nv, idx) => {
       const hbN = hitboxes.find((h) => h.idHitbox === `HANGAR_NAVE_${nv.id}`) ?? calcularRetanguloCardHangar960(idx);
@@ -138,8 +187,15 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
         4,
         sel || hov ? TXT : RIM
       );
+      const idiomaHang = viewModel.configuracoesSteam?.idioma === 'en-US' ? 'en-US' : 'pt-BR';
+      const varHang = viewModel.hangarResumo?.varianteSelecionada === 'B' ? 'B' : 'A';
+      const topoHang = resolverLayoutTopologiaNave(`${nv.id}_${varHang}`);
+      const titCardHang = idiomaHang === 'en-US' ? topoHang.nomeCurtoCardEn : topoHang.nomeCurtoCardPt;
+      const papelHang = idiomaHang === 'en-US' ? topoHang.papelCurtoEn : topoHang.papelCurtoPt;
+      const armaCardHang = idiomaHang === 'en-US' ? topoHang.armaResumoCardEn : topoHang.armaResumoCardPt;
+
       fillRect(hbN.x + 4, hbN.y + 3 + dyP, hbN.x + hbN.largura - 5, hbN.y + 20 + dyP, sel ? [18, 52, 68, 235] : [13, 24, 34, 225]);
-      txt(hbN.x + 8, hbN.y + 7 + dyP, `[${idx + 1}] ${String(nv.nome).slice(0, 18)}`, sel ? YELLOW : nv.desbloqueada ? CYAN : DIM, 7);
+      txt(hbN.x + 8, hbN.y + 7 + dyP, `[${idx + 1}] ${titCardHang}`, sel ? YELLOW : nv.desbloqueada ? CYAN : DIM, 7);
 
       const tx0N = hbN.x + 8;
       const ty0N = hbN.y + 25 + dyP;
@@ -148,66 +204,170 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
       chanfradoBezel(tx0N, ty0N, tx1N, ty1N, [6, 17, 26, 255], sel ? CYAN : BORDER, 3);
       fillRect(tx0N + 2, ty0N + 62, tx1N - 2, ty1N - 2, [14, 48, 64, 185]);
       hLine(tx0N + 2, tx1N - 2, ty0N + 62, CYAN, 1);
-      desenharMiniaturaBioNaveHiBit(tx0N + 6, ty0N + 8, 148, 66, nv.id);
-      if (!nv.desbloqueada) {
+      const exibirMiniTopoSteam = Boolean(viewModel.edicaoComercialSteam || viewModel.hangarResumo?.varianteSelecionada);
+      desenharMiniaturaBioNaveHiBit(
+        tx0N + (exibirMiniTopoSteam ? 3 : 6),
+        ty0N + 8,
+        exibirMiniTopoSteam ? 112 : 148,
+        66,
+        nv.id,
+        exibirMiniTopoSteam ? { variante: varHang } : null
+      );
+      if (exibirMiniTopoSteam) {
+        const bx0M = tx1N - 41;
+        const by0M = ty0N + 20;
+        const bx1M = tx1N - 4;
+        const by1M = ty1N - 4;
+        const corDestTopo = varHang === 'B'
+          ? [...(topoHang.corDestaqueCascoRgba ?? CYAN).slice(0, 3), 245]
+          : (sel ? CYAN : [72, 186, 206, 235]);
+        chanfradoBezel(bx0M, by0M, bx1M, by1M, [5, 13, 21, 238], varHang === 'B' ? corDestTopo : [32, 68, 86, 235], 2);
+        const moldMini = calcularRetangulosCamarasMoldadas960({
+          idArquitetura: nv.id,
+          varianteLayout: varHang,
+          ehTouchdown: false,
+          ehMonstroAlvo: false,
+        });
+        const camsMini = Object.values(moldMini.camaras);
+        const minXM = Math.min(...camsMini.map((c) => c.x));
+        const maxXM = Math.max(...camsMini.map((c) => c.x + c.largura));
+        const minYM = Math.min(...camsMini.map((c) => c.y));
+        const maxYM = Math.max(...camsMini.map((c) => c.y + c.altura));
+        const mapMiniX = (vx) => bx0M + 3 + Math.round(((vx - minXM) / Math.max(1, maxXM - minXM)) * (bx1M - bx0M - 6));
+        const mapMiniY = (vy) => by0M + 3 + Math.round(((vy - minYM) / Math.max(1, maxYM - minYM)) * (by1M - by0M - 6));
+        const centrosMini = new Map();
+        for (const cm of camsMini) {
+          const rx0 = mapMiniX(cm.x);
+          const ry0 = mapMiniY(cm.y);
+          const rx1 = Math.max(rx0 + 4, mapMiniX(cm.x + cm.largura) - 1);
+          const ry1 = Math.max(ry0 + 4, mapMiniY(cm.y + cm.altura) - 1);
+          fillRect(rx0, ry0, rx1, ry1, varHang === 'B' ? [18, 38, 48, 245] : [12, 30, 42, 245], corDestTopo);
+          centrosMini.set(cm.camaraId, [Math.round((rx0 + rx1) * 0.5), Math.round((ry0 + ry1) * 0.5)]);
+        }
+        for (let ca = 1; ca <= 8; ca += 1) {
+          const pA = centrosMini.get(ca);
+          if (!pA) continue;
+          for (const cb of topoHang.grafoAdjacencia[ca] ?? []) {
+            if (cb <= ca) continue;
+            const pB = centrosMini.get(cb);
+            if (!pB) continue;
+            const mxP = Math.round((pA[0] + pB[0]) * 0.5);
+            const myP = Math.round((pA[1] + pB[1]) * 0.5);
+            putPx(mxP, myP, varHang === 'B' ? YELLOW : GREEN);
+          }
+        }
+      }
+      const tipoBLibCard = varHang !== 'B' || (nv.desbloqueadaVarianteB ?? true);
+      const desbloqEfetivaCard = Boolean(nv.desbloqueada && tipoBLibCard);
+      if (!desbloqEfetivaCard) {
         fillRect(tx0N + 2, ty0N + 2, tx1N - 2, ty1N - 2, [5, 9, 14, 118]);
         lock(tx1N - 14, ty0N + 6, AMBER);
       } else if (sel) {
-        chanfradoBezel(tx1N - 38, ty0N + 5, tx1N - 4, ty0N + 16, [12, 48, 36, 255], GREEN, 2);
-        txt(tx1N - 34, ty0N + 8, 'ATIVA', GREEN, 6);
+        chanfradoBezel(tx1N - 38, ty0N + 4, tx1N - 4, ty0N + 15, [12, 48, 36, 255], GREEN, 2);
+        txt(tx1N - 34, ty0N + 7, idiomaHang === 'en-US' ? 'READY' : 'ATIVA', GREEN, 6);
       }
 
-      txt(hbN.x + 8, hbN.y + 121 + dyP, String(nv.papel ?? 'BIO-CAÇA').slice(0, 23), nv.desbloqueada ? AMBER : DIM, 6);
+      txt(hbN.x + 8, hbN.y + 121 + dyP, papelHang, desbloqEfetivaCard ? AMBER : DIM, 6);
       hLine(hbN.x + 8, hbN.x + hbN.largura - 9, hbN.y + 132 + dyP, [26, 46, 60, 220], 1);
 
-      txt(hbN.x + 8, hbN.y + 138 + dyP, `CASCO ${nv.hpMax ?? 30}`, TXT, 6);
+      txt(hbN.x + 8, hbN.y + 138 + dyP, `${idiomaHang === 'en-US' ? 'HULL' : 'CASCO'} ${nv.hpMax ?? 30}`, TXT, 6);
       segBar(hbN.x + 68, hbN.y + 138 + dyP, 10, Math.min(10, Math.max(1, Math.round(Number(nv.hpMax ?? 30) / 3))), 7, 6, 2, GREEN);
-      txt(hbN.x + 8, hbN.y + 152 + dyP, `REATOR ${nv.reator ?? 8}`, TXT, 6);
+      txt(hbN.x + 8, hbN.y + 152 + dyP, `${idiomaHang === 'en-US' ? 'POWER' : 'REATOR'} ${nv.reator ?? 8}`, TXT, 6);
       segBar(hbN.x + 68, hbN.y + 152 + dyP, 10, Math.min(10, Number(nv.reator ?? 8)), 7, 6, 2, CYAN);
-      txt(hbN.x + 8, hbN.y + 166 + dyP, `MASSA: ${nv.pesoBaseKg ?? 115} kg`, AMBER, 6);
-      txt(hbN.x + 8, hbN.y + 180 + dyP, `ARMA: ${String(nv.armaInicial ?? 'ACÚSTICO').slice(0, 19)}`, TXT, 6);
+      txt(hbN.x + 8, hbN.y + 166 + dyP, `${idiomaHang === 'en-US' ? 'MASS' : 'MASSA'}: ${nv.pesoBaseKg ?? 115} kg`, AMBER, 6);
+      txt(hbN.x + 8, hbN.y + 180 + dyP, `${idiomaHang === 'en-US' ? 'GUN' : 'ARMA'}: ${armaCardHang}`, TXT, 6);
 
       chanfradoBezel(hbN.x + 8, hbN.y + 194 + dyP, hbN.x + hbN.largura - 9, hbN.y + 236 + dyP, [6, 13, 20, 255], [24, 44, 58, 255], 2);
       const listaTrip = Array.isArray(nv.tripulacao) ? nv.tripulacao : ['POLVO', 'ARRAIA', 'BAIACU'];
+      const espacoTrip = listaTrip.length >= 4 ? 35 : 38;
+      const xIniTrip = listaTrip.length >= 4 ? 26 : 30;
       listaTrip.slice(0, 4).forEach((esp, idxT) => {
-        const cxT = hbN.x + 30 + idxT * 38;
+        const cxT = hbN.x + xIniTrip + idxT * espacoTrip;
         const cyT = hbN.y + 215 + dyP;
         desenharPersonagemPose4F(esp, (f4Anim + idxT) % 2, cxT, cyT, 28, 28, false, false);
       });
 
-      const statusRod = nv.desbloqueada
-        ? (sel ? 'SELECIONADA P/ ZARPAR' : 'CLIQUE P/ SELECIONAR')
-        : String(nv.requisito ?? 'BLOQUEADA').replace(/\([^)]*$/, '').trim();
+      const mapaBloqCurtoPt = {
+        MANTA_VOLT: 'SETOR 4 (0 DANO CASCO)',
+        COURACA_LIMIAR: 'VENCER EM TOUCHDOWN',
+        SOMBRA_ABISSAL: 'ACUMULAR 500 BIOMASSA',
+        COLMEIA_VIVA: 'DERROTAR DRAGA S8',
+      };
+      const mapaBloqCurtoEn = {
+        MANTA_VOLT: 'SECTOR 4 (0 HULL DMG)',
+        COURACA_LIMIAR: 'WIN IN TOUCHDOWN',
+        SOMBRA_ABISSAL: 'COLLECT 500 BIOMASS',
+        COLMEIA_VIVA: 'DEFEAT DREDGE S8',
+      };
+      const statusRod = !nv.desbloqueada
+        ? ((idiomaHang === 'en-US' ? mapaBloqCurtoEn[nv.id] : mapaBloqCurtoPt[nv.id]) ?? 'BLOQUEADA')
+        : !tipoBLibCard
+          ? (idiomaHang === 'en-US' ? '[B] NEEDS SHIP ACHV' : '[B] EXIGE CONQUISTAS')
+          : sel
+            ? (idiomaHang === 'en-US' ? 'SELECTED TO LAUNCH' : 'SELECIONADA P/ ZARPAR')
+            : (idiomaHang === 'en-US' ? 'CLICK TO SELECT' : 'CLIQUE P/ SELECIONAR');
       chanfradoBezel(
         hbN.x + 8,
         hbN.y + 242 + dyP,
         hbN.x + hbN.largura - 9,
         hbN.y + hbN.altura - 7 + dyP,
-        nv.desbloqueada ? [12, 36, 30, 255] : [30, 16, 20, 255],
-        nv.desbloqueada ? (sel ? CYAN : GREEN) : RED,
+        desbloqEfetivaCard ? [12, 36, 30, 255] : [30, 16, 20, 255],
+        desbloqEfetivaCard ? (sel ? CYAN : GREEN) : !nv.desbloqueada ? RED : AMBER,
         2
       );
-      txt(hbN.x + 12, hbN.y + 250 + dyP, statusRod.slice(0, 24), nv.desbloqueada ? (sel ? YELLOW : GREEN) : AMBER, 6);
+      txt(hbN.x + 12, hbN.y + 250 + dyP, statusRod, desbloqEfetivaCard ? (sel ? YELLOW : GREEN) : AMBER, 6);
     });
 
     const naveAtivaObj = navesLista.find((n) => n.id === carcSel) ?? navesLista[0];
+    const varSelHang = viewModel.hangarResumo?.varianteSelecionada === 'B' ? 'B' : 'A';
+    const topoAtivaHang = resolverLayoutTopologiaNave(`${naveAtivaObj.id}_${varSelHang}`);
+    const nomeSelEn = topoAtivaHang.nomeCurtoCardEn ?? naveAtivaObj.nome;
+    const nomeSelPt = viewModel.edicaoComercialSteam
+      ? (topoAtivaHang.nomeCurtoCardPt ?? naveAtivaObj.nome)
+      : `[${naveAtivaObj.nome}]`;
     const avisoHangar = String(ctx.opcoes?.avisoToastTexto ?? viewModel.ultimoAvisoCampanha ?? '').trim();
     if (avisoHangar) {
       chanfradoBezel(24, 388, 935, 434, [38, 14, 18, 248], RED, 3, AMBER);
       txt(36, 396, `[!] ${avisoHangar}`.slice(0, 118), YELLOW, 7);
-      txt(36, 412, `BIO-NAVE SELECIONADA: [${naveAtivaObj.nome}] — PRESSIONE [1..5] P/ SELECIONAR OU [ENTER] P/ ZARPAR`, AMBER, 7);
+      txt(
+        36,
+        412,
+        idiomaTela === 'en-US'
+          ? `SELECTED HULL: ${nomeSelEn} — PRESS [1..5] TO SELECT OR [ENTER] TO LAUNCH`
+          : `BIO-NAVE SELECIONADA: ${nomeSelPt} — PRESSIONE [1..5] P/ SELECIONAR OU [ENTER] P/ ZARPAR`,
+        AMBER,
+        7
+      );
     } else {
       panel(24, 388, 935, 434);
-      txt(36, 396, `DOUTRINA [${naveAtivaObj.nome}]: FOIL HIDROSTÁTICO EM TEMPO REAL + ABORDAGEM + ENXERTOS BIOLÓGICOS`, CYAN, 7);
-      txt(36, 412, `SEED: ${hangar.seedPartida ?? 'biofoil-run'} | [1..5] SELECIONAR | [ENTER] NOVA RUN | [C] CONTINUAR | PERMADEATH`, TXT, 7);
+      txt(
+        36,
+        396,
+        idiomaTela === 'en-US'
+          ? `DOCTRINE (${nomeSelEn}): ${(topoAtivaHang.doutrinaEn ?? 'REAL-TIME HYDROFOIL LIFT + BOARDING + BIOLOGICAL GRAFTS').toUpperCase()}`.slice(0, 118)
+          : viewModel.edicaoComercialSteam
+            ? `DOUTRINA (${nomeSelPt}): ${(topoAtivaHang.doutrinaPt ?? 'FOIL HIDROSTÁTICO EM TEMPO REAL + ABORDAGEM + ENXERTOS BIOLÓGICOS').toUpperCase()}`.slice(0, 118)
+            : `DOUTRINA [${naveAtivaObj.nome}]: FOIL HIDROSTÁTICO EM TEMPO REAL + ABORDAGEM + ENXERTOS BIOLÓGICOS`,
+        CYAN,
+        7
+      );
+      txt(
+        36,
+        412,
+        idiomaTela === 'en-US'
+          ? `SEED: ${hangar.seedPartida ?? 'biofoil-run'} | [1..5] SELECT | [ENTER] NEW RUN | [C] CONTINUE | PERMADEATH`
+          : `SEED: ${hangar.seedPartida ?? 'biofoil-run'} | [1..5] SELECIONAR | [ENTER] NOVA RUN | [C] CONTINUAR | PERMADEATH`,
+        TXT,
+        7
+      );
     }
 
     const hbIni = hitboxes.find((h) => h.idHitbox === 'HANGAR_INICIAR_RUN');
     if (hbIni) {
       const hovI = idHoverAtivo === hbIni.idHitbox;
       chanfradoBezel(hbIni.x, hbIni.y, hbIni.x + hbIni.largura - 1, hbIni.y + hbIni.altura - 1, [14, 52, 36, 255], hovI ? YELLOW : GREEN, 4, TXT);
-      txt(hbIni.x + 18, hbIni.y + 11, '[ENTER] NOVA CAMPANHA', hovI ? YELLOW : GREEN, 8);
-      txt(hbIni.x + 30, hbIni.y + 26, 'ZARPAR NO SETOR 1/8', TXT, 7);
+      txt(hbIni.x + 18, hbIni.y + 11, idiomaTela === 'en-US' ? '[ENTER] NEW CAMPAIGN' : '[ENTER] NOVA CAMPANHA', hovI ? YELLOW : GREEN, 8);
+      txt(hbIni.x + 30, hbIni.y + 26, idiomaTela === 'en-US' ? 'SAIL SECTOR 1/8' : 'ZARPAR NO SETOR 1/8', TXT, 7);
     }
     const hbCont = hitboxes.find((h) => h.idHitbox === 'HANGAR_CONTINUAR_RUN');
     if (hbCont) {
@@ -223,26 +383,42 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
         4,
         temSave ? TXT : RIM
       );
-      txt(hbCont.x + 12, hbCont.y + 11, '[C] CONTINUAR RUN SALVA', temSave ? (hovC ? YELLOW : CYAN) : DIM, 8);
-      txt(hbCont.x + 22, hbCont.y + 26, temSave ? 'RETOMAR EXPEDIÇÃO ATIVA' : 'NENHUMA RUN EM CURSO', temSave ? TXT : DIM, 7);
+      txt(hbCont.x + 12, hbCont.y + 11, idiomaTela === 'en-US' ? '[C] CONTINUE SAVED RUN' : '[C] CONTINUAR RUN SALVA', temSave ? (hovC ? YELLOW : CYAN) : DIM, 8);
+      txt(hbCont.x + 22, hbCont.y + 26, temSave ? (idiomaTela === 'en-US' ? 'RESUME EXPEDITION' : 'RETOMAR EXPEDIÇÃO ATIVA') : (idiomaTela === 'en-US' ? 'NO ACTIVE SAVED RUN' : 'NENHUMA RUN EM CURSO'), temSave ? TXT : DIM, 7);
     }
-    txt(166, 504, 'CONTROLES: [1..5] NAVES | [C] RETOMAR | [M] MERGULHO | [D/V] DRENO | [G] ABORDAR | [A/X] SALVA | [ESPAÇO] PAUSA', DIM, 6);
+    txt(
+      viewModel.edicaoComercialSteam ? 148 : 166,
+      504,
+      idiomaTela === 'en-US'
+        ? 'CONTROLS: [1..5] SHIPS | [B] TYPE A/B | [F] DIFFICULTY | [T] TUTORIAL | [O] OPTIONS | [J] ACHV | [L] PT/EN'
+        : viewModel.edicaoComercialSteam
+          ? 'CONTROLES: [1..5] NAVES | [B] TIPO A/B | [F] DIFICULDADE | [T] TUTORIAL | [O] OPÇÕES | [J] TROFÉUS | [L] PT/EN'
+          : 'CONTROLES: [1..5] NAVES | [C] RETOMAR | [M] MERGULHO | [D/V] DRENO | [G] ABORDAR | [A/X] SALVA | [ESPAÇO] PAUSA',
+      DIM,
+      6
+    );
   } else {
     const fim = viewModel.fimDeRunResumo ?? {};
     const vitoria = Boolean(fim.vitoria ?? (Number(viewModel.barraSuperior?.hpCascoAtual ?? 0) > 0));
     txt(
       12,
       8,
-      vitoria ? 'VITÓRIA OCEÂNICA — A DRAGA CONTINENTAL AFUNDOU!' : 'CASCO ROMPIDO — PERMADEATH NAS PROFUNDEZAS',
+      ehEnHangar
+        ? (vitoria ? 'OCEANIC VICTORY — THE CONTINENTAL DREDGE HAS SUNK!' : 'HULL RUPTURED — PERMADEATH IN THE ABYSS')
+        : (vitoria ? 'VITÓRIA OCEÂNICA — A DRAGA CONTINENTAL AFUNDOU!' : 'CASCO ROMPIDO — PERMADEATH NAS PROFUNDEZAS'),
       vitoria ? GREEN : RED,
       8
     );
     txt(
       12,
       24,
-      vitoria
-        ? 'O RECIFE SIMBIÓTICO SOBREVIVEU ÀS 3 FASES DA FORTALEZA EXTRATIVISTA!'
-        : 'EXPEDIÇÃO ENCERRADA NO ABISMO | MEMÓRIA GENÉTICA GRAVADA NO HANGAR',
+      ehEnHangar
+        ? (vitoria
+            ? 'THE SYMBIOTIC REEF SURVIVED ALL 3 PHASES OF THE INDUSTRIAL FORTRESS!'
+            : 'EXPEDITION ENDED IN THE DEEP | GENETIC MEMORY RECORDED IN HANGAR')
+        : (vitoria
+            ? 'O RECIFE SIMBIÓTICO SOBREVIVEU ÀS 3 FASES DA FORTALEZA EXTRATIVISTA!'
+            : 'EXPEDIÇÃO ENCERRADA NO ABISMO | MEMÓRIA GENÉTICA GRAVADA NO HANGAR'),
       vitoria ? CYAN : AMBER,
       7
     );
@@ -250,8 +426,9 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
     chanfradoBezel(40, 52, 919, 226, vitoria ? [7, 24, 36, 250] : [20, 9, 15, 250], vitoria ? CYAN : RED, 4, TXT);
     fillRect(44, 152, 915, 222, vitoria ? [12, 54, 72, 220] : [18, 26, 38, 236]);
     hLine(44, 915, 152, vitoria ? CYAN : AMBER, 2);
+    const varFim = String(viewModel.layoutId ?? '').endsWith('_B') ? 'B' : 'A';
     if (vitoria) {
-      desenharMiniaturaBioNaveHiBit(88, 76, 196, 86, idCarcaca);
+      desenharMiniaturaBioNaveHiBit(88, 76, 196, 86, idCarcaca, viewModel.edicaoComercialSteam ? { variante: varFim } : null);
     }
 
     if (vitoria) {
@@ -348,10 +525,10 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
 
       // Selo de vitória posicionado no centro-inferior (x=298..592) para deixar 100% do naufrágio da Draga visível!
       chanfradoBezel(298, 180, 594, 216, [8, 26, 34, 244], GREEN, 3, TXT);
-      txt(310, 186, 'DRAGA FASE 3 DESTRUÍDA NO ABISMO!', YELLOW, 7);
-      txt(310, 201, 'OCEANO LIVRE DA FERVURA INDUSTRIAL', GREEN, 6);
+      txt(310, 186, ehEnHangar ? 'DREDGE PHASE 3 SUNK IN THE ABYSS!' : 'DRAGA FASE 3 DESTRUÍDA NO ABISMO!', YELLOW, 7);
+      txt(310, 201, ehEnHangar ? 'OCEAN FREED FROM INDUSTRIAL BOIL' : 'OCEANO LIVRE DA FERVURA INDUSTRIAL', GREEN, 6);
     } else {
-      desenharMiniaturaBioNaveHiBit(92, 138, 192, 82, idCarcaca);
+      desenharMiniaturaBioNaveHiBit(92, 138, 192, 82, idCarcaca, viewModel.edicaoComercialSteam ? { variante: varFim } : null);
       for (let wy = 140; wy <= 218; wy += 1) {
         const fendaX = 188 + Math.round((wy - 175) * 0.28 + Math.sin(wy * 0.4) * 2);
         for (let wx = 44; wx <= 915; wx += 1) {
@@ -381,19 +558,28 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
         fillRect(bxP, byP, bxP + rB, byP + rB, pb % 5 === 0 ? RED : pb % 2 === 0 ? CYAN : TXT);
       }
       chanfradoBezel(468, 86, 902, 142, [48, 12, 18, 248], RED, 3, AMBER);
-      txt(484, 96, 'NAUFRÁGIO — PERMADEATH CONFIRMADO', RED, 8);
-      txt(484, 118, String(fim.motivoEncerramento ?? 'CASCO PARTIDO NAS PROFUNDEZAS').slice(0, 56), YELLOW, 7);
+      txt(484, 96, ehEnHangar ? 'SHIPWRECK — PERMADEATH CONFIRMED' : 'NAUFRÁGIO — PERMADEATH CONFIRMADO', RED, 8);
+      txt(484, 118, String(fim.motivoEncerramento ?? (ehEnHangar ? 'HULL SPLIT IN THE DEEP' : 'CASCO PARTIDO NAS PROFUNDEZAS')).slice(0, 56), YELLOW, 7);
     }
 
-    panel(40, 236, 919, 424, 'RELATÓRIO HIDROSTÁTICO DA EXPEDIÇÃO');
-    const metricasFim = [
-      [`SETOR ALCANÇADO: ${fim.setorAlcancado ?? viewModel.setorAtual ?? 1}/8`, CYAN],
-      [`VITÓRIAS EM COMBATE: ${fim.vitoriasCombate ?? 0}`, GREEN],
-      [`CAPTURAS INTACTAS: ${fim.capturasIntactas ?? 0}`, AMBER],
-      [`EXTRAÇÕES CIRÚRGICAS: ${fim.extracoesCirurgicas ?? 0}`, [188, 118, 255, 255]],
-      [`SUCATA RECOLHIDA: ${fim.sucataColetada ?? viewModel.barraSuperior?.recursos?.sucata ?? 0}`, TXT],
-      [`BIOMASSA CULTIVADA: ${fim.biomassaColetada ?? viewModel.barraSuperior?.recursos?.biomassa ?? 0}`, CYAN],
-    ];
+    panel(40, 236, 919, 424, ehEnHangar ? 'EXPEDITION HYDROSTATIC REPORT' : 'RELATÓRIO HIDROSTÁTICO DA EXPEDIÇÃO');
+    const metricasFim = ehEnHangar
+      ? [
+          [`SECTOR REACHED: ${fim.setorAlcancado ?? viewModel.setorAtual ?? 1}/8`, CYAN],
+          [`COMBAT VICTORIES: ${fim.vitoriasCombate ?? 0}`, GREEN],
+          [`INTACT CAPTURES: ${fim.capturasIntactas ?? 0}`, AMBER],
+          [`SURGICAL GRAFTS: ${fim.extracoesCirurgicas ?? 0}`, [188, 118, 255, 255]],
+          [`SCRAP SALVAGED: ${fim.sucataColetada ?? viewModel.barraSuperior?.recursos?.sucata ?? 0}`, TXT],
+          [`BIOMASS CULTURED: ${fim.biomassaColetada ?? viewModel.barraSuperior?.recursos?.biomassa ?? 0}`, CYAN],
+        ]
+      : [
+          [`SETOR ALCANÇADO: ${fim.setorAlcancado ?? viewModel.setorAtual ?? 1}/8`, CYAN],
+          [`VITÓRIAS EM COMBATE: ${fim.vitoriasCombate ?? 0}`, GREEN],
+          [`CAPTURAS INTACTAS: ${fim.capturasIntactas ?? 0}`, AMBER],
+          [`EXTRAÇÕES CIRÚRGICAS: ${fim.extracoesCirurgicas ?? 0}`, [188, 118, 255, 255]],
+          [`SUCATA RECOLHIDA: ${fim.sucataColetada ?? viewModel.barraSuperior?.recursos?.sucata ?? 0}`, TXT],
+          [`BIOMASSA CULTIVADA: ${fim.biomassaColetada ?? viewModel.barraSuperior?.recursos?.biomassa ?? 0}`, CYAN],
+        ];
     metricasFim.forEach(([rotM, corM], idxM) => {
       const colM = idxM % 2;
       const rowM = Math.floor(idxM / 2);
@@ -404,14 +590,25 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
     });
 
     const novosDesbloq = Array.isArray(fim.novosDesbloqueios) ? fim.novosDesbloqueios : [];
-    const nomesDesbloq = novosDesbloq.map((id) => NOMES_CARC?.[id] ?? String(id).replace(/_/g, ' '));
+    const nomesDesbloq = novosDesbloq.map((id) => {
+      const sId = String(id);
+      const idTopo = sId.endsWith('_A') || sId.endsWith('_B') ? sId : `${sId}_A`;
+      const topo = resolverLayoutTopologiaNave(idTopo);
+      const bateuTopo = Boolean(topo && (topo.idLayout === idTopo || topo.layoutId === idTopo || topo.id === idTopo));
+      if (ehEnHangar) return bateuTopo ? (topo.nomeCurtoCardEn ?? sId.replace(/_/g, ' ')) : sId.replace(/_/g, ' ');
+      return NOMES_CARC?.[sId] ?? (bateuTopo ? topo.nomeCurtoCardPt : null) ?? sId.replace(/_/g, ' ');
+    });
     chanfradoBezel(58, 378, 901, 414, novosDesbloq.length > 0 ? [12, 44, 32, 255] : [10, 18, 26, 255], novosDesbloq.length > 0 ? YELLOW : BORDER, 2);
     txt(
       72,
       392,
       novosDesbloq.length > 0
-        ? `NOVA(S) BIO-NAVE(S) DESBLOQUEADA(S) NO HANGAR: ${nomesDesbloq.join(', ')}!`
-        : 'MEMÓRIA GENÉTICA GRAVADA NO ARQUIVO DO HANGAR — PRONTO PARA NOVA EXPEDIÇÃO',
+        ? (ehEnHangar
+            ? `NEW BIO-SHIP(S) UNLOCKED IN HANGAR: ${nomesDesbloq.join(', ')}!`
+            : `NOVA(S) BIO-NAVE(S) DESBLOQUEADA(S) NO HANGAR: ${nomesDesbloq.join(', ')}!`)
+        : (ehEnHangar
+            ? 'GENETIC MEMORY RECORDED IN HANGAR ARCHIVE — READY FOR NEW EXPEDITION'
+            : 'MEMÓRIA GENÉTICA GRAVADA NO ARQUIVO DO HANGAR — PRONTO PARA NOVA EXPEDIÇÃO'),
       novosDesbloq.length > 0 ? YELLOW : CYAN,
       7
     );
@@ -420,15 +617,15 @@ export function renderizarTelaHangarOuFimDeRun(ctx) {
     if (hbNova) {
       const hovN = idHoverAtivo === hbNova.idHitbox;
       chanfradoBezel(hbNova.x, hbNova.y, hbNova.x + hbNova.largura - 1, hbNova.y + hbNova.altura - 1, [14, 52, 36, 255], hovN ? YELLOW : GREEN, 4, TXT);
-      txt(hbNova.x + 22, hbNova.y + 11, '[ENTER] NOVA RUN', hovN ? YELLOW : GREEN, 8);
-      txt(hbNova.x + 26, hbNova.y + 26, 'MESMA ARQUITETURA', TXT, 7);
+      txt(hbNova.x + 22, hbNova.y + 11, ehEnHangar ? '[ENTER] NEW RUN' : '[ENTER] NOVA RUN', hovN ? YELLOW : GREEN, 8);
+      txt(hbNova.x + 26, hbNova.y + 26, ehEnHangar ? 'SAME ARCHITECTURE' : 'MESMA ARQUITETURA', TXT, 7);
     }
     const hbVoltar = hitboxes.find((h) => h.idHitbox === 'FIM_VOLTAR_HANGAR');
     if (hbVoltar) {
       const hovV = idHoverAtivo === hbVoltar.idHitbox;
       chanfradoBezel(hbVoltar.x, hbVoltar.y, hbVoltar.x + hbVoltar.largura - 1, hbVoltar.y + hbVoltar.altura - 1, [14, 34, 50, 255], hovV ? YELLOW : CYAN, 4, TXT);
       txt(hbVoltar.x + 18, hbVoltar.y + 11, '[ESC] BIO-HANGAR', hovV ? YELLOW : CYAN, 8);
-      txt(hbVoltar.x + 24, hbVoltar.y + 26, 'TROCAR DE BIO-NAVE', TXT, 7);
+      txt(hbVoltar.x + 24, hbVoltar.y + 26, ehEnHangar ? 'SWITCH BIO-SHIP' : 'TROCAR DE BIO-NAVE', TXT, 7);
     }
   }
   return rgba;
@@ -476,6 +673,7 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
     desenharRetratoRecortadoHiBit,
   } = ctx;
 
+  const ehEnVp = viewModel.configuracoesSteam?.idioma === 'en-US';
   if (faseJogo === 'MAPA') {
     const mapa = viewModel.mapaSetorialResumo;
     const setorNum = mapa?.setorNumero ?? 1;
@@ -499,16 +697,26 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
     }
     panel(152, 42, 957, 64);
     const relogioMapaH = Number(mapa?.relogioSetorHoras ?? 0).toFixed(1);
-    txt(158, 49, `SETOR ${setorNum}/8 T:${relogioMapaH}h`, relogioMapaH !== '0.0' ? AMBER : CYAN, 7);
-    const itensLegenda = [
-      [304, RED, 'COMB'],
-      [356, VIOLET, 'LOJA'],
-      [406, AMBER, 'SOS'],
-      [450, GREEN, 'EXPL'],
-      [502, GREEN, 'FAV'],
-      [548, AMBER, 'REV'],
-      [594, CYAN, 'NAVE'],
-    ];
+    txt(158, 49, `${ehEnVp ? 'SECTOR' : 'SETOR'} ${setorNum}/8 T:${relogioMapaH}h`, relogioMapaH !== '0.0' ? AMBER : CYAN, 7);
+    const itensLegenda = ehEnVp
+      ? [
+          [304, RED, 'COMB'],
+          [356, VIOLET, 'SHOP'],
+          [406, AMBER, 'SOS'],
+          [450, GREEN, 'EXPL'],
+          [502, GREEN, 'FAV'],
+          [548, AMBER, 'CHOP'],
+          [594, CYAN, 'SHIP'],
+        ]
+      : [
+          [304, RED, 'COMB'],
+          [356, VIOLET, 'LOJA'],
+          [406, AMBER, 'SOS'],
+          [450, GREEN, 'EXPL'],
+          [502, GREEN, 'FAV'],
+          [548, AMBER, 'REV'],
+          [594, CYAN, 'NAVE'],
+        ];
     for (const [lx, corL, rotL] of itensLegenda) {
       fillRect(lx, 49, lx + 8, 57, [8, 16, 22, 255], corL);
       fillRect(lx + 2, 51, lx + 6, 55, corL);
@@ -517,10 +725,10 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
     }
     if (mapa) {
       const seloDirTxt = mapa.cartaRevelada
-        ? 'SONAR SETOR+'
+        ? (ehEnVp ? 'SONAR CHART+' : 'SONAR SETOR+')
         : mapa.emModoDeriva
-          ? 'DERIVA 2.0x!'
-          : `V:${Number(mapa.velocidadeCruzeiroMnH ?? 12).toFixed(1)}MN/h`;
+          ? (ehEnVp ? 'DRIFT 2.0x!' : 'DERIVA 2.0x!')
+          : `V:${Number(mapa.velocidadeCruzeiroMnH ?? 12).toFixed(1)}${ehEnVp ? 'NM/h' : 'MN/h'}`;
       const seloDirCor = mapa.cartaRevelada ? GREEN : mapa.emModoDeriva ? RED : CYAN;
       chanfradoBezel(838, 46, 953, 61, [10, 22, 32, 245], seloDirCor, 2);
       txt(844, 50, seloDirTxt.slice(0, 15), seloDirCor, 6);
@@ -530,7 +738,7 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
       const hovOf = idHoverAtivo === hbOficMapa.idHitbox;
       const dyOf = idPressAtivo === hbOficMapa.idHitbox ? 1 : 0;
       chanfradoBezel(hbOficMapa.x, hbOficMapa.y + dyOf, hbOficMapa.x + hbOficMapa.largura - 1, hbOficMapa.y + hbOficMapa.altura - 1 + dyOf, [16, 38, 50, 255], hovOf ? YELLOW : AMBER, 3, TXT);
-      txt(hbOficMapa.x + 8, hbOficMapa.y + 7 + dyOf, '[U] OFICINA/CARGA', YELLOW, 7);
+      txt(hbOficMapa.x + 8, hbOficMapa.y + 7 + dyOf, ehEnVp ? '[U] WORKSHOP/CARGO' : '[U] OFICINA/CARGA', YELLOW, 7);
     }
 
     for (let gx = 210; gx < 866; gx += 72) {
@@ -561,7 +769,7 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
         }
       }
       chanfradoBezel(156, 70, 248, 82, [10, 14, 21, 244], RED, 2);
-      txt(160, 73, 'FRENTE DRAGA', RED, 7);
+      txt(160, 73, ehEnVp ? 'DREDGE FRONT' : 'FRENTE DRAGA', RED, 7);
 
       const hbNosPorId = new Map(
         hitboxes.filter((h) => h.tipo === 'NO_MAPA').map((h) => [h.metadados.noDestinoId, h])
@@ -619,7 +827,8 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
         const ehAlcancavel = saidasAtuais.has(no.id);
         const emHover = idHoverAtivo === hb.idHitbox;
         const dyP = idPressAtivo === hb.idHitbox ? 1 : 0;
-        const corBorda = ehAtual ? CYAN : emHover ? YELLOW : (no.engolidoCorporacao || no.sosExpirado || no.tipo === 'CHEFE' || no.tipo === 'SAIDA') ? RED : no.tipo === 'LOJA' ? VIOLET : no.tipo === 'SOS' ? AMBER : ehAlcancavel ? GREEN : DIM;
+        const ehQuestViva = Boolean(no.ehQuestAtiva && !no.visitado);
+        const corBorda = ehAtual ? CYAN : emHover ? YELLOW : (no.engolidoCorporacao || no.sosExpirado || no.tipo === 'CHEFE' || no.tipo === 'SAIDA') ? RED : ehQuestViva ? [76, 250, 198, 255] : no.tipo === 'LOJA' ? VIOLET : no.tipo === 'SOS' ? AMBER : ehAlcancavel ? GREEN : DIM;
         const cxN = hb.x + 10;
         if (ehAtual) {
           const lateralMini = hb.y < 102 || hb.y > 364;
@@ -627,16 +836,34 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
           const yMiniN = lateralMini ? Math.max(70, Math.min(372, hb.y - 3)) : hb.y - 30;
           desenharMiniaturaBioNaveHiBit(xMiniN, yMiniN, 54, 26);
         }
-        desenharNodoBoiaMapaHiBit(hb.x, hb.y + dyP, hb.largura, hb.altura, ehAtual ? 'ATUAL' : (no.tipo === 'CHEFE' ? 'SAIDA' : no.tipo), corBorda, ehAtual ? [14, 58, 76, 255] : no.visitado ? [10, 18, 24, 255] : [14, 28, 38, 255], ehAlcancavel || emHover);
-        const mostrarTagNo = !emHover && (ehAtual || ehAlcancavel || no.engolidoCorporacao || no.tipo === 'SOS' || no.tipo === 'LOJA' || no.tipo === 'SAIDA' || no.tipo === 'CHEFE' || (mapa.cartaRevelada && !no.visitado));
+        desenharNodoBoiaMapaHiBit(hb.x, hb.y + dyP, hb.largura, hb.altura, ehAtual ? 'ATUAL' : (no.tipo === 'CHEFE' ? 'SAIDA' : no.tipo), corBorda, ehAtual ? [14, 58, 76, 255] : ehQuestViva ? [10, 48, 42, 255] : no.visitado ? [10, 18, 24, 255] : [14, 28, 38, 255], ehAlcancavel || emHover || ehQuestViva);
+        const mostrarTagNo = !emHover && (ehAtual || ehAlcancavel || ehQuestViva || no.engolidoCorporacao || no.tipo === 'SOS' || no.tipo === 'LOJA' || no.tipo === 'SAIDA' || no.tipo === 'CHEFE' || (mapa.cartaRevelada && !no.visitado));
         if (mostrarTagNo) {
-          const rotNo = ehAtual ? 'ATUAL' : no.engolidoCorporacao ? 'CORP!' : no.sosExpirado ? 'ZMORTA' : no.tipo === 'SOS' && no.horasRestantesSos != null ? `SOS ${Math.max(0, Math.round(no.horasRestantesSos))}h` : no.tipo === 'LOJA' ? 'LOJA' : (no.tipo === 'SAIDA' || no.tipo === 'CHEFE') ? 'SAÍDA' : ((ehAlcancavel || mapa.cartaRevelada) && (no.tagMapa || no.subtipoCurto)) ? String(no.tagMapa ?? no.subtipoCurto).slice(0, 7) : ehAlcancavel ? 'SALTO' : '';
+          const rotNo = ehAtual
+            ? (ehEnVp ? 'HERE' : 'ATUAL')
+            : no.engolidoCorporacao
+              ? 'CORP!'
+              : no.sosExpirado
+                ? (ehEnVp ? 'DEADZN' : 'ZMORTA')
+                : ehQuestViva
+                  ? '[QUEST]'
+                  : no.tipo === 'SOS' && no.horasRestantesSos != null
+                    ? `SOS ${Math.max(0, Math.round(no.horasRestantesSos))}h`
+                    : no.tipo === 'LOJA'
+                      ? (ehEnVp ? 'SHOP' : 'LOJA')
+                      : (no.tipo === 'SAIDA' || no.tipo === 'CHEFE')
+                        ? (ehEnVp ? 'EXIT' : 'SAÍDA')
+                        : ((ehAlcancavel || mapa.cartaRevelada) && (no.tagMapa || no.subtipoCurto))
+                          ? String(no.tagMapa ?? no.subtipoCurto).slice(0, 7)
+                          : ehAlcancavel
+                            ? (ehEnVp ? 'JUMP' : 'SALTO')
+                            : '';
           if (rotNo) {
             const wTag = rotNo.length * 6 + 6;
             const txNo = Math.max(156, Math.min(950 - wTag, cxN - Math.floor(wTag / 2)));
             const tyNo = (hb.y + hb.altura + 14 < 398 ? hb.y + hb.altura + 3 : hb.y - 13) + dyP;
             chanfradoBezel(txNo, tyNo, txNo + wTag, tyNo + 11, [6, 12, 18, 248], corBorda, 2);
-            txt(txNo + 3, tyNo + 3, rotNo, ehAtual ? CYAN : (no.engolidoCorporacao || no.sosExpirado) ? RED : ehAlcancavel ? GREEN : TXT, 6);
+            txt(txNo + 3, tyNo + 3, rotNo, ehAtual ? CYAN : (no.engolidoCorporacao || no.sosExpirado) ? RED : ehQuestViva ? [110, 255, 208, 255] : ehAlcancavel ? GREEN : TXT, 6);
           }
         }
       }
@@ -646,16 +873,35 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
       const noFoco = noHoverObj ?? (mapa.nos ?? []).find((n) => saidasAtuais.has(n.id)) ?? noAtualObj;
       if (noFoco) {
         const alc = saidasAtuais.has(noFoco.id);
-        const nomeBoia = String(noFoco.id).replace(/^NO_/, 'BOIA ').replace(/_/g, '-');
+        const nomeBoia = String(noFoco.id).replace(/^NO_/, ehEnVp ? 'BUOY ' : 'BOIA ').replace(/_/g, '-');
         const rF = noFoco.rotaAtiva ?? null;
-        const txtRotaF = rF ? `${rF.tipoCorrente === 'FAVORAVEL' ? 'FAV 0.75x' : rF.tipoCorrente === 'REVOLTO' ? 'REV 1.35x' : 'NORM 1.0x'} (${rF.horasViagem}h)` : '';
-        const custoCmbTxt = mapa.emModoDeriva ? 'DERIVA 2x!' : `-${mapa.custoCombustivelSalto ?? 1} CMB`;
-        const tagIntelF = noFoco.engolidoCorporacao ? 'FROTA CORP (0 SAQUE, +1 ESCUDO)' : noFoco.sosExpirado ? 'ZONA MORTA (-50% SUCATA)' : (noFoco.inteligenciaRevelada && noFoco.subtipoCurto) ? noFoco.subtipoCurto : noFoco.tipo;
+        const txtRotaF = rF
+          ? `${rF.tipoCorrente === 'FAVORAVEL' ? 'FAV 0.75x' : rF.tipoCorrente === 'REVOLTO' ? (ehEnVp ? 'CHOP 1.35x' : 'REV 1.35x') : 'NORM 1.0x'} (${rF.horasViagem}h)`
+          : '';
+        const custoCmbTxt = mapa.emModoDeriva
+          ? (ehEnVp ? 'DRIFT 2x!' : 'DERIVA 2x!')
+          : `-${mapa.custoCombustivelSalto ?? 1} ${ehEnVp ? 'FUEL' : 'CMB'}`;
+        const tipoNoEn = noFoco.tipo === 'LOJA' ? 'SHOP' : noFoco.tipo === 'SAIDA' ? 'EXIT' : noFoco.tipo === 'COMBATE' ? 'COMBAT' : noFoco.tipo === 'EVENTO' ? 'EVENT' : noFoco.tipo;
+        const tagIntelF = noFoco.engolidoCorporacao
+          ? (ehEnVp ? 'CORP FLEET (0 LOOT, +1 SHIELD)' : 'FROTA CORP (0 SAQUE, +1 ESCUDO)')
+          : noFoco.sosExpirado
+            ? (ehEnVp ? 'DEAD ZONE (-50% SCRAP)' : 'ZONA MORTA (-50% SUCATA)')
+            : (noFoco.ehQuestAtiva && !noFoco.visitado)
+              ? (ehEnVp ? 'QUEST OBJECTIVE' : 'MISSÃO QUEST')
+              : (noFoco.inteligenciaRevelada && noFoco.subtipoCurto)
+                ? noFoco.subtipoCurto
+                : (ehEnVp ? tipoNoEn : noFoco.tipo);
         const rodapeMapaTxt = alc
-          ? `${nomeBoia} [${tagIntelF}] — ${txtRotaF} | [ESQ] SALTAR (${custoCmbTxt}${rF?.expiraSosNoSalto ? ', SOS EXPIRA!' : rF?.engolidoNoSalto ? ', DRAGA ALCANÇA!' : ''})`
+          ? (ehEnVp
+              ? `${nomeBoia} [${tagIntelF}] — ${txtRotaF} | [L-CLICK] JUMP (${custoCmbTxt}${rF?.expiraSosNoSalto ? ', SOS EXPIRES!' : rF?.engolidoNoSalto ? ', DREDGE CATCHES!' : ''})`
+              : `${nomeBoia} [${tagIntelF}] — ${txtRotaF} | [ESQ] SALTAR (${custoCmbTxt}${rF?.expiraSosNoSalto ? ', SOS EXPIRA!' : rF?.engolidoNoSalto ? ', DRAGA ALCANÇA!' : ''})`)
           : noFoco.id === mapa.noAtualId
-            ? `${nomeBoia} — POSIÇÃO ATUAL DA BIO-NAVE | ESCOLHA UMA BOIA CONECTADA`
-            : `${nomeBoia} [${tagIntelF}] — FORA DE ALCANCE DIRETO NESTE SALTO`;
+            ? (ehEnVp
+                ? `${nomeBoia} — CURRENT BIO-SHIP POSITION | PICK A LINKED BUOY TO JUMP`
+                : `${nomeBoia} — POSIÇÃO ATUAL DA BIO-NAVE | ESCOLHA UMA BOIA CONECTADA`)
+            : (ehEnVp
+                ? `${nomeBoia} [${tagIntelF}] — OUT OF DIRECT RANGE ON THIS JUMP`
+                : `${nomeBoia} [${tagIntelF}] — FORA DE ALCANCE DIRETO NESTE SALTO`);
         txt(160, 411, rodapeMapaTxt.slice(0, 112), (noFoco.engolidoCorporacao || noFoco.sosExpirado) ? RED : alc ? GREEN : CYAN, 7);
       }
     }
@@ -695,9 +941,9 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
     if (!blitIconeHiBit(assets.iconesHiBit?.BULBO_DIGESTOR, 905, 47, true)) {
       heartOrgan(906, 52);
     }
-    const loja = viewModel.lojaResumo ?? { nomeDoca: 'RECIFE-FORJA SIMBIÓTICO', precoReparo1Hp: 2, ofertas: [] };
+    const loja = viewModel.lojaResumo ?? { nomeDoca: ehEnVp ? 'SYMBIOTIC FORGE-REEF' : 'RECIFE-FORJA SIMBIÓTICO', precoReparo1Hp: 2, ofertas: [] };
     txt(242, 54, loja.nomeDoca, CYAN);
-    txt(242, 70, 'ENXERTOS VIVOS, CHASSIS RECUPERADOS, ESTOQUE FINITO E DIGESTÃO 2:1', AMBER, 7);
+    txt(242, 70, ehEnVp ? 'LIVING GRAFTS, SALVAGED WEAPONS, FINITE STOCK & 2:1 DIGESTION' : 'ENXERTOS VIVOS, CHASSIS RECUPERADOS, ESTOQUE FINITO E DIGESTÃO 2:1', AMBER, 7);
 
     const recLoja = viewModel.barraSuperior?.recursos ?? { sucata: 0, biomassa: 0 };
     const hbReparo = hitboxes.find((h) => h.idHitbox === 'LOJA_REPARAR_CASCO');
@@ -705,7 +951,7 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
       const dyP = idPressAtivo === hbReparo.idHitbox ? 1 : 0;
       const hov = idHoverAtivo === hbReparo.idHitbox;
       chanfradoBezel(hbReparo.x, hbReparo.y + dyP, hbReparo.x + hbReparo.largura - 1, hbReparo.y + hbReparo.altura - 1, [14, 38, 28, 255], hov ? YELLOW : GREEN, 3);
-      txt(hbReparo.x + 8, hbReparo.y + 9 + dyP, `REPARAR +1 HP (${loja.precoReparo1Hp} SUC)`, hov ? YELLOW : GREEN, 7);
+      txt(hbReparo.x + 8, hbReparo.y + 9 + dyP, ehEnVp ? `REPAIR +1 HP (${loja.precoReparo1Hp} SCR)` : `REPARAR +1 HP (${loja.precoReparo1Hp} SUC)`, hov ? YELLOW : GREEN, 7);
     }
     const hbDigSucBio = hitboxes.find((h) => h.idHitbox === 'LOJA_DIGESTAO_SUC_BIO');
     if (hbDigSucBio) {
@@ -722,7 +968,9 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
         3
       );
       const usaBotoesSeparados = Boolean(hitboxes.find((h) => h.idHitbox === 'LOJA_DIGESTAO_BIO_SUC'));
-      const rotSucBio = usaBotoesSeparados ? '2 SUC → 1 BIO' : 'DIGESTÃO 2:1 (SUC ↔ BIO)';
+      const rotSucBio = usaBotoesSeparados
+        ? (ehEnVp ? '2 SCR → 1 BIO' : '2 SUC → 1 BIO')
+        : (ehEnVp ? 'DIGEST 2:1 (SCR ↔ BIO)' : 'DIGESTÃO 2:1 (SUC ↔ BIO)');
       txt(hbDigSucBio.x + 8, hbDigSucBio.y + 9 + dyP, rotSucBio, hov ? YELLOW : podeSuc ? CYAN : DIM, 7);
     }
     const hbDigBioSuc = hitboxes.find((h) => h.idHitbox === 'LOJA_DIGESTAO_BIO_SUC');
@@ -739,21 +987,21 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
         hov ? YELLOW : podeBio ? CYAN : DIM,
         3
       );
-      txt(hbDigBioSuc.x + 8, hbDigBioSuc.y + 9 + dyP, '2 BIO → 1 SUC', hov ? YELLOW : podeBio ? GREEN : DIM, 7);
+      txt(hbDigBioSuc.x + 8, hbDigBioSuc.y + 9 + dyP, ehEnVp ? '2 BIO → 1 SCR' : '2 BIO → 1 SUC', hov ? YELLOW : podeBio ? GREEN : DIM, 7);
     }
     const hbOficLoja = hitboxes.find((h) => h.idHitbox === 'BTN_ABRIR_OFICINA');
     if (hbOficLoja) {
       const dyP = idPressAtivo === hbOficLoja.idHitbox ? 1 : 0;
       const hov = idHoverAtivo === hbOficLoja.idHitbox;
       chanfradoBezel(hbOficLoja.x, hbOficLoja.y + dyP, hbOficLoja.x + hbOficLoja.largura - 1, hbOficLoja.y + hbOficLoja.altura - 1, [24, 34, 18, 255], hov ? YELLOW : AMBER, 3);
-      txt(hbOficLoja.x + 10, hbOficLoja.y + 9 + dyP, '[U] OFICINA', YELLOW, 7);
+      txt(hbOficLoja.x + 10, hbOficLoja.y + 9 + dyP, ehEnVp ? '[U] WORKSHOP' : '[U] OFICINA', YELLOW, 7);
     }
     const hbSairLoja = hitboxes.find((h) => h.idHitbox === 'BTN_SAIR_LOJA');
     if (hbSairLoja) {
       const dyP = idPressAtivo === hbSairLoja.idHitbox ? 1 : 0;
       const hov = idHoverAtivo === hbSairLoja.idHitbox;
       chanfradoBezel(hbSairLoja.x, hbSairLoja.y + dyP, hbSairLoja.x + hbSairLoja.largura - 1, hbSairLoja.y + hbSairLoja.altura - 1, [16, 36, 50, 255], hov ? YELLOW : CYAN, 3);
-      txt(hbSairLoja.x + 12, hbSairLoja.y + 9 + dyP, 'ZARPAR → CARTA', hov ? YELLOW : TXT, 7);
+      txt(hbSairLoja.x + 12, hbSairLoja.y + 9 + dyP, ehEnVp ? 'UNDOCK → CHART' : 'ZARPAR → CARTA', hov ? YELLOW : TXT, 7);
     }
 
     const hbItensLoja = hitboxes.filter((h) => h.tipo === 'ITEM_LOJA');
@@ -773,7 +1021,9 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
             ? VIOLET
             : item.categoria === 'TRIPULANTE'
               ? GREEN
-              : CYAN;
+              : item.categoria === 'SUBSISTEMA'
+                ? [92, 224, 255, 255]
+                : CYAN;
       chanfradoBezel(
         hb.x,
         hb.y + dyP,
@@ -784,10 +1034,20 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
         3
       );
       fillRect(hb.x + 3, hb.y + 2 + dyP, hb.x + hb.largura - 4, hb.y + 16 + dyP, esgotado ? [14, 18, 24, 220] : [18, 30, 42, 220]);
-      const rotCatLoja = item.categoria === 'ORGAO' ? 'ÓRGÃO' : item.categoria;
+      const rotCatLoja = ehEnVp
+        ? (item.categoria === 'ARMA'
+            ? 'WEAPON'
+            : item.categoria === 'ORGAO'
+              ? 'ORGAN'
+              : item.categoria === 'TRIPULANTE'
+                ? 'CREW'
+                : item.categoria === 'SUBSISTEMA'
+                  ? 'SUBSYSTEM'
+                  : 'SUPPLY')
+        : (item.categoria === 'ORGAO' ? 'ÓRGÃO' : item.categoria);
       const corRotCatLoja = esgotado ? DIM : item.categoria === 'ORGAO' ? [210, 166, 255, 255] : corCat;
       txt(hb.x + 6, hb.y + 5 + dyP, rotCatLoja.slice(0, 10), hov ? YELLOW : corRotCatLoja, 7);
-      const tagDirTopo = esgotado ? '0 ESTQ' : item.pesoKg > 0 ? `+${item.pesoKg}kg` : estq > 1 ? `x${estq}` : '';
+      const tagDirTopo = esgotado ? (ehEnVp ? '0 LEFT' : '0 ESTQ') : item.pesoKg > 0 ? `+${item.pesoKg}kg` : estq > 1 ? `x${estq}` : '';
       if (tagDirTopo) {
         txt(hb.x + hb.largura - 6 - tagDirTopo.length * 7, hb.y + 5 + dyP, tagDirTopo, esgotado ? DIM : item.pesoKg > 0 ? AMBER : CYAN, 7);
       }
@@ -840,36 +1100,54 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
       const sxChip = xmDiv + 6;
       const resTxt = String(item.resumoCurto ?? '');
       if (item.categoria === 'ARMA') {
-        const mEne = /(\d+)\s*ENE/i.exec(resTxt);
+        const mEne = /(\d+)\s*(?:ENE|PWR)/i.exec(resTxt);
         const eneArma = mEne ? Number(mEne[1]) : (item.pesoKg >= 15 ? 2 : 1);
-        const soqArma = /ARPAO|TORPEDO|MORTEIRO/i.test(String(item.id)) ? 2 : 1;
-        txt(sxChip, vy0 + 6, 'ENERGIA', DIM, 6);
+        const soqArma = /ARPAO|TORPEDO|MORTEIRO|DUPLA|BOMBA|ACIDO/i.test(String(item.id)) ? 2 : 1;
+        txt(sxChip, vy0 + 6, ehEnVp ? 'POWER' : 'ENERGIA', DIM, 6);
         segBar(sxChip + 48, vy0 + 6, 3, eneArma, 5, 7, 2, GREEN);
-        txt(sxChip, vy0 + 20, 'SOQUETES', DIM, 6);
+        txt(sxChip, vy0 + 20, ehEnVp ? 'SOCKETS' : 'SOQUETES', DIM, 6);
         for (let isq = 0; isq < soqArma; isq += 1) {
           socket(sxChip + 53 + isq * 11, vy0 + 19, false);
         }
         chanfradoBezel(sxChip, vy0 + 34, vx1 - 5, vy0 + 49, [14, 24, 32, 255], BORDER, 2);
-        txt(sxChip + 4, vy0 + 39, `PESO +${item.pesoKg}kg`, AMBER, 6);
+        txt(sxChip + 4, vy0 + 39, `${ehEnVp ? 'MASS' : 'PESO'} +${item.pesoKg}kg`, AMBER, 6);
       } else if (item.categoria === 'ORGAO') {
-        txt(sxChip, vy0 + 6, 'ENXERTO', [210, 166, 255, 255], 6);
-        socket(vx1 - 16, vy0 + 5, true);
-        txt(sxChip, vy0 + 20, `PESO +${item.pesoKg || 5}kg`, AMBER, 6);
-        chanfradoBezel(sxChip, vy0 + 34, vx1 - 5, vy0 + 49, [22, 14, 34, 255], VIOLET, 2);
-        txt(sxChip + 3, vy0 + 39, 'BIO-SOQUETE', CYAN, 6);
+        const ehPassivoLoja = Boolean(item.ehPassivoPorao);
+        if (ehPassivoLoja) {
+          txt(sxChip, vy0 + 6, ehEnVp ? 'IMPLANT' : 'IMPLANTE', GREEN, 6);
+          chanfradoBezel(vx1 - 17, vy0 + 5, vx1 - 9, vy0 + 13, [12, 44, 34, 255], GREEN, 2);
+          putPx(vx1 - 13, vy0 + 9, YELLOW);
+          txt(sxChip, vy0 + 20, `${ehEnVp ? 'MASS' : 'PESO'} +${item.pesoKg || 5}kg`, AMBER, 6);
+          chanfradoBezel(sxChip, vy0 + 34, vx1 - 5, vy0 + 49, [10, 34, 28, 255], GREEN, 2);
+          txt(sxChip + 3, vy0 + 39, ehEnVp ? 'HOLD PASSIVE' : 'PORÃO PASSIVO', GREEN, 6);
+        } else {
+          txt(sxChip, vy0 + 6, ehEnVp ? 'GRAFT' : 'ENXERTO', [210, 166, 255, 255], 6);
+          socket(vx1 - 16, vy0 + 5, true);
+          txt(sxChip, vy0 + 20, `${ehEnVp ? 'MASS' : 'PESO'} +${item.pesoKg || 5}kg`, AMBER, 6);
+          chanfradoBezel(sxChip, vy0 + 34, vx1 - 5, vy0 + 49, [22, 14, 34, 255], VIOLET, 2);
+          txt(sxChip + 3, vy0 + 39, ehEnVp ? 'BIO-SOCKET' : 'BIO-SOQUETE', CYAN, 6);
+        }
       } else if (item.categoria === 'TRIPULANTE') {
         const hpL = /150/.test(resTxt) ? 150 : /110/.test(resTxt) ? 110 : /70/.test(resTxt) ? 70 : 80;
         txt(sxChip, vy0 + 6, `HP ${hpL}`, GREEN, 6);
         segBar(sxChip, vy0 + 18, 6, Math.max(2, Math.round((hpL / 150) * 6)), 9, 6, 2, GREEN);
         chanfradoBezel(sxChip, vy0 + 34, vx1 - 5, vy0 + 49, [12, 30, 26, 255], GREEN, 2);
-        const espTag = /BAIACU/i.test(String(item.id)) ? 'SELA BRECHA' : /POLVO/i.test(String(item.id)) ? 'REPARO 2X' : /ARRAIA/i.test(String(item.id)) ? '+1 ENERGIA' : 'GARRA 15DPS';
+        const espTag = ehEnVp
+          ? (/BAIACU/i.test(String(item.id)) ? 'SEALS BREACH' : /POLVO/i.test(String(item.id)) ? '2X REPAIR' : /ARRAIA/i.test(String(item.id)) ? '+1 POWER' : '15DPS CLAW')
+          : (/BAIACU/i.test(String(item.id)) ? 'SELA BRECHA' : /POLVO/i.test(String(item.id)) ? 'REPARO 2X' : /ARRAIA/i.test(String(item.id)) ? '+1 ENERGIA' : 'GARRA 15DPS');
         txt(sxChip + 3, vy0 + 39, espTag, CYAN, 6);
+      } else if (item.categoria === 'SUBSISTEMA') {
+        const ehAtivoTatico = /SONDA|PARASITA|DRONE/i.test(String(item.id));
+        txt(sxChip, vy0 + 6, ehEnVp ? (ehAtivoTatico ? 'TACTICAL' : 'CHAMBER') : (ehAtivoTatico ? 'TÁTICO' : 'CÂMARA'), CYAN, 6);
+        segBar(sxChip, vy0 + 19, 3, 3, 14, 6, 3, ehAtivoTatico ? VIOLET : CYAN);
+        chanfradoBezel(sxChip, vy0 + 34, vx1 - 5, vy0 + 49, [12, 28, 38, 255], CYAN, 2);
+        txt(sxChip + 3, vy0 + 39, ehEnVp ? 'SHIP MODULE' : 'MÓDULO NAVE', GREEN, 6);
       } else {
-        const ehCmb = /COMBUST/i.test(String(item.id) + resTxt);
-        txt(sxChip, vy0 + 6, ehCmb ? 'PROPULSÃO' : 'PAIOL', CYAN, 6);
+        const ehCmb = /COMBUST|FUEL/i.test(String(item.id) + resTxt);
+        txt(sxChip, vy0 + 6, ehEnVp ? (ehCmb ? 'THRUST' : 'MAGAZINE') : (ehCmb ? 'PROPULSÃO' : 'PAIOL'), CYAN, 6);
         segBar(sxChip, vy0 + 19, 4, 4, 12, 6, 3, ehCmb ? AMBER : CYAN);
         chanfradoBezel(sxChip, vy0 + 34, vx1 - 5, vy0 + 49, [12, 26, 36, 255], CYAN, 2);
-        txt(sxChip + 3, vy0 + 39, ehCmb ? '+1 SALTO' : '+1 MUNIÇÃO', TXT, 6);
+        txt(sxChip + 3, vy0 + 39, ehEnVp ? (ehCmb ? '+1 JUMP' : '+1 AMMO') : (ehCmb ? '+1 SALTO' : '+1 MUNIÇÃO'), TXT, 6);
       }
 
       txt(hb.x + 6, hb.y + 80 + dyP, String(item.nomeCurto), esgotado ? DIM : TXT, 7);
@@ -885,14 +1163,14 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
         2
       );
       if (esgotado) {
-        txt(hb.x + 12, hb.y + 112 + dyP, '[ESGOTADO — DIR VENDE]', AMBER, 7);
+        txt(hb.x + 12, hb.y + 112 + dyP, ehEnVp ? '[SOLD OUT — R-CLK SELL]' : '[ESGOTADO — DIR VENDE]', AMBER, 7);
       } else {
-        const siglaM = item.moeda === 'BIOMASSA' ? 'BIO' : 'SUC';
+        const siglaM = item.moeda === 'BIOMASSA' ? 'BIO' : (ehEnVp ? 'SCR' : 'SUC');
         const sufixoEstq = estq > 1 ? ` (${estq})` : '';
         txt(
           hb.x + 10,
           hb.y + 112 + dyP,
-          `COMPRAR: ${item.preco} ${siglaM}${sufixoEstq}`.slice(0, 24),
+          `${ehEnVp ? 'BUY' : 'COMPRAR'}: ${item.preco} ${siglaM}${sufixoEstq}`.slice(0, 24),
           podeComprar ? (item.moeda === 'BIOMASSA' ? CYAN : GREEN) : DIM,
           7
         );
@@ -920,7 +1198,9 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
         hovVp && ocupVp ? YELLOW : ocupVp ? corVp : [34, 48, 60, 255],
         2
       );
-      const rotVp = ocupVp ? `VEND P${c + 1} +${itemVp.valorVenda ?? 5}${siglaVp}` : `P${c + 1}: VAZIO`;
+      const rotVp = ocupVp
+        ? `${ehEnVp ? 'SELL' : 'VEND'} P${c + 1} +${itemVp.valorVenda ?? 5}${siglaVp}`
+        : `P${c + 1}: ${ehEnVp ? 'EMPTY' : 'VAZIO'}`;
       txt(hbVp.x + 5, hbVp.y + 7 + dyVp, rotVp.slice(0, 13), ocupVp ? (hovVp ? YELLOW : corVp) : DIM, 6);
     }
 
@@ -928,15 +1208,19 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
     if (hbHovLoja?.tipo === 'ITEM_LOJA') {
       const idxItem = hbItensLoja.findIndex((h) => h.idHitbox === hbHovLoja.idHitbox);
       const itemFoco = (loja.ofertas ?? [])[idxItem] ?? hbHovLoja.metadados;
-      const siglaM = itemFoco.moeda === 'BIOMASSA' ? 'BIO' : 'SUC';
+      const siglaM = itemFoco.moeda === 'BIOMASSA' ? 'BIO' : (ehEnVp ? 'SCR' : 'SUC');
       const esgFoco = Boolean(itemFoco.esgotado) || Number(itemFoco.estoqueRestante ?? 1) <= 0;
-      txt(162, 405, `INSPEÇÃO: ${itemFoco.nomeCurto} (${itemFoco.resumoCurto})`.slice(0, 66), YELLOW, 6);
+      txt(162, 405, `${ehEnVp ? 'INSPECT' : 'INSPEÇÃO'}: ${itemFoco.nomeCurto} (${itemFoco.resumoCurto})`.slice(0, 66), YELLOW, 6);
       txt(
         162,
         416,
         (esgFoco
-          ? `ESGOTADO | [DIR] VENDER DO INVENTÁRIO (+${hbHovLoja.metadados?.valorVenda ?? 5} ${siglaM})`
-          : `[ESQ] COMPRAR ${itemFoco.preco} ${siglaM} (ESTQ:${itemFoco.estoqueRestante ?? 1}) | [DIR] VENDER (+${hbHovLoja.metadados?.valorVenda ?? 5} ${siglaM})`
+          ? (ehEnVp
+              ? `SOLD OUT | [R-CLICK] SELL FROM INVENTORY (+${hbHovLoja.metadados?.valorVenda ?? 5} ${siglaM})`
+              : `ESGOTADO | [DIR] VENDER DO INVENTÁRIO (+${hbHovLoja.metadados?.valorVenda ?? 5} ${siglaM})`)
+          : (ehEnVp
+              ? `[L-CLICK] BUY ${itemFoco.preco} ${siglaM} (STK:${itemFoco.estoqueRestante ?? 1}) | [R-CLICK] SELL (+${hbHovLoja.metadados?.valorVenda ?? 5} ${siglaM})`
+              : `[ESQ] COMPRAR ${itemFoco.preco} ${siglaM} (ESTQ:${itemFoco.estoqueRestante ?? 1}) | [DIR] VENDER (+${hbHovLoja.metadados?.valorVenda ?? 5} ${siglaM})`)
         ).slice(0, 66),
         esgFoco ? AMBER : TXT,
         6
@@ -945,27 +1229,27 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
       const idxP = Number(hbHovLoja.metadados?.indicePorao ?? 0);
       const itemPFoco = poraoLoja[idxP];
       if (itemPFoco) {
-        txt(162, 405, `PORÃO #${idxP + 1}: ${String(itemPFoco.nome).toUpperCase()} (${itemPFoco.pesoKg ?? 5} kg)`.slice(0, 66), YELLOW, 6);
-        txt(162, 416, `[CLIQUE ESQ] VENDER IMEDIATAMENTE POR +${itemPFoco.valorVenda ?? 5} ${itemPFoco.moedaVenda ?? 'SUCATA'}`.slice(0, 66), GREEN, 6);
+        txt(162, 405, `${ehEnVp ? 'HOLD' : 'PORÃO'} #${idxP + 1}: ${String(itemPFoco.nome).toUpperCase()} (${itemPFoco.pesoKg ?? 5} kg)`.slice(0, 66), YELLOW, 6);
+        txt(162, 416, (ehEnVp ? `[L-CLICK] SELL IMMEDIATELY FOR +${itemPFoco.valorVenda ?? 5} ${itemPFoco.moedaVenda === 'BIOMASSA' ? 'BIOMASS' : 'SCRAP'}` : `[CLIQUE ESQ] VENDER IMEDIATAMENTE POR +${itemPFoco.valorVenda ?? 5} ${itemPFoco.moedaVenda ?? 'SUCATA'}`).slice(0, 66), GREEN, 6);
       } else {
-        txt(162, 405, `PORÃO #${idxP + 1} VAZIO (0 kg)`, DIM, 6);
-        txt(162, 416, 'ABRA [U] OFICINA P/ MOVER ARMAS OU ÓRGÃOS EQUIPADOS AO PORÃO', CYAN, 6);
+        txt(162, 405, ehEnVp ? `CARGO HOLD #${idxP + 1} EMPTY (0 kg)` : `PORÃO #${idxP + 1} VAZIO (0 kg)`, DIM, 6);
+        txt(162, 416, ehEnVp ? 'OPEN [U] WORKSHOP TO MOVE EQUIPPED WEAPONS/ORGANS TO HOLD' : 'ABRA [U] OFICINA P/ MOVER ARMAS OU ÓRGÃOS EQUIPADOS AO PORÃO', CYAN, 6);
       }
     } else if (idHoverAtivo === 'LOJA_DIGESTAO_SUC_BIO') {
-      txt(162, 405, 'DIGESTÃO ENZIMÁTICA: 2 SUCATA → +1 BIOMASSA', YELLOW, 6);
-      txt(162, 416, '[CLIQUE ESQ] ALIMENTA O BULBO DIGESTOR DA DOCA (TAXA 2:1)', CYAN, 6);
+      txt(162, 405, ehEnVp ? 'ENZYMATIC DIGESTION: 2 SCRAP → +1 BIOMASS' : 'DIGESTÃO ENZIMÁTICA: 2 SUCATA → +1 BIOMASSA', YELLOW, 6);
+      txt(162, 416, ehEnVp ? '[L-CLICK] FEEDS THE DOCK DIGESTOR BULB (2:1 RATE)' : '[CLIQUE ESQ] ALIMENTA O BULBO DIGESTOR DA DOCA (TAXA 2:1)', CYAN, 6);
     } else if (idHoverAtivo === 'LOJA_DIGESTAO_BIO_SUC') {
-      txt(162, 405, 'CALCIFICAÇÃO SIMBIÓTICA: 2 BIOMASSA → +1 SUCATA', YELLOW, 6);
-      txt(162, 416, '[CLIQUE ESQ] SINTETIZA QUITINA METÁLICA NA DOCA (TAXA 2:1)', GREEN, 6);
+      txt(162, 405, ehEnVp ? 'SYMBIOTIC CALCIFICATION: 2 BIOMASS → +1 SCRAP' : 'CALCIFICAÇÃO SIMBIÓTICA: 2 BIOMASSA → +1 SUCATA', YELLOW, 6);
+      txt(162, 416, ehEnVp ? '[L-CLICK] SYNTHESIZES METALLIC CHITIN AT DOCK (2:1 RATE)' : '[CLIQUE ESQ] SINTETIZA QUITINA METÁLICA NA DOCA (TAXA 2:1)', GREEN, 6);
     } else if (idHoverAtivo === 'LOJA_REPARAR_CASCO') {
-      txt(162, 405, `REPARO DE QUITINA (+1 HP POR ${loja.precoReparo1Hp} SUCATA)`, GREEN, 6);
-      txt(162, 416, '[CLIQUE ESQ] RESTAURA INTEGRIDADE DO CASCO ANTES DE ZARPAR', TXT, 6);
+      txt(162, 405, ehEnVp ? `CHITIN REPAIR (+1 HP FOR ${loja.precoReparo1Hp} SCRAP)` : `REPARO DE QUITINA (+1 HP POR ${loja.precoReparo1Hp} SUCATA)`, GREEN, 6);
+      txt(162, 416, ehEnVp ? '[L-CLICK] RESTORES HULL INTEGRITY BEFORE UNDOCKING' : '[CLIQUE ESQ] RESTAURA INTEGRIDADE DO CASCO ANTES DE ZARPAR', TXT, 6);
     } else if (idHoverAtivo === 'BTN_SAIR_LOJA') {
-      txt(162, 405, 'DESATRACAR DO RECIFE-FORJA E RETORNAR À CARTA ABISSAL', CYAN, 6);
-      txt(162, 416, '[CLIQUE ESQ] PROSSEGUIR ROTA NO SETOR ATUAL', TXT, 6);
+      txt(162, 405, ehEnVp ? 'UNDOCK FROM FORGE-REEF AND RETURN TO ABYSSAL CHART' : 'DESATRACAR DO RECIFE-FORJA E RETORNAR À CARTA ABISSAL', CYAN, 6);
+      txt(162, 416, ehEnVp ? '[L-CLICK] CONTINUE COURSE IN CURRENT SECTOR' : '[CLIQUE ESQ] PROSSEGUIR ROTA NO SETOR ATUAL', TXT, 6);
     } else {
-      txt(162, 405, '[ESQ] COMPRAR | [DIR] VENDER DO PORÃO/EQUIPADO', TXT, 6);
-      txt(162, 416, 'OU CLIQUE EM [VEND P1..P4] À DIREITA P/ LIQUIDAR CARGA →', CYAN, 6);
+      txt(162, 405, ehEnVp ? '[L-CLICK] BUY | [R-CLICK] SELL FROM HOLD/EQUIPPED' : '[ESQ] COMPRAR | [DIR] VENDER DO PORÃO/EQUIPADO', TXT, 6);
+      txt(162, 416, ehEnVp ? 'OR CLICK [SELL P1..P4] ON THE RIGHT TO LIQUIDATE CARGO →' : 'OU CLIQUE EM [VEND P1..P4] À DIREITA P/ LIQUIDAR CARGA →', CYAN, 6);
     }
   } else if (faseJogo === 'EVENTO') {
     fillRect(150, 40, 959, 429, [7, 16, 24, 255], BORDER);
@@ -1152,7 +1436,8 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
       if (idEv === 'EXP_6_CORAL_NEGRO') lineSeg(756, 126, 764, 98, VIOLET, false);
     }
 
-    const seloEvTxt = String(ev.seloCenarioCurto ?? (ehSosEv ? 'SINAL SOS' : ev.categoria === 'PERIGO' ? 'ZONA HOSTIL' : 'EXPLORAÇÃO')).slice(0, 14);
+    const ehEnEv = viewModel.configuracoesSteam?.idioma === 'en-US';
+    const seloEvTxt = String(ev.seloCenarioCurto ?? (ehSosEv ? (ehEnEv ? 'SOS SIGNAL' : 'SINAL SOS') : ev.categoria === 'PERIGO' ? (ehEnEv ? 'HAZARD ZONE' : 'ZONA HOSTIL') : (ehEnEv ? 'EXPLORATION' : 'EXPLORAÇÃO'))).slice(0, 14);
     const wSeloEv = Math.max(88, seloEvTxt.length * 7 + 12);
     const x0SeloEv = 934 - wSeloEv;
     if (ehSosEv) {
@@ -1175,13 +1460,16 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
     panel(168, 170, 942, 238);
     const corBadgeEv = ev.categoria === 'PERIGO' ? RED : ev.categoria === 'EXPLORACAO' ? GREEN : AMBER;
     chanfradoBezel(178, 178, 250, 192, [14, 24, 34, 255], corBadgeEv, 2);
-    txt(183, 182, ev.categoria, corBadgeEv, 7);
+    const catEvBadge = ehEnEv
+      ? (ev.categoria === 'PERIGO' ? 'HAZARD' : ev.categoria === 'EXPLORACAO' ? 'EXPLORE' : ev.categoria)
+      : ev.categoria;
+    txt(183, 182, catEvBadge, corBadgeEv, 7);
     txt(258, 181, String(ev.titulo ?? '').slice(0, 66), CYAN, 8);
     const hbOfEv = hitboxes.find((h) => h.idHitbox === 'BTN_ABRIR_OFICINA');
     if (hbOfEv) {
       const hovOfEv = idHoverAtivo === hbOfEv.idHitbox;
       chanfradoBezel(hbOfEv.x, hbOfEv.y, hbOfEv.x + hbOfEv.largura - 1, hbOfEv.y + hbOfEv.altura - 1, [14, 34, 48, 250], hovOfEv ? YELLOW : CYAN, 2, TXT);
-      txt(hbOfEv.x + 12, hbOfEv.y + 6, '[U] BIO-OFICINA', hovOfEv ? YELLOW : CYAN, 7);
+      txt(hbOfEv.x + 12, hbOfEv.y + 6, ehEnEv ? '[U] WORKSHOP' : '[U] BIO-OFICINA', hovOfEv ? YELLOW : CYAN, 7);
     }
     (ev.narrativaLinhas ?? []).slice(0, 3).forEach((lin, i) => {
       txt(178, 199 + i * 12, String(lin).slice(0, 104), TXT, 7);
@@ -1198,13 +1486,54 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
       chanfradoBezel(hb.x, hb.y + dyP, hb.x + hb.largura - 1, hb.y + hb.altura - 1, corBg, corB, 3);
       let xTxtOp = hb.x + 12;
       if (op.azul) {
-        const retAz = assets.retratos?.POLVO;
-        if (!desenharPersonagemPose4F('POLVO', f4Anim % 2, hb.x + 28, hb.y + 22 + dyP, 36, 32, false, false)) {
-          if (retAz) desenharRetratoRecortadoHiBit(retAz, hb.x + 10, hb.y + 6 + dyP, 36, 31);
-          else blitMatrizToken(SPRITES_HB.BULBO_NEURAL, hb.x + 12, hb.y + 10 + dyP, 2, 2);
+        if (viewModel.edicaoComercialSteam) {
+          const reqBruto = `${JSON.stringify(ev.requisitoBlueOption ?? '')} ${op.rotulo ?? ''} ${op.detalhe ?? ''}`.toUpperCase();
+          const especieReq = /\bARRAIA\b|\bRAY\b/.test(reqBruto)
+            ? 'ARRAIA'
+            : /\bBAIACU\b|\bPUFFER\b/.test(reqBruto)
+              ? 'BAIACU'
+              : /\bCARANGUEJO\b|\bCRAB\b/.test(reqBruto)
+                ? 'CARANGUEJO'
+                : /\bPOLVO\b|\bOCTOPUS\b/.test(reqBruto)
+                  ? 'POLVO'
+                  : null;
+          if (especieReq) {
+            const retEsp = assets.retratos?.[especieReq];
+            if (!desenharPersonagemPose4F(especieReq, f4Anim % 2, hb.x + 28, hb.y + 22 + dyP, 36, 32, false, false)) {
+              if (retEsp) desenharRetratoRecortadoHiBit(retEsp, hb.x + 10, hb.y + 6 + dyP, 36, 31);
+              else blitMatrizToken(SPRITES_HB.BULBO_NEURAL, hb.x + 12, hb.y + 10 + dyP, 2, 2);
+            }
+          } else {
+            const matEquip = /FURTIV|TINTA|CLOAK|INK/.test(reqBruto)
+              ? (SPRITES_HB.BOLSA_TINTA_CEGANTE ?? SPRITES_HB.BULBO_NEURAL)
+              : /ELETRO|ION|VOLT|REATOR|REACTOR/.test(reqBruto)
+                ? (SPRITES_HB.ELETRO_PLACA_ARRAIA ?? SPRITES_HB.CORACAO_BIO_ELETRICO ?? SPRITES_HB.BULBO_NEURAL)
+                : /CORTADOR|TERM|BEAM|PLASMA|FORJA/.test(reqBruto)
+                  ? (SPRITES_HB.CORTADOR_TERMICO_PLASMA ?? SPRITES_HB.GLANDULA_TERMOFILICA ?? SPRITES_HB.BULBO_NEURAL)
+                  : /ARPAO|ARPÃO|HARPOON|TORPEDO|DENTE|LEVIAT/.test(reqBruto)
+                    ? (SPRITES_HB.CANHAO_ARPAO_CABO ?? SPRITES_HB.DENTE_LEVIATA_SERRILHADO ?? SPRITES_HB.BULBO_NEURAL)
+                    : /TUBO|ABORD|BOARD|VALVULA|VÁLVULA/.test(reqBruto)
+                      ? (SPRITES_HB.VALVULA_ESFINCTER ?? SPRITES_HB.BULBO_NEURAL)
+                      : /BRANQUIA|BRÂNQUIA|PRESSAO|PRESSÃO|GILL|FOIL|MASTRO|BARREIRA|SHIELD/.test(reqBruto)
+                        ? (SPRITES_HB.BEXIGA_PRESSAO_ABISSAL ?? SPRITES_HB.CORACAO_BIO_ELETRICO ?? SPRITES_HB.BULBO_NEURAL)
+                        : SPRITES_HB.BULBO_NEURAL;
+            chanfradoBezel(hb.x + 10, hb.y + 6 + dyP, hb.x + 45, hb.y + 34 + dyP, [8, 28, 38, 250], op.bloqueada ? RED : CYAN, 2);
+            const altMat = Array.isArray(matEquip) ? matEquip.length : 12;
+            const largMat = Array.isArray(matEquip?.[0]) ? matEquip[0].length : 12;
+            const escSpr = largMat > 16 || altMat > 14 ? 1 : 2;
+            const sxEq = hb.x + 28 - Math.floor((largMat * escSpr) / 2);
+            const syEq = hb.y + 20 + dyP - Math.floor((altMat * escSpr) / 2);
+            blitMatrizToken(matEquip, sxEq, syEq, escSpr, escSpr);
+          }
+        } else {
+          const retAz = assets.retratos?.POLVO;
+          if (!desenharPersonagemPose4F('POLVO', f4Anim % 2, hb.x + 28, hb.y + 22 + dyP, 36, 32, false, false)) {
+            if (retAz) desenharRetratoRecortadoHiBit(retAz, hb.x + 10, hb.y + 6 + dyP, 36, 31);
+            else blitMatrizToken(SPRITES_HB.BULBO_NEURAL, hb.x + 12, hb.y + 10 + dyP, 2, 2);
+          }
         }
         chanfradoBezel(hb.x + 52, hb.y + 6 + dyP, hb.x + 138, hb.y + 20 + dyP, op.bloqueada ? [38, 12, 18, 255] : [14, 58, 76, 255], op.bloqueada ? RED : CYAN, 2);
-        txt(hb.x + 57, hb.y + 10 + dyP, op.bloqueada ? 'AZUL BLOQ.' : 'OPÇÃO AZUL', op.bloqueada ? RED : CYAN, 7);
+        txt(hb.x + 57, hb.y + 10 + dyP, op.bloqueada ? (ehEnEv ? 'BLUE LOCKED' : 'AZUL BLOQ.') : (ehEnEv ? 'BLUE OPTION' : 'OPÇÃO AZUL'), op.bloqueada ? RED : CYAN, 7);
         xTxtOp = hb.x + 146;
       }
       const maxRot = op.azul ? 76 : 94;
@@ -1218,26 +1547,49 @@ export function renderizarViewportCampanhaNaoCombate(ctx) {
     if (hbHovEv) {
       const mE = hbHovEv.metadados;
       const codOp = mE.opcao ?? mE.codigoOpcao ?? 'A';
-      txt(178, 398, `PRÉVIA [${codOp}]: ${String(mE.detalhe || mE.rotulo).slice(0, 96)}`, mE.azul ? (mE.bloqueada ? RED : CYAN) : YELLOW, 7);
-      txt(178, 411, mE.bloqueada ? 'REQUISITO AUSENTE NA BIO-NAVE — ABRA [U] BIO-OFICINA OU ESCOLHA [A]/[C]' : '[CLIQUE ESQ] EXECUTAR DECISÃO IMEDIATAMENTE', mE.bloqueada ? RED : GREEN, 7);
+      txt(178, 398, `${ehEnEv ? 'PREVIEW' : 'PRÉVIA'} [${codOp}]: ${String(mE.detalhe || mE.rotulo).slice(0, 96)}`, mE.azul ? (mE.bloqueada ? RED : CYAN) : YELLOW, 7);
+      txt(178, 411, mE.bloqueada ? (ehEnEv ? 'MISSING REQUIREMENT — OPEN [U] WORKSHOP OR PICK [A]/[C]' : 'REQUISITO AUSENTE NA BIO-NAVE — ABRA [U] BIO-OFICINA OU ESCOLHA [A]/[C]') : (ehEnEv ? '[LEFT CLICK] EXECUTE DECISION IMMEDIATELY' : '[CLIQUE ESQ] EXECUTAR DECISÃO IMEDIATAMENTE'), mE.bloqueada ? RED : GREEN, 7);
     } else {
-      txt(178, 404, ev.blueOptionDisponivel ? '[B] OPÇÃO AZUL DESBLOQUEADA NA SUA BIO-NAVE! ESCOLHA [A], [B] OU [C]' : 'OPÇÃO [B] EXIGE EQUIPAMENTO ESPECÍFICO (OU EQUIPE EM [U] BIO-OFICINA)', ev.blueOptionDisponivel ? GREEN : CYAN, 7);
+      txt(178, 404, ev.blueOptionDisponivel ? (ehEnEv ? '[B] BLUE OPTION UNLOCKED ON YOUR BIO-SHIP! CHOOSE [A], [B] OR [C]' : '[B] OPÇÃO AZUL DESBLOQUEADA NA SUA BIO-NAVE! ESCOLHA [A], [B] OU [C]') : (ehEnEv ? 'OPTION [B] REQUIRES SPECIAL GEAR (OR EQUIP IN [U] WORKSHOP)' : 'OPÇÃO [B] EXIGE EQUIPAMENTO ESPECÍFICO (OU EQUIPE EM [U] BIO-OFICINA)'), ev.blueOptionDisponivel ? GREEN : CYAN, 7);
     }
   }
 }
 
 export function renderizarModalSaqueOverlay(ctx) {
-  const { viewModel, assets, hitboxes, idHoverAtivo, BORDER, TXT, DIM, GREEN, CYAN, AMBER, YELLOW, fillRect, chanfradoBezel, txt, blitIconeHiBit } = ctx;
+  const { viewModel, assets, hitboxes, idHoverAtivo, BORDER, TXT, DIM, GREEN, CYAN, AMBER, YELLOW, SPRITES_INSUMOS, SPRITES_HB, fillRect, chanfradoBezel, txt, blitIconeHiBit, blitMatrizToken } = ctx;
+  const ehEnSq = viewModel.configuracoesSteam?.idioma === 'en-US';
 
   fillRect(152, 41, 957, 428, [4, 9, 14, 188]);
   const sq = viewModel.saqueResumo ?? {};
   chanfradoBezel(204, 86, 708, 376, [8, 17, 26, 252], CYAN, 4, TXT);
   fillRect(210, 92, 702, 122, [14, 38, 52, 235]);
   const modVit = String(sq.modalidadeVitoria ?? 'DESTRUICAO_BRUTA');
-  const titMod = modVit === 'CAPTURA_INTACTA' ? 'VITÓRIA: CAPTURA INTACTA DE EMBARCAÇÃO (+50% SUCATA!)' : modVit === 'EXTRACAO_CIRURGICA' ? 'VITÓRIA: EXTRAÇÃO CIRÚRGICA SIMBIÓTICA (+ÓRGÃO PURO!)' : 'VITÓRIA EM COMBATE: DESTRUIÇÃO BRUTA DO ALVO';
-  txt(220, 102, titMod.slice(0, 66), modVit === 'CAPTURA_INTACTA' ? YELLOW : modVit === 'EXTRACAO_CIRURGICA' ? GREEN : CYAN, 7);
+  const titMod = ehEnSq
+    ? (modVit === 'CAPTURA_INTACTA'
+        ? 'VICTORY: INTACT VESSEL CAPTURE (+50% SCRAP!)'
+        : modVit === 'EXTRACAO_CIRURGICA'
+          ? 'VICTORY: SURGICAL SYMBIOTIC GRAFT (+PURE ORGAN!)'
+          : modVit === 'RENDICAO_NEGOCIADA'
+            ? 'CEASE-FIRE: ENEMY SURRENDER TRIBUTE ACCEPTED!'
+            : 'COMBAT VICTORY: TARGET HULL DESTROYED')
+    : (modVit === 'CAPTURA_INTACTA'
+        ? 'VITÓRIA: CAPTURA INTACTA DE EMBARCAÇÃO (+50% SUCATA!)'
+        : modVit === 'EXTRACAO_CIRURGICA'
+          ? 'VITÓRIA: EXTRAÇÃO CIRÚRGICA SIMBIÓTICA (+ÓRGÃO PURO!)'
+          : modVit === 'RENDICAO_NEGOCIADA'
+            ? 'CESSAR-FOGO: TRIBUTO DE RENDIÇÃO INIMIGA ACEITO!'
+            : 'VITÓRIA EM COMBATE: DESTRUIÇÃO BRUTA DO ALVO');
+  txt(
+    220,
+    102,
+    titMod.slice(0, 66),
+    modVit === 'CAPTURA_INTACTA' || modVit === 'RENDICAO_NEGOCIADA' ? YELLOW : modVit === 'EXTRACAO_CIRURGICA' ? GREEN : CYAN,
+    7
+  );
 
-  const ganhos = [['+SUCATA', Number(sq.sucataGanha ?? 0), GREEN], ['+BIOMASSA', Number(sq.biomassaGanha ?? 0), CYAN], ['+COMBUST.', Number(sq.combustivelGanho ?? 0), AMBER], ['+MUNIÇÃO', Number(sq.municaoGanha ?? 0), TXT]];
+  const ganhos = ehEnSq
+    ? [['+SCRAP', Number(sq.sucataGanha ?? 0), GREEN], ['+BIOMASS', Number(sq.biomassaGanha ?? 0), CYAN], ['+FUEL', Number(sq.combustivelGanho ?? 0), AMBER], ['+AMMO', Number(sq.municaoGanha ?? 0), TXT]]
+    : [['+SUCATA', Number(sq.sucataGanha ?? 0), GREEN], ['+BIOMASSA', Number(sq.biomassaGanha ?? 0), CYAN], ['+COMBUST.', Number(sq.combustivelGanho ?? 0), AMBER], ['+MUNIÇÃO', Number(sq.municaoGanha ?? 0), TXT]];
   ganhos.forEach(([rotG, valG, corG], idxG) => {
     const gx0 = 222 + idxG * 118;
     chanfradoBezel(gx0, 136, gx0 + 110, 196, [6, 13, 20, 255], valG > 0 ? corG : BORDER, 3);
@@ -1248,32 +1600,62 @@ export function renderizarModalSaqueOverlay(ctx) {
   chanfradoBezel(222, 208, 690, 272, [6, 14, 22, 255], sq.itemDropado ? YELLOW : BORDER, 3);
   if (sq.itemDropado) {
     const idDrop = String(sq.itemDropado.id ?? '');
-    const icDrop = assets.iconesHiBit?.[idDrop] ?? assets.iconesHiBit?.GLANDULA_BAIACU;
-    if (icDrop) blitIconeHiBit(icDrop, 238, 218, true);
+    const matAeDrop = SPRITES_INSUMOS?.[idDrop] ?? SPRITES_HB?.[idDrop] ?? null;
+    const icDrop = assets.iconesHiBit?.[idDrop] ?? (!matAeDrop ? assets.iconesHiBit?.GLANDULA_BAIACU : null);
+    if (icDrop) {
+      blitIconeHiBit(icDrop, 238, 218, true);
+    } else if (matAeDrop && blitMatrizToken) {
+      blitMatrizToken(matAeDrop, 236, 220, 2, 2, true);
+    }
     const nomeLimpoDrop = String(sq.itemDropado.nome ?? idDrop).replace(/\s*\([^)]*\)\s*$/g, '').toUpperCase();
-    txt(298, 220, `CAPTURADO NO PORÃO: ${nomeLimpoDrop}`.slice(0, 52), YELLOW, 7);
-    txt(298, 240, `MASSA REAL NO PORÃO: +${Number(sq.itemDropado.pesoKg ?? 5)} kg — EQUIPE OU EJETE EM [U] OFICINA`, GREEN, 6);
+    txt(298, 220, `${ehEnSq ? 'STORED IN HOLD' : 'CAPTURADO NO PORÃO'}: ${nomeLimpoDrop}`.slice(0, 52), YELLOW, 7);
+    txt(
+      298,
+      240,
+      ehEnSq
+        ? `REAL HOLD MASS: +${Number(sq.itemDropado.pesoKg ?? 5)} kg — EQUIP OR JETTISON IN [U] WORKSHOP`
+        : `MASSA REAL NO PORÃO: +${Number(sq.itemDropado.pesoKg ?? 5)} kg — EQUIPE OU EJETE EM [U] OFICINA`,
+      GREEN,
+      6
+    );
   } else {
-    txt(238, 226, 'NENHUM CHASSI OU ÓRGÃO EXTRA RECOLHIDO NESTE ENCONTRO', DIM, 7);
-    txt(238, 244, 'DICA: ABORDE TRIPULAÇÃO HUMANA OU DESTRUA GÂNGLIO MONSTRO P/ DROPS!', CYAN, 6);
+    txt(238, 226, ehEnSq ? 'NO EXTRA WEAPON CHASSIS OR ORGAN RECOVERED' : 'NENHUM CHASSI OU ÓRGÃO EXTRA RECOLHIDO NESTE ENCONTRO', DIM, 7);
+    txt(238, 244, ehEnSq ? 'TIP: BOARD CREW OR DESTROY MONSTER GANGLION FOR DROPS!' : 'DICA: ABORDE TRIPULAÇÃO HUMANA OU DESTRUA GÂNGLIO MONSTRO P/ DROPS!', CYAN, 6);
   }
 
   if (Number(sq.abordadoresResgatados ?? 0) > 0) {
-    txt(224, 286, `EQUIPE DE ABORDAGEM RECOLHIDA A BORDO COM SEGURANÇA: ${sq.abordadoresResgatados} TRIPULANTE(S)`, GREEN, 6);
+    txt(
+      224,
+      286,
+      ehEnSq
+        ? `BOARDING TEAM RECOVERED SAFELY ABOARD: ${sq.abordadoresResgatados} CREWMEMBER(S)`
+        : `EQUIPE DE ABORDAGEM RECOLHIDA A BORDO COM SEGURANÇA: ${sq.abordadoresResgatados} TRIPULANTE(S)`,
+      GREEN,
+      6
+    );
   } else {
-    txt(224, 286, 'INTEGRIDADE HIDROSTÁTICA ESTABILIZADA — PRONTO PARA RETOMAR NAVEGAÇÃO', TXT, 6);
+    txt(
+      224,
+      286,
+      ehEnSq
+        ? 'HYDROSTATIC INTEGRITY STABILIZED — READY TO RESUME COURSE'
+        : 'INTEGRIDADE HIDROSTÁTICA ESTABILIZADA — PRONTO PARA RETOMAR NAVEGAÇÃO',
+      TXT,
+      6
+    );
   }
 
   const hbConfSq = hitboxes.find((h) => h.idHitbox === 'SAQUE_CONFIRMAR');
   if (hbConfSq) {
     const hovSq = idHoverAtivo === hbConfSq.idHitbox;
     chanfradoBezel(hbConfSq.x, hbConfSq.y, hbConfSq.x + hbConfSq.largura - 1, hbConfSq.y + hbConfSq.altura - 1, [14, 50, 36, 255], hovSq ? YELLOW : GREEN, 3, TXT);
-    txt(hbConfSq.x + 18, hbConfSq.y + 12, '[ENTER] RECOLHER & ZARPAR', hovSq ? YELLOW : GREEN, 7);
+    txt(hbConfSq.x + 18, hbConfSq.y + 12, ehEnSq ? '[ENTER] COLLECT & SAIL' : '[ENTER] RECOLHER & ZARPAR', hovSq ? YELLOW : GREEN, 7);
   }
 }
 
 export function renderizarModalOficinaOverlay(ctx) {
   const { viewModel, opcoes, hitboxes, tempoSeg, idHoverAtivo, faseJogo, BORDER, RIM, TXT, DIM, GREEN, CYAN, AMBER, RED, YELLOW, VIOLET, NOMES_ARMAS, fillRect, chanfradoBezel, txt, segBar } = ctx;
+  const ehEnOf = viewModel.configuracoesSteam?.idioma === 'en-US';
 
   const geomOf = calcularGeometriaOficina960();
   const cxExt = geomOf.caixaExterna;
@@ -1285,26 +1667,34 @@ export function renderizarModalOficinaOverlay(ctx) {
   const bioSaldo = Number(viewModel.barraSuperior?.recursos?.biomassa ?? 0);
   const emLoja = faseJogo === 'LOJA';
 
-  txt(166, 56, 'OFICINA BIO-MECÂNICA — 10 ÁRVORES & PORÃO', CYAN, 6);
+  txt(166, 56, ehEnOf ? 'BIO-WORKSHOP — 10 UPGRADE TREES & CARGO HOLD' : 'OFICINA BIO-MECÂNICA — 10 ÁRVORES & PORÃO', CYAN, 6);
   const hbAbandonar = hitboxes.find((h) => h.idHitbox === 'OFICINA_ABANDONAR_RUN') ?? geomOf.btnAbandonarRun;
   if (hbAbandonar) {
     const hovAb = idHoverAtivo === 'OFICINA_ABANDONAR_RUN';
     const pendAb = Boolean(ofic.confirmarAbandonoPendente);
     const piscaAb = pendAb && Math.sin(tempoSeg * 9) > 0;
     chanfradoBezel(hbAbandonar.x, hbAbandonar.y, hbAbandonar.x + hbAbandonar.largura - 1, hbAbandonar.y + hbAbandonar.altura - 1, pendAb ? [62, 12, 18, 255] : [30, 14, 18, 255], hovAb || piscaAb ? YELLOW : pendAb ? RED : AMBER, 2);
-    txt(hbAbandonar.x + 6, hbAbandonar.y + 7, pendAb ? '[!] CONFIRMAR FIM!' : 'ABANDONAR EXPED.', pendAb || hovAb ? YELLOW : AMBER, 6);
+    txt(hbAbandonar.x + 6, hbAbandonar.y + 7, pendAb ? (ehEnOf ? '[!] CONFIRM END!' : '[!] CONFIRMAR FIM!') : (ehEnOf ? 'ABANDON RUN' : 'ABANDONAR EXPED.'), pendAb || hovAb ? YELLOW : AMBER, 6);
   }
   const hbMoedaR = hitboxes.find((h) => h.idHitbox === 'OFICINA_MOEDA_REATOR');
   if (hbMoedaR) {
     const hovMR = idHoverAtivo === hbMoedaR.idHitbox;
     chanfradoBezel(hbMoedaR.x, hbMoedaR.y, hbMoedaR.x + hbMoedaR.largura - 1, hbMoedaR.y + hbMoedaR.altura - 1, [16, 30, 42, 255], hovMR ? YELLOW : VIOLET, 2);
-    txt(hbMoedaR.x + 6, hbMoedaR.y + 7, `REATOR: ${moedaReator === 'BIOMASSA' ? 'BIOMASSA' : 'SUCATA'}`, hovMR ? YELLOW : CYAN, 6);
+    txt(
+      hbMoedaR.x + 6,
+      hbMoedaR.y + 7,
+      ehEnOf
+        ? `REACTOR: ${moedaReator === 'BIOMASSA' ? 'BIOMASS' : 'SCRAP'}`
+        : `REATOR: ${moedaReator === 'BIOMASSA' ? 'BIOMASSA' : 'SUCATA'}`,
+      hovMR ? YELLOW : CYAN,
+      6
+    );
   }
   const hbFecharOf = hitboxes.find((h) => h.idHitbox === 'OFICINA_FECHAR');
   if (hbFecharOf) {
     const hovFO = idHoverAtivo === hbFecharOf.idHitbox;
     chanfradoBezel(hbFecharOf.x, hbFecharOf.y, hbFecharOf.x + hbFecharOf.largura - 1, hbFecharOf.y + hbFecharOf.altura - 1, [38, 18, 22, 255], hovFO ? YELLOW : RED, 2);
-    txt(hbFecharOf.x + 8, hbFecharOf.y + 7, '[ESC] FECHAR', hovFO ? YELLOW : TXT, 6);
+    txt(hbFecharOf.x + 8, hbFecharOf.y + 7, ehEnOf ? '[ESC] CLOSE' : '[ESC] FECHAR', hovFO ? YELLOW : TXT, 6);
   }
 
   const arvoresLista = ofic.arvores ?? [];
@@ -1322,16 +1712,17 @@ export function renderizarModalOficinaOverlay(ctx) {
     const nPipsU = Math.min(8, nvMx);
     const nFillU = Math.min(nPipsU, Math.round((nvAt / nvMx) * nPipsU));
     segBar(hbU.x + 132, hbU.y + 5, nPipsU, nFillU, Math.max(4, Math.floor(72 / nPipsU) - 2), 6, 2, noMax ? AMBER : GREEN);
+    const siglaArvM = arv.moeda === 'BIOMASSA' ? 'BIO' : (ehEnOf ? 'SCR' : 'SUC');
     const txtCusto = noMax
-      ? `MÁX NV.${nvAt}`
-      : `NV.${nvAt}->${nvAt + 1}: ${arv.custoProximo} ${arv.moeda === 'BIOMASSA' ? 'BIO' : 'SUC'}`;
+      ? (ehEnOf ? `MAX LV.${nvAt}` : `MÁX NV.${nvAt}`)
+      : `${ehEnOf ? 'LV' : 'NV'}.${nvAt}->${nvAt + 1}: ${arv.custoProximo} ${siglaArvM}`;
     txt(hbU.x + 5, hbU.y + 21, txtCusto.slice(0, 22), noMax ? AMBER : pode ? (arv.moeda === 'BIOMASSA' ? CYAN : GREEN) : DIM, 6);
     if (arv.detalheCurto) {
       txt(hbU.x + 132, hbU.y + 21, String(arv.detalheCurto).slice(0, 13), AMBER, 6);
     }
   });
 
-  txt(168, 294, 'SLOTS DORSAIS ATIVOS (GUARDAR CHASSI OU EXTRAIR ÓRGÃO PARA O PORÃO):', AMBER, 6);
+  txt(168, 294, ehEnOf ? 'ACTIVE DORSAL SLOTS (STORE CHASSIS OR EXTRACT ORGAN TO HOLD):' : 'SLOTS DORSAIS ATIVOS (GUARDAR CHASSI OU EXTRAIR ÓRGÃO PARA O PORÃO):', AMBER, 6);
   for (let k = 0; k < 4; k += 1) {
     const slotA = viewModel.caixaArmas?.[k] ?? { ocupado: false };
     const cxD = geomOf.caixaSlotDorsal(k);
@@ -1344,22 +1735,27 @@ export function renderizarModalOficinaOverlay(ctx) {
       slotA.ocupado ? CYAN : BORDER,
       2
     );
-    const nmA = slotA.ocupado ? (NOMES_ARMAS[slotA.chassiId] ?? String(slotA.chassiId).slice(0, 12)) : 'SLOT VAZIO';
-    txt(cxD.x + 4, cxD.y + 7, `[${k + 1}] ${nmA}`.slice(0, 16), slotA.ocupado ? TXT : DIM, 6);
+    const siglaHudOf = slotA.ocupado
+      ? obterSiglaHudArma(slotA.chassiId, viewModel.configuracoesSteam?.idioma)
+      : null;
+    const nmA = slotA.ocupado
+      ? (siglaHudOf ?? NOMES_ARMAS[slotA.chassiId] ?? String(slotA.chassiId))
+      : (ehEnOf ? 'EMPTY SLOT' : 'SLOT VAZIO');
+    txt(cxD.x + 4, cxD.y + 7, `[${k + 1}] ${nmA}`, slotA.ocupado ? TXT : DIM, 6);
     const nOrgA = (slotA.orgaosEnxertados ?? []).length;
-    txt(cxD.x + 4, cxD.y + 23, slotA.ocupado ? `ÓRGÃOS: ${nOrgA}/${slotA.soquetesMax ?? 0}` : '0 kg', nOrgA > 0 ? GREEN : DIM, 6);
+    txt(cxD.x + 4, cxD.y + 23, slotA.ocupado ? `${ehEnOf ? 'ORGANS' : 'ÓRGÃOS'}: ${nOrgA}/${slotA.soquetesMax ?? 0}` : '0 kg', nOrgA > 0 ? GREEN : DIM, 6);
 
     const hbDes = hitboxes.find((h) => h.idHitbox === `OFICINA_ARMA_DESEQUIPAR_${k}`);
     if (hbDes) {
       const hovD = idHoverAtivo === hbDes.idHitbox;
       chanfradoBezel(hbDes.x, hbDes.y, hbDes.x + hbDes.largura - 1, hbDes.y + hbDes.altura - 1, [12, 24, 34, 255], hovD ? YELLOW : slotA.ocupado ? CYAN : DIM, 2);
-      txt(hbDes.x + 6, hbDes.y + 8, '→ PORÃO', slotA.ocupado ? (hovD ? YELLOW : CYAN) : DIM, 6);
+      txt(hbDes.x + 6, hbDes.y + 8, ehEnOf ? '→ HOLD' : '→ PORÃO', slotA.ocupado ? (hovD ? YELLOW : CYAN) : DIM, 6);
     }
     const hbRemO = hitboxes.find((h) => h.idHitbox === `OFICINA_ARMA_REMOVER_ORGAO_${k}`);
     if (hbRemO) {
       const hovRO = idHoverAtivo === hbRemO.idHitbox;
       chanfradoBezel(hbRemO.x, hbRemO.y, hbRemO.x + hbRemO.largura - 1, hbRemO.y + hbRemO.altura - 1, [22, 16, 32, 255], hovRO ? YELLOW : nOrgA > 0 ? VIOLET : DIM, 2);
-      txt(hbRemO.x + 6, hbRemO.y + 8, '-1 ÓRGÃO', nOrgA > 0 ? (hovRO ? YELLOW : TXT) : DIM, 6);
+      txt(hbRemO.x + 6, hbRemO.y + 8, ehEnOf ? '-1 ORGAN' : '-1 ÓRGÃO', nOrgA > 0 ? (hovRO ? YELLOW : TXT) : DIM, 6);
     }
   }
 
@@ -1370,58 +1766,82 @@ export function renderizarModalOficinaOverlay(ctx) {
     const yBase = cxP.y;
     const itemP = poraoSlots[c];
     chanfradoBezel(cxP.x, yBase, cxP.x + cxP.largura - 1, yBase + cxP.altura, [10, 19, 28, 255], itemP ? AMBER : [28, 44, 56, 255], 2);
-    txt(632, yBase + 6, `PORÃO #${c + 1}:`, CYAN, 6);
+    txt(632, yBase + 6, `${ehEnOf ? 'HOLD' : 'PORÃO'} #${c + 1}:`, CYAN, 6);
     if (itemP) {
       const ehArmaP = itemP.tipo === 'ARMA';
+      const ehPassivoP = Boolean(itemP.ehPassivoPorao);
+      const tipoItemP = ehEnOf
+        ? (ehArmaP ? 'WEAPON' : ehPassivoP ? 'PASSIVE' : 'ORGAN')
+        : (ehPassivoP ? 'PASSIVO' : itemP.tipo);
       txt(692, yBase + 6, String(itemP.nome ?? itemP.id).slice(0, 26), YELLOW, 6);
       txt(
         632,
         yBase + 22,
-        `${itemP.tipo} | MASSA REAL: +${itemP.pesoKg ?? 5}kg | SLOT #${(opcoes.slotArmaSelecionado ?? 0) + 1}`,
-        TXT,
+        ehPassivoP
+          ? (ehEnOf
+              ? `${tipoItemP} | MASS: +${itemP.pesoKg ?? 5}kg | ACTIVE IN HOLD`
+              : `${tipoItemP} | MASSA: +${itemP.pesoKg ?? 5}kg | ATIVO NO PORÃO`)
+          : ehEnOf
+            ? `${tipoItemP} | REAL MASS: +${itemP.pesoKg ?? 5}kg | SLOT #${(opcoes.slotArmaSelecionado ?? 0) + 1}`
+            : `${itemP.tipo} | MASSA REAL: +${itemP.pesoKg ?? 5}kg | SLOT #${(opcoes.slotArmaSelecionado ?? 0) + 1}`,
+        ehPassivoP ? GREEN : TXT,
         6
       );
       const hbEq = hitboxes.find((h) => h.idHitbox === `OFICINA_PORAO_EQUIPAR_${c}`);
       if (hbEq) {
         const hovE = idHoverAtivo === hbEq.idHitbox;
         chanfradoBezel(hbEq.x, hbEq.y, hbEq.x + hbEq.largura - 1, hbEq.y + hbEq.altura - 1, [12, 38, 28, 255], hovE ? YELLOW : ehArmaP ? GREEN : DIM, 2);
-        txt(hbEq.x + 8, hbEq.y + 8, 'EQUIPAR ARMA', ehArmaP ? (hovE ? YELLOW : GREEN) : DIM, 6);
+        txt(hbEq.x + 8, hbEq.y + 8, ehEnOf ? 'EQUIP WEAPON' : 'EQUIPAR ARMA', ehArmaP ? (hovE ? YELLOW : GREEN) : DIM, 6);
       }
       const hbEnx = hitboxes.find((h) => h.idHitbox === `OFICINA_PORAO_ENXERTAR_${c}`);
       if (hbEnx) {
         const hovX = idHoverAtivo === hbEnx.idHitbox;
-        const ehOrgP = itemP.tipo === 'ORGAO';
-        chanfradoBezel(hbEnx.x, hbEnx.y, hbEnx.x + hbEnx.largura - 1, hbEnx.y + hbEnx.altura - 1, [26, 16, 38, 255], hovX ? YELLOW : ehOrgP ? VIOLET : DIM, 2);
-        txt(hbEnx.x + 6, hbEnx.y + 8, `ENXERTAR [${(opcoes.slotArmaSelecionado ?? 0) + 1}]`, ehOrgP ? (hovX ? YELLOW : CYAN) : DIM, 6);
+        const ehOrgP = itemP.tipo === 'ORGAO' && !ehPassivoP;
+        if (ehPassivoP) {
+          chanfradoBezel(hbEnx.x, hbEnx.y, hbEnx.x + hbEnx.largura - 1, hbEnx.y + hbEnx.altura - 1, [10, 34, 28, 255], hovX ? YELLOW : GREEN, 2);
+          txt(hbEnx.x + 6, hbEnx.y + 8, ehEnOf ? 'PASSIVE ON' : 'PASSIVO ON', hovX ? YELLOW : GREEN, 6);
+        } else {
+          chanfradoBezel(hbEnx.x, hbEnx.y, hbEnx.x + hbEnx.largura - 1, hbEnx.y + hbEnx.altura - 1, [26, 16, 38, 255], hovX ? YELLOW : ehOrgP ? VIOLET : DIM, 2);
+          txt(hbEnx.x + 6, hbEnx.y + 8, `${ehEnOf ? 'GRAFT' : 'ENXERTAR'} [${(opcoes.slotArmaSelecionado ?? 0) + 1}]`, ehOrgP ? (hovX ? YELLOW : CYAN) : DIM, 6);
+        }
       }
       const hbDesc = hitboxes.find((h) => h.idHitbox === `OFICINA_PORAO_DESCARTAR_${c}`);
       if (hbDesc) {
         const hovK = idHoverAtivo === hbDesc.idHitbox;
         if (emLoja) {
-          const siglaVP = itemP.moedaVenda === 'BIOMASSA' ? 'BIO' : 'SUC';
+          const siglaVP = itemP.moedaVenda === 'BIOMASSA' ? 'BIO' : (ehEnOf ? 'SCR' : 'SUC');
           const corVP = itemP.moedaVenda === 'BIOMASSA' ? CYAN : GREEN;
           chanfradoBezel(hbDesc.x, hbDesc.y, hbDesc.x + hbDesc.largura - 1, hbDesc.y + hbDesc.altura - 1, [12, 42, 30, 255], hovK ? YELLOW : corVP, 2);
-          txt(hbDesc.x + 6, hbDesc.y + 8, `VENDER +${itemP.valorVenda ?? 5} ${siglaVP}`.slice(0, 15), hovK ? YELLOW : corVP, 6);
+          txt(hbDesc.x + 6, hbDesc.y + 8, `${ehEnOf ? 'SELL' : 'VENDER'} +${itemP.valorVenda ?? 5} ${siglaVP}`.slice(0, 15), hovK ? YELLOW : corVP, 6);
         } else {
           chanfradoBezel(hbDesc.x, hbDesc.y, hbDesc.x + hbDesc.largura - 1, hbDesc.y + hbDesc.altura - 1, [38, 14, 18, 255], hovK ? YELLOW : RED, 2);
-          txt(hbDesc.x + 12, hbDesc.y + 8, 'EJETAR MAR', hovK ? YELLOW : RED, 6);
+          txt(hbDesc.x + 12, hbDesc.y + 8, ehEnOf ? 'JETTISON' : 'EJETAR MAR', hovK ? YELLOW : RED, 6);
         }
       }
     } else {
-      txt(692, yBase + 6, 'COMPARTIMENTO LIVRE (0 kg)', DIM, 6);
-      txt(632, yBase + 24, 'COMPRE NA LOJA OU CAPTURE EM COMBATE PARA ARMAZENAR', DIM, 6);
+      txt(692, yBase + 6, ehEnOf ? 'EMPTY BAY (0 kg)' : 'COMPARTIMENTO LIVRE (0 kg)', DIM, 6);
+      txt(632, yBase + 24, ehEnOf ? 'BUY AT FORGE-REEF OR CAPTURE IN COMBAT TO STORE' : 'COMPRE NA LOJA OU CAPTURE EM COMBATE PARA ARMAZENAR', DIM, 6);
     }
   }
-  txt(168, 413, `SALDO ATUAL: ${sucSaldo} SUCATA | ${bioSaldo} BIOMASSA — SELECIONE ARMA [1..4] NO RODAPÉ ANTES DE ENXERTAR ÓRGÃO`, GREEN, 6);
+  txt(
+    168,
+    413,
+    ehEnOf
+      ? `BALANCE: ${sucSaldo} SCRAP | ${bioSaldo} BIOMASS — SELECT WEAPON [1..4] AT BOTTOM BEFORE GRAFTING`
+      : `SALDO ATUAL: ${sucSaldo} SUCATA | ${bioSaldo} BIOMASSA — SELECIONE ARMA [1..4] NO RODAPÉ ANTES DE ENXERTAR ÓRGÃO`,
+    GREEN,
+    6
+  );
 }
 
 export function renderizarModalDesfechoEventoOverlay(ctx) {
   const { viewModel, hitboxes, idHoverAtivo, BORDER, TXT, DIM, GREEN, CYAN, AMBER, RED, YELLOW, fillRect, chanfradoBezel, txt } = ctx;
+  const ehEnDf = viewModel.configuracoesSteam?.idioma === 'en-US';
   const rects = calcularRetangulosModaisCampanha960();
   const cx = rects.desfechoEventoCaixa;
   fillRect(152, 41, 957, 428, [4, 9, 14, 192]);
   const df = viewModel.desfechoEventoResumo ?? {
-    opcaoEscolhida: 'A', titulo: 'RELATÓRIO DO ENCONTRO MARÍTIMO', deltaSucata: 0, deltaBiomassa: 0,
+    opcaoEscolhida: 'A', titulo: ehEnDf ? 'MARITIME ENCOUNTER REPORT' : 'RELATÓRIO DO ENCONTRO MARÍTIMO', deltaSucata: 0, deltaBiomassa: 0,
     deltaHpCasco: 0, deltaCombustivel: 0, deltaMunicao: 0, iniciouCombate: false, proximaFase: 'MAPA',
   };
   const corBordaMod = df.iniciouCombate ? RED : df.deltaHpCasco < 0 ? AMBER : CYAN;
@@ -1429,13 +1849,21 @@ export function renderizarModalDesfechoEventoOverlay(ctx) {
   fillRect(cx.x0 + 6, cx.y0 + 6, cx.x1 - 6, cx.y0 + 36, df.iniciouCombate ? [44, 14, 20, 235] : [14, 38, 52, 235]);
   txt(cx.x0 + 16, cx.y0 + 16, String(df.titulo).slice(0, 64), df.iniciouCombate ? YELLOW : CYAN, 7);
 
-  const deltas = [
-    ['CASCO', Number(df.deltaHpCasco ?? 0), GREEN],
-    ['SUCATA', Number(df.deltaSucata ?? 0), GREEN],
-    ['BIOMASSA', Number(df.deltaBiomassa ?? 0), CYAN],
-    ['COMBUST.', Number(df.deltaCombustivel ?? 0), AMBER],
-    ['MUNIÇÃO', Number(df.deltaMunicao ?? 0), TXT],
-  ];
+  const deltas = ehEnDf
+    ? [
+        ['HULL', Number(df.deltaHpCasco ?? 0), GREEN],
+        ['SCRAP', Number(df.deltaSucata ?? 0), GREEN],
+        ['BIOMASS', Number(df.deltaBiomassa ?? 0), CYAN],
+        ['FUEL', Number(df.deltaCombustivel ?? 0), AMBER],
+        ['AMMO', Number(df.deltaMunicao ?? 0), TXT],
+      ]
+    : [
+        ['CASCO', Number(df.deltaHpCasco ?? 0), GREEN],
+        ['SUCATA', Number(df.deltaSucata ?? 0), GREEN],
+        ['BIOMASSA', Number(df.deltaBiomassa ?? 0), CYAN],
+        ['COMBUST.', Number(df.deltaCombustivel ?? 0), AMBER],
+        ['MUNIÇÃO', Number(df.deltaMunicao ?? 0), TXT],
+      ];
   deltas.forEach(([rotD, valD, corPos], idxD) => {
     const gx0 = cx.x0 + 16 + idxD * 92;
     const corChip = valD > 0 ? corPos : valD < 0 ? RED : BORDER;
@@ -1446,25 +1874,39 @@ export function renderizarModalDesfechoEventoOverlay(ctx) {
 
   chanfradoBezel(cx.x0 + 16, cx.y0 + 122, cx.x1 - 16, cx.y0 + 198, [6, 14, 22, 255], BORDER, 2);
   const msgPrincipal = String(df.narrativaPrincipal ?? '').trim() || (
-    df.iniciouCombate ? 'ASSINATURA HOSTIL CONFIRMADA — ENGATANDO POSIÇÃO DE COMBATE NO HIDROFÓLIO!'
-      : df.deltaHpCasco < 0 ? 'IMPACTO ESTRUTURAL ABSORVIDO PELA QUITINA DURANTE A MANOBRA.'
-        : df.deltaSucata > 0 || df.deltaBiomassa > 0 || df.deltaHpCasco > 0
-          ? 'SUPRIMENTOS RECOLHIDOS E ESTABILIZADOS NOS RESERVATÓRIOS DA BIO-NAVE.'
-          : 'TRAJETÓRIA HIDROACÚSTICA MANTIDA SEM ALTERAÇÕES DE CARGA OU INTEGRIDADE.'
+    ehEnDf
+      ? (df.iniciouCombate
+          ? 'HOSTILE SIGNATURE CONFIRMED — ENGAGING COMBAT STANCE ON HYDROFOIL!'
+          : df.deltaHpCasco < 0
+            ? 'STRUCTURAL IMPACT ABSORBED BY CHITIN DURING MANEUVER.'
+            : df.deltaSucata > 0 || df.deltaBiomassa > 0 || df.deltaHpCasco > 0
+              ? 'SUPPLIES SALVAGED AND STABILIZED IN BIO-SHIP RESERVOIRS.'
+              : 'HYDROACOUSTIC COURSE MAINTAINED WITHOUT CARGO OR HULL CHANGES.')
+      : (df.iniciouCombate
+          ? 'ASSINATURA HOSTIL CONFIRMADA — ENGATANDO POSIÇÃO DE COMBATE NO HIDROFÓLIO!'
+          : df.deltaHpCasco < 0
+            ? 'IMPACTO ESTRUTURAL ABSORVIDO PELA QUITINA DURANTE A MANOBRA.'
+            : df.deltaSucata > 0 || df.deltaBiomassa > 0 || df.deltaHpCasco > 0
+              ? 'SUPRIMENTOS RECOLHIDOS E ESTABILIZADOS NOS RESERVATÓRIOS DA BIO-NAVE.'
+              : 'TRAJETÓRIA HIDROACÚSTICA MANTIDA SEM ALTERAÇÕES DE CARGA OU INTEGRIDADE.')
   );
   txt(cx.x0 + 26, cx.y0 + 134, msgPrincipal.slice(0, 74), df.iniciouCombate ? YELLOW : TXT, 6);
   const bonusEvTxt = String(df.bonusEspecialTexto ?? '').trim();
   if (bonusEvTxt) {
     chanfradoBezel(cx.x0 + 24, cx.y0 + 150, cx.x1 - 24, cx.y0 + 166, [12, 42, 34, 248], GREEN, 2);
-    txt(cx.x0 + 32, cx.y0 + 155, `RECOMPENSA: ${bonusEvTxt}`.slice(0, 68), YELLOW, 6);
+    txt(cx.x0 + 32, cx.y0 + 155, `${ehEnDf ? 'REWARD' : 'RECOMPENSA'}: ${bonusEvTxt}`.slice(0, 68), YELLOW, 6);
   }
-  const msgTrans = df.iniciouCombate
-    ? 'PRÓXIMA TRANSIÇÃO: [COMBATE EM TEMPO REAL] — VERIFIQUE ENERGIA E ESQUIVA!'
-    : 'PRÓXIMA TRANSIÇÃO: [CARTA HIDROGRÁFICA] — SELECIONE A PRÓXIMA BOIA DE SALTO.';
+  const msgTrans = ehEnDf
+    ? (df.iniciouCombate
+        ? 'NEXT TRANSITION: [REAL-TIME COMBAT] — CHECK REACTOR POWER & EVADE!'
+        : 'NEXT TRANSITION: [SECTOR CHART] — SELECT YOUR NEXT JUMP BUOY.')
+    : (df.iniciouCombate
+        ? 'PRÓXIMA TRANSIÇÃO: [COMBATE EM TEMPO REAL] — VERIFIQUE ENERGIA E ESQUIVA!'
+        : 'PRÓXIMA TRANSIÇÃO: [CARTA HIDROGRÁFICA] — SELECIONE A PRÓXIMA BOIA DE SALTO.');
   txt(cx.x0 + 26, cx.y0 + 174, msgTrans, df.iniciouCombate ? AMBER : GREEN, 6);
 
   const hbConfEv = hitboxes.find((h) => h.idHitbox === 'EVENTO_DESFECHO_CONFIRMAR') ?? rects.desfechoEventoBtnConfirmar;
   const hovEv = idHoverAtivo === 'EVENTO_DESFECHO_CONFIRMAR';
   chanfradoBezel(hbConfEv.x, hbConfEv.y, hbConfEv.x + hbConfEv.largura - 1, hbConfEv.y + hbConfEv.altura - 1, df.iniciouCombate ? [48, 16, 20, 255] : [14, 50, 36, 255], hovEv ? YELLOW : df.iniciouCombate ? RED : GREEN, 3, TXT);
-  txt(hbConfEv.x + 18, hbConfEv.y + 12, df.iniciouCombate ? '[ENTER] ENGAJAR EM COMBATE!' : '[ENTER] CONTINUAR ROTA', hovEv ? YELLOW : df.iniciouCombate ? YELLOW : GREEN, 7);
+  txt(hbConfEv.x + 18, hbConfEv.y + 12, ehEnDf ? (df.iniciouCombate ? '[ENTER] ENGAGE IN COMBAT!' : '[ENTER] CONTINUE COURSE') : (df.iniciouCombate ? '[ENTER] ENGAJAR EM COMBATE!' : '[ENTER] CONTINUAR ROTA'), hovEv ? YELLOW : df.iniciouCombate ? YELLOW : GREEN, 7);
 }

@@ -200,30 +200,43 @@ Para cumprir a **Lei N5 ("Um dono por arquivo compartilhado")** e a **Lei N6 ("O
 │   ├── onda5-catalogo-chefe/
 │   │   ├── catalogo-naves-itens.mjs     # [Onda 5] 5 Naves, 7 Armas, 6 Órgãos (+5kg, Isolamento 5s), Lojas
 │   │   └── chefe-draga.mjs              # [Onda 5] As 3 Fases da Draga Continental, Surges e IA Backup
-│   └── onda6-ui/
-│       ├── assets-hibit.mjs             # [Onda 6] Bundle Hi-Bit preguiçoso, paletas, fontes, ícones 12x12 e 8 silhuetas 5.7.A
-│       ├── audio-maritimo.mjs           # [Onda 6] Paisagem marítima 4 camadas, extração SFX de comandos/ticks e síntese PCM Int16
-│       ├── campanha-completa.mjs        # [Onda 6] Campanha completa S1..S8, Hangar c/ bloqueio, Oficina 5.6.A, Porão 0kg e Desfecho
-│       ├── cliente-web.mjs              # [Onda 6] Servidor loopback HTTP seguro, bundle /cliente.js sem .toString() e rotas ESM
-│       ├── cues-audio.mjs               # [Onda 6] 8 Cues Sonoros Táticos (Seção 8.5.C)
-│       ├── despacho-comandos.mjs        # [Onda 6] Validação dos 15 Comandos Atômicos (Seção 8.5.A) e venda preservando órgãos
-│       ├── encontros-eventos-campanha.mjs # [Onda 6] SSOT de encontros escalados S1..S8, topologia ortogonal, Sonar e EVENTO_DESFECHO
-│       ├── geometria-layout-960.mjs     # [Onda 6] SSOT pura de coordenadas retangulares 960x540 (Hangar, Loja, Oficina, Câmaras, Salas)
-│       ├── hitboxes-layout.mjs          # [Onda 6] Mapa de hitboxes nativas 960x540 e resolução de coordenadas DOM -> Canvas
-│       ├── interpolador-60fps.mjs       # [Onda 6] Motor puro de interpolação sub-tick 60 FPS e encaixe de câmaras sem imports Node
-│       ├── persistencia-perfil.mjs      # [Onda 6] run_save.json e profile.json (Seção 8.5.B)
-│       ├── presenter-wireframe.mjs      # [Onda 6] Seletor/Presenter 16:9 e Orçamento de Layout Nativo (Seção 8.5.C)
-│       ├── primitivas-raster-rgba.mjs   # [Onda 6] Primitivas gráficas RGBA 960x540 puras e caches WeakMap por frame
-│       ├── renderizador-alvo-inimigo.mjs # [Onda 6] Cutaway de barcos 5/6 salas, monstros 5.7.A, badges B1/B2/B3 e abordagem [G]
-│       ├── renderizador-canvas.mjs      # [Onda 6] Orquestrador acíclico RGBA 960x540 -> 1080p unificado
-│       ├── renderizador-canvas2d-primitivas.mjs # [Onda 6] Comandos vetoriais Canvas2D, PNG determinístico e quadro animado 24/60 FPS
-│       ├── renderizador-hud-tooltips.mjs # [Onda 6] Barra superior, termômetro c/ Ghost Preview, rodapé, tooltips e toast de rejeição
-│       ├── renderizador-telas-campanha.mjs # [Onda 6] Hangar, Mapa, Evento, Loja c/ venda do Porão, Saque, Desfecho, Oficina e Fim de Run
-│       ├── runtime-navegador.mjs        # [Onda 6] Runtime client-side 60 FPS, controlador de toast e input DOM isomórfico
-│       ├── sintetizador-webaudio-cliente.mjs # [Onda 6] Catálogo 10 SFX 4 camadas, 5 trilhas de 32 passos (A/B/A'/C) e motor WebAudio
-│       ├── tick-combate-tempo-real.mjs  # [Onda 6] Simulador tático contínuo, regeneração bolhas 2.0s, Sonar vs Tinta e IA abordadora
-│       ├── tradutor-input-dom.mjs       # [Onda 6] Tradutor puro de cliques/atalhos DOM para comandos 8.5.A e ações de campanha
-│       └── vitrine-spreads.mjs          # [Onda 6] Exportação determinística de spreads PNG Steam 60 FPS
+│   ├── onda6-ui/
+│   │   ├── assets-hibit.mjs             # [Onda 6] Bundle Hi-Bit preguiçoso, paletas, fontes, ícones 12x12 e 8 silhuetas 5.7.A
+│   │   ├── audio-maritimo.mjs           # [Onda 6] Paisagem marítima 4 camadas, extração SFX de comandos/ticks e síntese PCM Int16
+│   │   ├── campanha-completa.mjs        # [Onda 6] Campanha completa S1..S8, Hangar c/ bloqueio, Oficina 5.6.A, Porão 0kg e Desfecho
+│   │   ├── cliente-web.mjs              # [Onda 6] Servidor loopback HTTP seguro, bundle /cliente.js sem .toString() e rotas ESM
+│   │   ├── cues-audio.mjs               # [Onda 6] 8 Cues Sonoros Táticos (Seção 8.5.C)
+│   │   ├── despacho-comandos.mjs        # [Onda 6] Validação dos 15 Comandos Atômicos (Seção 8.5.A) e venda preservando órgãos
+│   │   ├── encontros-eventos-campanha.mjs # [Onda 6] SSOT de encontros escalados S1..S8, topologia ortogonal, Sonar e EVENTO_DESFECHO
+│   │   ├── geometria-layout-960.mjs     # [Onda 6] SSOT pura de coordenadas retangulares 960x540 (Hangar, Loja, Oficina, Câmaras, Salas)
+│   │   ├── hitboxes-layout.mjs          # [Onda 6] Mapa de hitboxes nativas 960x540 e resolução de coordenadas DOM -> Canvas
+│   │   ├── interpolador-60fps.mjs       # [Onda 6] Motor puro de interpolação sub-tick 60 FPS e encaixe de câmaras sem imports Node
+│   │   ├── persistencia-perfil.mjs      # [Onda 6] run_save.json e profile.json (Seção 8.5.B)
+│   │   ├── presenter-wireframe.mjs      # [Onda 6] Seletor/Presenter 16:9 e Orçamento de Layout Nativo (Seção 8.5.C)
+│   │   ├── primitivas-raster-rgba.mjs   # [Onda 6] Primitivas gráficas RGBA 960x540 puras e caches WeakMap por frame
+│   │   ├── renderizador-alvo-inimigo.mjs # [Onda 6] Cutaway de barcos 5/6 salas, monstros 5.7.A, badges B1/B2/B3 e abordagem [G]
+│   │   ├── renderizador-canvas.mjs      # [Onda 6] Orquestrador acíclico RGBA 960x540 -> 1080p unificado
+│   │   ├── renderizador-canvas2d-primitivas.mjs # [Onda 6] Comandos vetoriais Canvas2D, PNG determinístico e quadro animado 24/60 FPS
+│   │   ├── renderizador-hud-tooltips.mjs # [Onda 6] Barra superior, termômetro c/ Ghost Preview, rodapé, tooltips e toast de rejeição
+│   │   ├── renderizador-telas-campanha.mjs # [Onda 6] Hangar, Mapa, Evento, Loja c/ venda do Porão, Saque, Desfecho, Oficina e Fim de Run
+│   │   ├── runtime-navegador.mjs        # [Onda 6] Runtime client-side 60 FPS, controlador de toast e input DOM isomórfico
+│   │   ├── sintetizador-webaudio-cliente.mjs # [Onda 6] Catálogo 10 SFX 4 camadas, 5 trilhas de 32 passos (A/B/A'/C) e motor WebAudio
+│   │   ├── tick-combate-tempo-real.mjs  # [Onda 6] Simulador tático contínuo, regeneração bolhas 2.0s, Sonar vs Tinta e IA abordadora
+│   │   ├── tradutor-input-dom.mjs       # [Onda 6] Tradutor puro de cliques/atalhos DOM para comandos 8.5.A e ações de campanha
+│   │   └── vitrine-spreads.mjs          # [Onda 6] Exportação determinística de spreads PNG Steam 60 FPS
+│   └── onda7-steam/
+│       ├── catalogo-armas-orgaos-ae.mjs # [Onda 7] 24 Armas (Chain, Charge, Ion, Beams, Flak II, Bombas) e 16 Órgãos Simbióticos
+│       ├── dificuldades-conquistas-opcoes.mjs # [Onda 7] 3 Dificuldades, 24 Conquistas Steam (+Tipo B) e Menu Completo de Opções
+│       ├── eventos-ae-setores-1a4.mjs   # [Onda 7] Eventos bilíngues Setores 1..4 + 4 cadeias [QUEST]
+│       ├── eventos-ae-setores-5a8.mjs   # [Onda 7] Eventos bilíngues Setores 5..8 + 4 cadeias [QUEST] (100 Eventos Únicos)
+│       ├── i18n-dicionario-ui.mjs       # [Onda 7] Tabela completa i18n (pt-BR / en-US) + Auditoria de Zero Truncamento
+│       ├── motor-audio-ogg-foley.mjs    # [Onda 7] Crossfade adaptativo Explore<->Combat .ogg + 16 Foley .ogg + Lowpass 400 Hz
+│       ├── particulas-juice-60fps.mjs   # [Onda 7] Projéteis, Wakes, Feixes, Escudos, Esquivas e Inundação Viva a 60 FPS
+│       ├── renderizador-modais-steam.mjs # [Onda 7] Conectores A/B reais, Anteparas, Bio-Dutos, Opções, Conquistas e Tutorial
+│       ├── runtime-local-steam-cliente.mjs # [Onda 7] Runtime cliente em memória (0ms latência) + Gamepad/Steam Deck 1280x800
+│       ├── steamworks-desktop-host.mjs  # [Onda 7] Ponte Electron/Tauri + Steamworks SDK (Cloud Save, Achievements, Rich Presence)
+│       ├── topologias-naves-ab.mjs      # [Onda 7] 10 Topologias A/B anatômicas distintas nas 5 Bio-Naves
+│       └── tutorial-interativo.mjs      # [Onda 7] Tutorial Interativo Guiado em 6 Etapas com Spotlight
 └── tests/
     ├── 01-portao-gdd.test.mjs           # [Onda 0] Portão L5 dos 9 volumes GDD + SSOT + Matriz 5x8 + tripulação + linha do tempo
     ├── 02-hook-ambiente.test.mjs        # [Onda 0] Hooks REAIS disparados pelo git (Seção 5, B4, N5, pre-push) + tripwires
@@ -234,7 +247,8 @@ Para cumprir a **Lei N5 ("Um dono por arquivo compartilhado")** e a **Lei N6 ("O
     ├── 07-onda5-catalogo-chefe.test.mjs # [Onda 5] Portão 5 Naves + Chefe 3 Fases (MUT-O5-01..04)
     ├── 08-onda6-ui-juncao.test.mjs      # [Onda 6] Portão Ponta a Ponta UI <-> Motor
     ├── 09-mutacoes-reais.test.mjs       # [Onda 0] Re-executa todas as mutações de mutacoes.json (B6)
-    └── 10-portao-audio-cpp20-steam.test.mjs # [Onda 0] Portão Áudio C++20/WASM, 6 Barramentos, 18 Lacunas Steam e Catraca N2
+    ├── 10-portao-audio-cpp20-steam.test.mjs # [Onda 0] Portão Áudio C++20/WASM, 6 Barramentos, 18 Lacunas Steam e Catraca N2
+    └── 11-onda7-steam-comercial.test.mjs # [Onda 7] Portão Comercial Steam 9/10 (4 Pilares: Arte/Juice, Áudio .ogg, 100 Eventos/24 Armas/16 Órgãos/10 Layouts A/B, i18n/Tutorial/Opções/Steamworks)
 ```
 
 ---

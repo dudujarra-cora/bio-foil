@@ -1036,8 +1036,8 @@
       "descricao": "Multiplica as reduções de recarga ((1 - 0.20) * (1 - 0.25) = 0.60) em vez de somá-las aditivamente (0.55)",
       "trocas": [
         {
-          "buscar": "    1.0 - reducaoOperador - reducaoTouchdown",
-          "substituir": "    (1.0 - reducaoOperador) * (1.0 - reducaoTouchdown)"
+          "buscar": "    1.0 - reducaoOperador - reducaoMaestriaArt - reducaoTouchdown",
+          "substituir": "    (1.0 - reducaoOperador - reducaoMaestriaArt) * (1.0 - reducaoTouchdown)"
         }
       ],
       "testes": [
@@ -1809,8 +1809,8 @@
       "descricao": "Servidor HTTP suprime o roteamento de ACAO_CAMPANHA em /api/comando, impedindo iniciar campanha do Hangar (INICIO -> MAPA)",
       "trocas": [
         {
-          "buscar": "            if (traducao.acaoLocalUi === 'ACAO_CAMPANHA' && traducao.acaoCampanhaUi) {",
-          "substituir": "            if (false && traducao.acaoLocalUi === 'ACAO_CAMPANHA' && traducao.acaoCampanhaUi) {"
+          "buscar": "      if (traducao.acaoLocalUi === 'ACAO_CAMPANHA' && traducao.acaoCampanhaUi) {",
+          "substituir": "      if (false && traducao.acaoLocalUi === 'ACAO_CAMPANHA' && traducao.acaoCampanhaUi) {"
         }
       ],
       "testes": [
@@ -2317,6 +2317,134 @@
         "tests/10-portao-audio-cpp20-steam.test.mjs"
       ],
       "falhaEsperada": "[N2 CATRACA] O item CAT-AUD-03"
+    },
+    {
+      "id": "MUT-145",
+      "arquivo": "src/onda7-steam/topologias-naves-ab.mjs",
+      "lei": "L4 / L6 / Onda 7 Pilar 1 (MUT-O7-01)",
+      "descricao": "calcularCaminhoBfsTopologiaNave ignora a condição de chegada prox === dest, quebrando a conectividade orgânica entre as 8 câmaras das 10 topologias A/B",
+      "trocas": [
+        {
+          "buscar": "      if (prox === dest) {\n        return Object.freeze([...caminho, prox]);\n      }",
+          "substituir": "      if (false && prox === dest) {\n        return Object.freeze([...caminho, prox]);\n      }"
+        }
+      ],
+      "testes": [
+        "tests/11-onda7-steam-comercial.test.mjs"
+      ],
+      "falhaEsperada": "Câmara 1->2 desconectada em CARCACA_ALFA_A"
+    },
+    {
+      "id": "MUT-146",
+      "arquivo": "src/onda7-steam/motor-audio-ogg-foley.mjs",
+      "lei": "L4 / L6 / Onda 7 Pilar 2 (MUT-O7-02)",
+      "descricao": "calcularMixagemAdaptativaSteam omite o roteamento musical dedicado da fase LOJA para music_reef_forge_shop.ogg (LOJA_RECIFE)",
+      "trocas": [
+        {
+          "buscar": "  } else if (fase === 'LOJA') {\n    trilhaExploreId = 'LOJA_RECIFE';",
+          "substituir": "  } else if (false && fase === 'LOJA') {\n    trilhaExploreId = 'LOJA_RECIFE';"
+        }
+      ],
+      "testes": [
+        "tests/11-onda7-steam-comercial.test.mjs"
+      ],
+      "falhaEsperada": "Fase LOJA deve tocar o tema dedicado music_reef_forge_shop.ogg"
+    },
+    {
+      "id": "MUT-147",
+      "arquivo": "src/onda6-ui/encontros-eventos-campanha.mjs",
+      "lei": "N1 / L6 / Onda 7 Pilar 3 (MUT-O7-03)",
+      "descricao": "anexarMapaSetorAoEstado descarta questSpillover ao gerar o próximo setor quando todas as boias do setor anterior já estavam visitadas",
+      "trocas": [
+        {
+          "buscar": "    ehSteam && questSpillover ? plantarBoiaQuestNoSetor(mapaSetorialBase, questSpillover) : mapaSetorialBase;",
+          "substituir": "    false && ehSteam && questSpillover ? plantarBoiaQuestNoSetor(mapaSetorialBase, questSpillover) : mapaSetorialBase;"
+        }
+      ],
+      "testes": [
+        "tests/11-onda7-steam-comercial.test.mjs"
+      ],
+      "falhaEsperada": "Quest spillover deve plantar automaticamente uma boia [QUEST] ao entrar no próximo setor"
+    },
+    {
+      "id": "MUT-148",
+      "arquivo": "src/onda7-steam/catalogo-armas-orgaos-ae.mjs",
+      "lei": "L4 / L6 / Onda 7 Pilar 3 (MUT-O7-04)",
+      "descricao": "sortearVitrineLojaSteam congela o índice PRNG em 0 em vez de u % copia.length, destruindo a variedade determinística por seed da Loja Recife-Forja",
+      "trocas": [
+        {
+          "buscar": "      const idx = u % copia.length;",
+          "substituir": "      const idx = 0;"
+        }
+      ],
+      "testes": [
+        "tests/11-onda7-steam-comercial.test.mjs"
+      ],
+      "falhaEsperada": "Vitrine de loja Steam deve variar ofertas genuinamente por seed"
+    },
+    {
+      "id": "MUT-149",
+      "arquivo": "src/onda3-inimigos/abordagem-vitoria.mjs",
+      "lei": "N1 / L6 / Onda 7 Pilar 3 (MUT-O7-05)",
+      "descricao": "resolverImpactoNoAlvo zera bonusCascoSalaVazia, impedindo CORTADOR_CASCO_ABISSAL (Hull Beam) de causar 2x dano ao casco em salas estruturais ou esvaziadas",
+      "trocas": [
+        {
+          "buscar": "  const bonusCascoSalaVazia = salaSemSistema ? Number(evento.bonusDanoCascoPuro ?? 0) : 0;",
+          "substituir": "  const bonusCascoSalaVazia = 0;"
+        }
+      ],
+      "testes": [
+        "tests/11-onda7-steam-comercial.test.mjs"
+      ],
+      "falhaEsperada": "Hull Beam deve causar 2x dano ao casco (2) em sala estrutural CABINE"
+    },
+    {
+      "id": "MUT-150",
+      "arquivo": "src/onda7-steam/dificuldades-conquistas-opcoes.mjs",
+      "lei": "L4 / L6 / Onda 7 Pilar 4 (MUT-O7-06)",
+      "descricao": "verificarLayoutTipoBDesbloqueado aceita 1/2 conquista (some) em vez de exigir 2/2 conquistas dedicadas da espécie (every) para liberar Variante Tipo B",
+      "trocas": [
+        {
+          "buscar": "  return reqs.length > 0 && reqs.every((a) => conquistas.has(a.id));",
+          "substituir": "  return reqs.length > 0 && reqs.some((a) => conquistas.has(a.id));"
+        }
+      ],
+      "testes": [
+        "tests/11-onda7-steam-comercial.test.mjs"
+      ],
+      "falhaEsperada": "Desbloqueio Tipo B deve exigir 2/2 conquistas da espécie (nunca apenas 1/2)"
+    },
+    {
+      "id": "MUT-151",
+      "arquivo": "src/onda7-steam/dificuldades-conquistas-opcoes.mjs",
+      "lei": "L4 / L6 / Onda 7 Pilar 4 (MUT-O7-07)",
+      "descricao": "reatribuirAtalhoTecladoSteam omite o swap automático de tecla em conflito ao reatribuir um atalho no menu de Opções Steam",
+      "trocas": [
+        {
+          "buscar": "    if (outraAcao !== acao && codAtual === codigo) {\n      proximoMapa[outraAcao] = teclaAntigaDaAcao;\n    }",
+          "substituir": "    if (false && outraAcao !== acao && codAtual === codigo) {\n      proximoMapa[outraAcao] = teclaAntigaDaAcao;\n    }"
+        }
+      ],
+      "testes": [
+        "tests/11-onda7-steam-comercial.test.mjs"
+      ],
+      "falhaEsperada": "Swap deve trocar automaticamente a tecla em conflito"
+    },
+    {
+      "id": "MUT-152",
+      "arquivo": "src/onda7-steam/dificuldades-conquistas-opcoes.mjs",
+      "lei": "N1 / L6 / Onda 7 Pilar 4 (MUT-O7-08)",
+      "descricao": "selecionarAlvoInimigoInteligente ignora camadas de barreira ativas na dificuldade Difícil, deixando de focar a Câmara 4 (Glândula de Bolhas)",
+      "trocas": [
+        {
+          "buscar": "  if (escudosAtivos >= 1) {\n    const camBarreira = encontrarCamaraPorSub(['BARREIRA', 'BOLHA', 'ESC']);",
+          "substituir": "  if (false && escudosAtivos >= 1) {\n    const camBarreira = encontrarCamaraPorSub(['BARREIRA', 'BOLHA', 'ESC']);"
+        }
+      ],
+      "testes": [
+        "tests/11-onda7-steam-comercial.test.mjs"
+      ],
+      "falhaEsperada": "IA Difícil deve priorizar Câmara 4 (Glândula de Bolhas) na bionave real quando há barreira ativa"
     }
   ]
 }

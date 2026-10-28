@@ -1744,7 +1744,7 @@ test('[PORTÃO 08.5 | Animação 4-Frames + Encaixes Câmara/Dorso + Cobertura 1
   // 6. Validação direta L4 de 100% das constantes canônicas exportadas pelos módulos do repositório (Regra #7)
   assert.equal(SISTEMAS_BARRA_INFERIOR_CANONICOS.length, 8);
   assert.equal(CADEIA_CANONICA_GDD.length, 10);
-  assert.equal(CADEIA_CANONICA_TESTES.length, 10);
+  assert.equal(CADEIA_CANONICA_TESTES.length, 11);
   assert.equal(CADEIA_CANONICA_SCRIPTS.length >= 2, true);
   assert.equal(CADEIA_CANONICA_PROTOCOLO.length >= 2, true);
   assert.equal(CADEIA_CANONICA_RAIZ_OUTROS.includes('package.json'), true);
@@ -2071,7 +2071,7 @@ test('[PORTÃO 08.7 | Motor 60 FPS Paridade 0-Byte + GD-1/GD-2/GD-3 + Microinter
   assert.equal(Object.keys(pacote60.bestiario57a).length, 6, '[N4] Examinados: 6 sprites Hi-Bit Bestiário 5.7.A dedicados');
   assert.equal(Object.keys(pacote60.placas).length, 7, '[N4] Examinadas: 7 placas cênicas Hi-Bit base64 (F1, F2, F3, F4, Draga, Evento, Mapa)');
   assert.equal(Object.keys(pacote60.retratos).length, 4, '[N4] Examinados: 4 retratos orgânicos Hi-Bit base64');
-  assert.equal(Object.keys(pacote60.iconesHiBit).length, 22, '[N4] Examinados: 22 sprites/ícones Hi-Bit base64 (7 armas + 6 órgãos + 3 invasores + 6 extras)');
+  assert.equal(Object.keys(pacote60.iconesHiBit).length, 49, '[N4] Examinados: 49 sprites/ícones Hi-Bit base64 (24 armas + 16 órgãos + 3 invasores + 6 extras)');
 
   const srv60 = await iniciarServidorClienteWebBiofoil({ porta: 0, seedInicial: 'seed-60fps-http' });
   try {

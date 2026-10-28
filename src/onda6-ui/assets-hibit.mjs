@@ -39,6 +39,298 @@ export const SPRITES_INSUMOS_LOJA_HIBIT = Object.freeze({
     '.#HHHHHHHHHHHH#.',
     '..############..',
   ]),
+  // === 17 ARMAS AE (Edição Comercial Steam — Silhuetas Hi-Bit Únicas) ===
+  AGULHA_SONICA_RAPIDA: Object.freeze([
+    '............####....',
+    '..##########HCCC###.',
+    '.#HHHWHHHHHHHCCCLLL#',
+    '.#HHHHHHHHHHHCCC###.',
+    '..##MM####MM####....',
+    '...#MM#..#MM#.......',
+    '...####..####.......',
+    '....................',
+  ]),
+  EMISSOR_RESSONANTE_CADEIA: Object.freeze([
+    '...####..####.......',
+    '..#HCC####CCH###....',
+    '.#HHWHHCCCHHCLLL##..',
+    '.#HHHHHCCCHHCCCCCL#.',
+    '..#HCC####CCH###....',
+    '..##MM####MM#.......',
+    '...#MM#..#MM#.......',
+    '...####..####.......',
+  ]),
+  VULCAO_HIDROTERMAL_CADEIA: Object.freeze([
+    '..#####..#####......',
+    '.#HOOO####OOOH###...',
+    '#HHWHHOLLOOHHOLLL##.',
+    '#HHHHHOOOOOHHOOOOML#',
+    '.#HOOO####OOOH###...',
+    '..##MM####MM##......',
+    '...#MM#..#MM#.......',
+    '...####..####.......',
+  ]),
+  BATERIA_CARGA_HIDRAULICA: Object.freeze([
+    '.##############.....',
+    '#HHCCCHHCCCHHCC###..',
+    '#HHWLCHHWLCHHCCCCC#.',
+    '#HHCCCHHCCCHHCCLLL#.',
+    '#HHHHHHHHHHHHHH###..',
+    '.##MM######MM##.....',
+    '..#MM#....#MM#......',
+    '..####....####......',
+  ]),
+  TORPEDO_CARGA_DUPLA: Object.freeze([
+    '.####...............',
+    '#AAAA############...',
+    '#AAOOHHHWHHHEEELL#..',
+    '#AAAA############...',
+    '#AAOOHHHWHHHEEECC#..',
+    '#AAAA############...',
+    '.##MM######MM#......',
+    '..####....####......',
+  ]),
+  CANHAO_PULSO_BIOELETRICO_I: Object.freeze([
+    '.........######.....',
+    '..#######HVVCCC#....',
+    '.#HHHWHHHHVVCCLL#...',
+    '.#HHHHHHHHVVCCC#....',
+    '..##MM###HVV###.....',
+    '...#MM#..####.......',
+    '...####.............',
+    '....................',
+  ]),
+  BOMBARDEIRO_IONICO_PESADO: Object.freeze([
+    '..############......',
+    '.#AAVVVVVVVVAA###...',
+    '#AAWHHCCCCCHHWCCL#..',
+    '#AAVVVLLLLLVVVCCC#..',
+    '.#AAVVVVVVVVAA###...',
+    '..##MM####MM##......',
+    '...#MM#..#MM#.......',
+    '...####..####.......',
+  ]),
+  DISPARADOR_ESPINHOS_QUILHA: Object.freeze([
+    '....##...##...##....',
+    '..##EE###EE###EE##..',
+    '.#HHWHEEHHWEEHHEEL#.',
+    '.#HHHHHHHHHHHHHHWL#.',
+    '..##MM######MM####..',
+    '...#MM#....#MM#.....',
+    '...####....####.....',
+    '....................',
+  ]),
+  CANHAO_PRESSAO_HIDRO: Object.freeze([
+    '..##########..####..',
+    '.#HHHHHHHHHH##CCCC#.',
+    '.#HHHWHHWHHHCCCCCCL#',
+    '.#HHHHHHHHHHCCCCCCL#',
+    '.#HHHHHHHHHH##CCCC#.',
+    '..##MM####MM#.####..',
+    '...#MM#..#MM#.......',
+    '...####..####.......',
+  ]),
+  RAJADA_HIDROPNEUMATICA_III: Object.freeze([
+    '.#############......',
+    '#HHHWHHHHHHHHH#####.',
+    '#HHHHHHHHHHHHHCCCCL#',
+    '#HHHWHHHHHHHHHCCCCL#',
+    '#HHHHHHHHHHHHHCCCCL#',
+    '#HHHHHHHHHHHHHCCCCL#',
+    '.##MM######MM######.',
+    '..####....####......',
+  ]),
+  DISPERSOR_ABISSAL_MK2: Object.freeze([
+    '............######..',
+    '.###########HOOOOH#.',
+    '#HHHWHHWHHHHHOLLLH#.',
+    '#HHHHHHHHHHH######..',
+    '#HHHHHHHHHHHHOLLLH#.',
+    '.##MM####MM#HOOOOH#.',
+    '..#MM#..#MM#.######.',
+    '..####..####........',
+  ]),
+  LANCA_TERMICA_FOCAL: Object.freeze([
+    '..##############....',
+    '.#AAOOOOOOOOOOAA###.',
+    '.#AAWHOLLLLLLOHAALL#',
+    '.#AAOOOOOOOOOOAA###.',
+    '..##MM######MM##....',
+    '...#MM#....#MM#.....',
+    '...####....####.....',
+    '....................',
+  ]),
+  FEIXE_NEUROTOXICO_BIO: Object.freeze([
+    '..############......',
+    '.#VVEEEEEEEEVV####..',
+    '.#VVWHELLLLLEVVEEEL#',
+    '.#VVEEEEEEEEVV####..',
+    '..##MM####MM##......',
+    '...#MM#..#MM#.......',
+    '...####..####.......',
+    '....................',
+  ]),
+  CORTADOR_CASCO_ABISSAL: Object.freeze([
+    '..#############.....',
+    '.#HHMMMMMMMMMHH###..',
+    '.#HHWHMOLLOMWHHMML#.',
+    '.#HHMMMMMMMMMHH###..',
+    '..##MM#####MM##.....',
+    '...#MM#...#MM#......',
+    '...####...####......',
+    '....................',
+  ]),
+  TORPEDO_CRIO_TERMAL: Object.freeze([
+    '.####...............',
+    '#CCCC#############..',
+    '#CCWWHHHHHHHCCCCWW#.',
+    '#CCWWHHHHHHHWWWWCL#.',
+    '#CCCC#############..',
+    '.##MM######MM#......',
+    '..#MM#....#MM#......',
+    '..####....####......',
+  ]),
+  BOMBA_SIFAO_OSMOTICO: Object.freeze([
+    '.......######.......',
+    '.....##CCCCCC##.....',
+    '..###HHCCCCCCCH#....',
+    '.#HHWHHCCWWCCCH#....',
+    '.#HHHHHCCCCCCCH#....',
+    '..##MM###CCCC##.....',
+    '...#MM#..####.......',
+    '...####.............',
+  ]),
+  MORTEIRO_ACIDO_CORROSIVO: Object.freeze([
+    '........######......',
+    '.......#EEEEEE#.....',
+    '..#####HEELLLEH#....',
+    '.#HHWHHHEEEEEH#.....',
+    '.#HHHHHHEELLH#......',
+    '..##MM###EEE#.......',
+    '...#MM#..###........',
+    '...####.............',
+  ]),
+  // === 10 ÓRGÃOS SIMBIÓTICOS AE (10x10 px c/ Auréola Bioluminescente) ===
+  SINAPSE_PRE_IGNICAO: Object.freeze([
+    '.L.####.L.',
+    'L.#LLLL#.L',
+    '.#LLWWLL#.',
+    '#LLWCCWLL#',
+    '#LLWCCWLL#',
+    '.#LLLLLL#.',
+    'L.#VVVV#.L',
+    '.L.#MM#.L.',
+    '..L.##.L..',
+    '.L..L...L.',
+  ]),
+  ALETA_ESTABILIZADORA_FOIL: Object.freeze([
+    '.C....###.',
+    'C...##CCC#',
+    '..##CCCC#.',
+    '.#CCCWCC#C',
+    '#CCCCCC#.C',
+    '#CCCC##...',
+    '.#MM#..C..',
+    '.####.C.C.',
+    'C..C..C...',
+    '.C...C..C.',
+  ]),
+  BRANQUIA_OSMOSE_REVERSA: Object.freeze([
+    '.C.####.C.',
+    'C.#CCCC#.C',
+    '.#C#CC#C#.',
+    '#CC#WW#CC#',
+    '#C#CCCC#C#',
+    '.#CCCCCC#.',
+    'C.#EEEE#.C',
+    '.C.####.C.',
+    'C..C..C..C',
+    '.C..C..C..',
+  ]),
+  ENZIMA_DIGESTORA_SUCATA: Object.freeze([
+    '.E.####.E.',
+    'E.#OOOO#.E',
+    '.#OOEEOO#.',
+    '#OEELLEEO#',
+    '#OEEWWEEO#',
+    '.#OOEEOO#.',
+    'E.#EEEE#.E',
+    '.E.####.E.',
+    'E..E..E..E',
+    '.E..E..E..',
+  ]),
+  VESICULA_HIPERBARICA: Object.freeze([
+    '.C..##..C.',
+    'C..#WW#..C',
+    '.##CCCC##.',
+    '#CCLLLLCC#',
+    '#CCLWWLCC#',
+    '#CCLLLLCC#',
+    '.##CCCC##.',
+    'C..####..C',
+    '.C..C..C..',
+    'C..C..C..C',
+  ]),
+  BOLSA_SIMBIONTE_SANGUESSUGA: Object.freeze([
+    '.M.####.M.',
+    'M.#MMMM#.M',
+    '.#MMVVMM#.',
+    '#MVVWWVVM#',
+    '#MMMMMMMM#',
+    '.#MMWWMM#.',
+    'M.##MM##.M',
+    '.M..##..M.',
+    'M..M..M..M',
+    '.M..M..M..',
+  ]),
+  CRISTA_REFRACAO_ACUSTICA: Object.freeze([
+    '.V..##..V.',
+    'V..#CC#..V',
+    '.##CWWC##.',
+    '#VCCWWCCV#',
+    '#VCCCCCCV#',
+    '.#VVCCVV#.',
+    'V.#VVVV#.V',
+    '.V.####.V.',
+    'V..V..V..V',
+    '.V..V..V..',
+  ]),
+  GANGLIO_RECICLADOR_MUNICAO: Object.freeze([
+    '.O.####.O.',
+    'O.#OOOO#.O',
+    '.#OOHHOO#.',
+    '#OHWWLLHO#',
+    '#OOHHHHOO#',
+    '.#OOOOOO#.',
+    'O.#MMMM#.O',
+    '.O.####.O.',
+    'O..O..O..O',
+    '.O..O..O..',
+  ]),
+  OLHO_SONAR_ABISSAL: Object.freeze([
+    '.C.####.C.',
+    'C.#WWWW#.C',
+    '.#WWCCWW#.',
+    '#WCC##CCW#',
+    '#WCC##CCW#',
+    '.#WWCCWW#.',
+    'C.#WWWW#.C',
+    '.C.####.C.',
+    'C..C..C..C',
+    '.C..C..C..',
+  ]),
+  MEDULA_REGENERATIVA_CORAL: Object.freeze([
+    'E.#.##.#.E',
+    '.#M#MM#M#.',
+    '#MMMMMMMM#',
+    '.#MMEEMM#.',
+    '..#MEEM#..',
+    '..#MEEM#..',
+    '.#MMEEMM#.',
+    'E.#MMMM#.E',
+    '.E.####.E.',
+    'E..E..E..E',
+  ]),
 });
 
 export const PALETA_PIXEL_ART_BIOFOIL = Object.freeze({
@@ -940,6 +1232,78 @@ function gerarSpriteInvasorHiBit16x20(especie) {
   return { largura: larg, altura: alt, rgba: out };
 }
 
+function derivarVarianteHiBitAe(baseImg, matizGraus, corAcentoRgb, oxSelo, oySelo, gradeSelo) {
+  if (!baseImg || !baseImg.rgba) return null;
+  const W = baseImg.largura;
+  const H = baseImg.altura;
+  const out = Buffer.from(baseImg.rgba);
+  const rad = (matizGraus * Math.PI) / 180;
+  const cosA = Math.cos(rad);
+  const sinA = Math.sin(rad);
+  const s3 = Math.sqrt(1 / 3);
+  for (let i = 0; i < out.length; i += 4) {
+    if (out[i + 3] < 20) continue;
+    const r = out[i];
+    const g = out[i + 1];
+    const b = out[i + 2];
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    if (maxC < 26) continue;
+    const sat = maxC - minC;
+    if (sat < 14 && maxC > 218) continue;
+    let nr = r * (cosA + (1 - cosA) / 3) + g * ((1 - cosA) / 3 - s3 * sinA) + b * ((1 - cosA) / 3 + s3 * sinA);
+    let ng = r * ((1 - cosA) / 3 + s3 * sinA) + g * (cosA + (1 - cosA) / 3) + b * ((1 - cosA) / 3 - s3 * sinA);
+    let nb = r * ((1 - cosA) / 3 - s3 * sinA) + g * ((1 - cosA) / 3 + s3 * sinA) + b * (cosA + (1 - cosA) / 3);
+    if (sat >= 36 && corAcentoRgb) {
+      const k = Math.min(0.45, (sat / 255) * 0.55);
+      nr = nr * (1 - k) + corAcentoRgb[0] * k;
+      ng = ng * (1 - k) + corAcentoRgb[1] * k;
+      nb = nb * (1 - k) + corAcentoRgb[2] * k;
+    }
+    out[i] = Math.max(0, Math.min(255, Math.round(nr)));
+    out[i + 1] = Math.max(0, Math.min(255, Math.round(ng)));
+    out[i + 2] = Math.max(0, Math.min(255, Math.round(nb)));
+  }
+  if (Array.isArray(gradeSelo)) {
+    const cBorda = [8, 14, 22, 255];
+    const cEscuro = [
+      Math.max(12, Math.round(corAcentoRgb[0] * 0.34)),
+      Math.max(16, Math.round(corAcentoRgb[1] * 0.34)),
+      Math.max(22, Math.round(corAcentoRgb[2] * 0.38)),
+      255,
+    ];
+    const cMedio = [
+      Math.max(24, Math.round(corAcentoRgb[0] * 0.72)),
+      Math.max(28, Math.round(corAcentoRgb[1] * 0.72)),
+      Math.max(32, Math.round(corAcentoRgb[2] * 0.75)),
+      255,
+    ];
+    const cBrilho = [
+      Math.min(255, Math.round(corAcentoRgb[0] * 0.55 + 115)),
+      Math.min(255, Math.round(corAcentoRgb[1] * 0.55 + 115)),
+      Math.min(255, Math.round(corAcentoRgb[2] * 0.55 + 115)),
+      255,
+    ];
+    const mapa = { '#': cBorda, d: cEscuro, m: cMedio, A: [...corAcentoRgb, 255], W: cBrilho };
+    for (let sy = 0; sy < gradeSelo.length; sy += 1) {
+      const lin = gradeSelo[sy];
+      for (let sx = 0; sx < lin.length; sx += 1) {
+        const px = oxSelo + sx;
+        const py = oySelo + sy;
+        if (px < 0 || px >= W || py < 0 || py >= H) continue;
+        const cor = mapa[lin[sx]];
+        if (!cor) continue;
+        const idx = (py * W + px) * 4;
+        out[idx] = cor[0];
+        out[idx + 1] = cor[1];
+        out[idx + 2] = cor[2];
+        out[idx + 3] = cor[3];
+      }
+    }
+  }
+  return { largura: W, altura: H, rgba: out };
+}
+
 export function obterAssetsConceitoHiBit() {
   if (CACHE_ASSETS_CONCEITO_HIBIT) return CACHE_ASSETS_CONCEITO_HIBIT;
   const raw = zlib.inflateSync(Buffer.from(BUNDLE_CONCEITO_HIBIT_B64, "base64"));
@@ -970,6 +1334,187 @@ export function obterAssetsConceitoHiBit() {
   const invMarinheiro = gerarSpriteInvasorHiBit16x20("MARINHEIRO");
   const invMergulhador = gerarSpriteInvasorHiBit16x20("MERGULHADOR");
   const invParasita = gerarSpriteInvasorHiBit16x20("PARASITA");
+
+  const iconesAeArmas = {
+    AGULHA_SONICA_RAPIDA: derivarVarianteHiBitAe(armaAcustico, -28, [96, 248, 255], 50, 17, [
+      "########...",
+      "#mAAWWAA##.",
+      "#ddmmmmAAW#",
+      "########...",
+    ]),
+    EMISSOR_RESSONANTE_CADEIA: derivarVarianteHiBitAe(armaAcustico, 42, [255, 198, 72], 24, 9, [
+      ".##.##.##.",
+      "#AW#AW#AW#",
+      "#dm#dm#dm#",
+      ".##.##.##.",
+    ]),
+    VULCAO_HIDROTERMAL_CADEIA: derivarVarianteHiBitAe(armaRajada, -52, [255, 108, 46], 20, 8, [
+      "##########",
+      "#WAAmWAAm#",
+      "#ddmAddmA#",
+      "##########",
+    ]),
+    BATERIA_CARGA_HIDRAULICA: derivarVarianteHiBitAe(armaRajada, 34, [92, 236, 168], 18, 28, [
+      "###########",
+      "#AW#AW#AWd#",
+      "#mm#mm#mmd#",
+      "###########",
+    ]),
+    TORPEDO_CARGA_DUPLA: derivarVarianteHiBitAe(armaTorpedo, 28, [255, 180, 62], 46, 12, [
+      "#########.",
+      "#mAAWWAAW#",
+      "#########.",
+      "#mAAWWAAW#",
+      "#########.",
+    ]),
+    CANHAO_PULSO_BIOELETRICO_I: derivarVarianteHiBitAe(armaAcustico, 75, [86, 214, 255], 44, 14, [
+      "..#####..",
+      ".#AWWWA#.",
+      "#AmdddWA#",
+      ".#AWWWA#.",
+      "..#####..",
+    ]),
+    BOMBARDEIRO_IONICO_PESADO: derivarVarianteHiBitAe(armaMorteiro, 118, [122, 198, 255], 24, 10, [
+      "..######..",
+      ".#mAWWWm#.",
+      "#dAAWWAAd#",
+      ".########.",
+    ]),
+    DISPARADOR_ESPINHOS_QUILHA: derivarVarianteHiBitAe(armaArpao, -36, [188, 240, 118], 46, 13, [
+      "...###...",
+      "..#AWW##.",
+      ".#ddmAAW#",
+      "..#AWW##.",
+      "...###...",
+    ]),
+    CANHAO_PRESSAO_HIDRO: derivarVarianteHiBitAe(armaRajada, 18, [88, 224, 255], 44, 15, [
+      "#########",
+      "#ddAAWWA#",
+      "#mmAAWWA#",
+      "#########",
+    ]),
+    RAJADA_HIDROPNEUMATICA_III: derivarVarianteHiBitAe(armaRajada, 62, [118, 255, 196], 46, 11, [
+      "########",
+      "#mAAWWA#",
+      "########",
+      "#mAAWWA#",
+      "########",
+      "#mAAWWA#",
+      "########",
+    ]),
+    DISPERSOR_ABISSAL_MK2: derivarVarianteHiBitAe(armaEstilhacos, -44, [255, 152, 82], 42, 12, [
+      "#########",
+      "#AW#m#AW#",
+      "#mm###mm#",
+      "#AW#m#AW#",
+      "#########",
+    ]),
+    LANCA_TERMICA_FOCAL: derivarVarianteHiBitAe(armaTermico, -22, [255, 92, 112], 46, 16, [
+      "###########",
+      "#ddAAWWWWWW",
+      "#ddmmmmAAAA",
+      "###########",
+    ]),
+    FEIXE_NEUROTOXICO_BIO: derivarVarianteHiBitAe(armaTermico, 96, [98, 255, 132], 24, 12, [
+      ".########.",
+      "#mAAWWAAm#",
+      "#dAAAAAAd#",
+      ".########.",
+    ]),
+    CORTADOR_CASCO_ABISSAL: derivarVarianteHiBitAe(armaTermico, 38, [255, 216, 76], 42, 14, [
+      "..#######.",
+      ".#mAAWWWA#",
+      "#ddmmAAWW#",
+      "..#######.",
+    ]),
+    TORPEDO_CRIO_TERMAL: derivarVarianteHiBitAe(armaTorpedo, 154, [118, 242, 255], 26, 13, [
+      "..####..",
+      ".#AWWA#.",
+      "#WAAAAW#",
+      ".#AWWA#.",
+      "..####..",
+    ]),
+    BOMBA_SIFAO_OSMOTICO: derivarVarianteHiBitAe(armaMorteiro, 168, [164, 136, 255], 26, 12, [
+      ".#######.",
+      "#AWd#dWA#",
+      "#mAAWAAm#",
+      ".#######.",
+    ]),
+    MORTEIRO_ACIDO_CORROSIVO: derivarVarianteHiBitAe(armaMorteiro, 58, [146, 255, 76], 24, 11, [
+      ".########.",
+      "#dAAWWAAd#",
+      "#mAAAAAAm#",
+      ".########.",
+    ]),
+  };
+
+  const iconesAeOrgaos = {
+    SINAPSE_PRE_IGNICAO: derivarVarianteHiBitAe(orgaoEletro, 32, [255, 224, 88], 18, 16, [
+      "..####..",
+      ".#AWWA#.",
+      "#WAmddW#",
+      ".#AWWA#.",
+      "..####..",
+    ]),
+    ALETA_ESTABILIZADORA_FOIL: derivarVarianteHiBitAe(orgaoBexiga, -28, [88, 240, 255], 14, 17, [
+      "....######.",
+      "..##mAAWWA#",
+      "#ddmmmmAAA#",
+      "##########.",
+    ]),
+    BRANQUIA_OSMOSE_REVERSA: derivarVarianteHiBitAe(orgaoBaiacu, 64, [82, 248, 186], 16, 15, [
+      ".##.##.##.",
+      "#AW#AW#AW#",
+      "#md#md#md#",
+      ".##.##.##.",
+    ]),
+    ENZIMA_DIGESTORA_SUCATA: derivarVarianteHiBitAe(orgaoTermo, 44, [186, 255, 86], 17, 16, [
+      "..#####..",
+      ".#mAWWm#.",
+      "#dAAAAAd#",
+      "..#####..",
+    ]),
+    VESICULA_HIPERBARICA: derivarVarianteHiBitAe(orgaoBexiga, 88, [118, 198, 255], 16, 14, [
+      "..######..",
+      ".#mAWWWm#.",
+      "#dAAmmAAd#",
+      ".#mAAAAm#.",
+      "..######..",
+    ]),
+    BOLSA_SIMBIONTE_SANGUESSUGA: derivarVarianteHiBitAe(orgaoDente, -48, [255, 88, 134], 16, 15, [
+      ".##....##.",
+      "#AW####WA#",
+      ".#mAAAAm#.",
+      "..######..",
+    ]),
+    CRISTA_REFRACAO_ACUSTICA: derivarVarianteHiBitAe(orgaoTinta, 136, [186, 142, 255], 16, 14, [
+      "...####...",
+      "..#AWWA#..",
+      ".#mAAAAm#.",
+      "..#dAAd#..",
+      "...####...",
+    ]),
+    GANGLIO_RECICLADOR_MUNICAO: derivarVarianteHiBitAe(orgaoBaiacu, -56, [255, 186, 76], 16, 16, [
+      ".########.",
+      "#AWm##mWA#",
+      "#md####dm#",
+      ".########.",
+    ]),
+    OLHO_SONAR_ABISSAL: derivarVarianteHiBitAe(orgaoTinta, 182, [82, 246, 255], 16, 15, [
+      "..######..",
+      ".#AAWWAA#.",
+      "#AWddddWA#",
+      ".#AAWWAA#.",
+      "..######..",
+    ]),
+    MEDULA_REGENERATIVA_CORAL: derivarVarianteHiBitAe(orgaoTermo, -32, [255, 112, 146], 16, 14, [
+      ".##.##.##.",
+      "##AWWWWA##",
+      ".#mAAAAm#.",
+      "..#dAAd#..",
+      "...####...",
+    ]),
+  };
 
   CACHE_ASSETS_CONCEITO_HIBIT = {
     f1Play: chunks[0],
@@ -1023,6 +1568,8 @@ export function obterAssetsConceitoHiBit() {
       BOLSA_TINTA_CEGANTE: orgaoTinta,
       DENTE_LEVIATA_SERRILHADO: orgaoDente,
       GLANDULA_TERMOFILICA: orgaoTermo,
+      ...iconesAeArmas,
+      ...iconesAeOrgaos,
       MARINHEIRO: invMarinheiro,
       MERGULHADOR: invMergulhador,
       PARASITA: invParasita,

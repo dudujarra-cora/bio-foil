@@ -849,8 +849,31 @@ export function criarContextoPrimitivasRgba960x540(viewModel, opcoes, assets, hi
     }
   };
 
-  const desenharMiniaturaBioNaveHiBit = (destX, destY, largDst, altDst, carcacaOverride = null) => {
+  const aplicarPinturaFaccaoTipoB = (idArqB, r, g, b) => {
+    const cl = (v) => Math.max(0, Math.min(255, Math.round(v)));
+    if (idArqB === 'CARCACA_ALFA') {
+      return [cl(r * 1.16 + 22), cl(g * 1.04 + 22), cl(b * 0.66 - 6)];
+    }
+    if (idArqB === 'MANTA_VOLT') {
+      return [cl(r * 1.28 + 34), cl(g * 0.68 - 4), cl(b * 1.18 + 26)];
+    }
+    if (idArqB === 'COURACA_LIMIAR') {
+      return [cl(r * 0.56 - 4), cl(g * 1.18 + 24), cl(b * 0.96 + 16)];
+    }
+    if (idArqB === 'SOMBRA_ABISSAL') {
+      return [cl(r * 1.38 + 38), cl(g * 0.56 - 4), cl(b * 0.68 - 6)];
+    }
+    if (idArqB === 'COLMEIA_VIVA') {
+      return [cl(r * 1.32 + 34), cl(g * 0.92 + 8), cl(b * 0.72 + 4)];
+    }
+    return [r, g, b];
+  };
+
+  const desenharMiniaturaBioNaveHiBit = (destX, destY, largDst, altDst, carcacaOverride = null, opcoesMini = null) => {
     const idC = String(carcacaOverride ?? vmSafe.idCarcaca ?? vmSafe.idArquitetura ?? 'CARCACA_ALFA');
+    const usarPinturaTipoB =
+      opcoesMini?.variante === 'B' ||
+      (!opcoesMini?.variante && !carcacaOverride && String(vmSafe.layoutId ?? '').endsWith('_B'));
     const spec = RECORTES_F4[idC];
     const opacosGrid = new Uint8Array(largDst * altDst);
     const rgbBruto = new Uint8Array(largDst * altDst * 3);
@@ -1058,13 +1081,36 @@ export function criarContextoPrimitivasRgba960x540(viewModel, opcoes, assets, hi
         }
       }
     }
-    const paletaCascoMini = {
+    const paletaCascoMiniBase = {
       CARCACA_ALFA: { dorso: [92, 46, 48], meio: [66, 44, 50], ventre: [36, 46, 58], quilha: [20, 34, 46], bioluz: [44, 134, 154] },
       MANTA_VOLT: { dorso: [44, 68, 92], meio: [34, 54, 76], ventre: [24, 42, 62], quilha: [16, 30, 46], bioluz: [72, 198, 224] },
       COURACA_LIMIAR: { dorso: [112, 74, 44], meio: [84, 56, 38], ventre: [54, 40, 34], quilha: [32, 26, 28], bioluz: [218, 148, 42] },
       SOMBRA_ABISSAL: { dorso: [54, 38, 76], meio: [38, 30, 58], ventre: [24, 24, 44], quilha: [14, 18, 32], bioluz: [132, 76, 196] },
       COLMEIA_VIVA: { dorso: [52, 84, 56], meio: [40, 66, 48], ventre: [26, 48, 42], quilha: [16, 32, 30], bioluz: [74, 214, 118] },
     }[idC] ?? { dorso: [92, 46, 48], meio: [66, 44, 50], ventre: [36, 46, 58], quilha: [20, 34, 46], bioluz: [44, 134, 154] };
+    const paletaCascoMini = usarPinturaTipoB
+      ? {
+          dorso: aplicarPinturaFaccaoTipoB(idC, ...paletaCascoMiniBase.dorso),
+          meio: aplicarPinturaFaccaoTipoB(idC, ...paletaCascoMiniBase.meio),
+          ventre: aplicarPinturaFaccaoTipoB(idC, ...paletaCascoMiniBase.ventre),
+          quilha: aplicarPinturaFaccaoTipoB(idC, ...paletaCascoMiniBase.quilha),
+          bioluz: aplicarPinturaFaccaoTipoB(idC, ...paletaCascoMiniBase.bioluz),
+        }
+      : paletaCascoMiniBase;
+    if (usarPinturaTipoB) {
+      for (let iPx = 0; iPx < opacosGrid.length; iPx += 1) {
+        if (!opacosGrid[iPx]) continue;
+        const [tr, tg, tb] = aplicarPinturaFaccaoTipoB(
+          idC,
+          rgbOpaco[iPx * 3],
+          rgbOpaco[iPx * 3 + 1],
+          rgbOpaco[iPx * 3 + 2]
+        );
+        rgbOpaco[iPx * 3] = tr;
+        rgbOpaco[iPx * 3 + 1] = tg;
+        rgbOpaco[iPx * 3 + 2] = tb;
+      }
+    }
 
     if (largDst >= 80 && jx1 - jx0 >= 10 && jy1 - jy0 >= 10) {
       const acharBaseColuna = (dxIniB, dxFimB) => {
@@ -1175,14 +1221,73 @@ export function criarContextoPrimitivasRgba960x540(viewModel, opcoes, assets, hi
           putPx(destX + dx, destY + dy, [cr, cg, cb, 255]);
         }
       }
-      for (const [fxV, fyV] of [[0.26, 0.44], [0.52, 0.46], [0.76, 0.48]]) {
-        const vxP = Math.round(jx0 + fxV * (jx1 - jx0));
-        const vyP = Math.round(jy0 + fyV * (jy1 - jy0));
-        if (opacosGrid[vyP * largDst + vxP]) {
-          fillRect(destX + vxP - 2, destY + vyP - 1, destX + vxP + 2, destY + vyP + 1, paletaCascoMini.quilha, [10, 16, 22, 255]);
-          putPx(destX + vxP - 1, destY + vyP, [...paletaCascoMini.bioluz, 255]);
-          putPx(destX + vxP, destY + vyP, CYAN);
-          putPx(destX + vxP + 1, destY + vyP, TXT);
+      const usarFeicoesEspecieSteam = Boolean(vmSafe.edicaoComercialSteam || opcoesMini?.variante);
+      if (!usarFeicoesEspecieSteam) {
+        for (const [fxV, fyV] of [[0.26, 0.44], [0.52, 0.46], [0.76, 0.48]]) {
+          const vxP = Math.round(jx0 + fxV * (jx1 - jx0));
+          const vyP = Math.round(jy0 + fyV * (jy1 - jy0));
+          if (opacosGrid[vyP * largDst + vxP]) {
+            fillRect(destX + vxP - 2, destY + vyP - 1, destX + vxP + 2, destY + vyP + 1, paletaCascoMini.quilha, [10, 16, 22, 255]);
+            putPx(destX + vxP - 1, destY + vyP, [...paletaCascoMini.bioluz, 255]);
+            putPx(destX + vxP, destY + vyP, CYAN);
+            putPx(destX + vxP + 1, destY + vyP, TXT);
+          }
+        }
+      } else if (idC === 'CARCACA_ALFA') {
+        const exA = Math.round(jx0 + 0.68 * (jx1 - jx0));
+        const eyA = Math.round(jy0 + 0.42 * (jy1 - jy0));
+        if (opacosGrid[eyA * largDst + exA]) {
+          fillRect(destX + exA - 4, destY + eyA - 2, destX + exA + 4, destY + eyA + 2, [242, 184, 58, 255], [18, 12, 16, 255]);
+          hLine(destX + exA - 3, destX + exA + 3, destY + eyA, [16, 10, 14, 255], 1);
+          putPx(destX + exA - 2, destY + eyA - 1, [255, 246, 198, 255]);
+        }
+        const sxSif = Math.round(jx0 + 0.34 * (jx1 - jx0));
+        const sySif = Math.round(jy0 + 0.54 * (jy1 - jy0));
+        if (opacosGrid[sySif * largDst + sxSif]) {
+          fillRect(destX + sxSif - 3, destY + sySif - 1, destX + sxSif + 2, destY + sySif + 2, [14, 32, 42, 255], [...paletaCascoMini.bioluz, 255]);
+        }
+      } else if (idC === 'MANTA_VOLT') {
+        for (let g = 0; g < 4; g += 1) {
+          const gx = Math.round(jx0 + (0.24 + g * 0.17) * (jx1 - jx0));
+          const gy = Math.round(jy0 + (0.38 + g * 0.03) * (jy1 - jy0));
+          if (opacosGrid[gy * largDst + gx]) {
+            lineSeg(destX + gx - 1, destY + gy - 3, destX + gx + 2, destY + gy + 3, [14, 26, 40, 255]);
+            lineSeg(destX + gx, destY + gy - 2, destX + gx + 2, destY + gy + 2, [96, 244, 255, 255]);
+            putPx(destX + gx + 1, destY + gy, [230, 255, 255, 255]);
+          }
+        }
+      } else if (idC === 'COURACA_LIMIAR') {
+        for (let sc = 0; sc < 3; sc += 1) {
+          const sxC = Math.round(jx0 + (0.25 + sc * 0.22) * (jx1 - jx0));
+          const syC = Math.round(jy0 + 0.36 * (jy1 - jy0));
+          if (opacosGrid[syC * largDst + sxC]) {
+            fillRect(destX + sxC - 3, destY + syC - 2, destX + sxC + 3, destY + syC + 3, [142, 92, 46, 255], [38, 22, 16, 255]);
+            hLine(destX + sxC - 2, destX + sxC + 2, destY + syC - 1, [244, 186, 84, 255], 1);
+          }
+        }
+        const oxC = Math.round(jx0 + 0.80 * (jx1 - jx0));
+        const oyC = Math.round(jy0 + 0.44 * (jy1 - jy0));
+        fillRect(destX + oxC - 1, destY + oyC - 3, destX + oxC + 2, destY + oyC - 1, [255, 112, 52, 255], [22, 12, 12, 255]);
+        fillRect(destX + oxC - 1, destY + oyC + 1, destX + oxC + 2, destY + oyC + 3, [255, 112, 52, 255], [22, 12, 12, 255]);
+      } else if (idC === 'SOMBRA_ABISSAL') {
+        const ocelos = [[0.28, 0.50], [0.44, 0.38], [0.58, 0.54], [0.72, 0.40], [0.80, 0.52]];
+        for (const [fxO, fyO] of ocelos) {
+          const oxS = Math.round(jx0 + fxO * (jx1 - jx0));
+          const oyS = Math.round(jy0 + fyO * (jy1 - jy0));
+          if (opacosGrid[oyS * largDst + oxS]) {
+            fillRect(destX + oxS - 1, destY + oyS - 1, destX + oxS + 1, destY + oyS + 1, [92, 28, 138, 255]);
+            putPx(destX + oxS, destY + oyS, [238, 126, 255, 255]);
+          }
+        }
+      } else {
+        const polipos = [[0.26, 0.42], [0.46, 0.54], [0.64, 0.38], [0.78, 0.50]];
+        for (const [fxP, fyP] of polipos) {
+          const pxP = Math.round(jx0 + fxP * (jx1 - jx0));
+          const pyP = Math.round(jy0 + fyP * (jy1 - jy0));
+          if (opacosGrid[pyP * largDst + pxP]) {
+            fillRect(destX + pxP - 2, destY + pyP - 2, destX + pxP + 2, destY + pyP + 2, [22, 68, 42, 255], [88, 236, 138, 255]);
+            putPx(destX + pxP, destY + pyP, [212, 255, 178, 255]);
+          }
         }
       }
     } else if (largDst < 80) {
@@ -1430,6 +1535,7 @@ export function criarContextoPrimitivasRgba960x540(viewModel, opcoes, assets, hi
     lock,
     blitIconeHiBit,
     heartOrgan,
+    aplicarPinturaFaccaoTipoB,
     desenharMiniaturaBioNaveHiBit,
     desenharRetratoRecortadoHiBit,
     desenharIconeSis12,

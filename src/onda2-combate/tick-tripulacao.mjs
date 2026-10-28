@@ -154,7 +154,16 @@ export function calcularRotaTaticaSobrevivencia(
   especie = 'POLVO',
   opcoes = {}
 ) {
-  const porId = Object.fromEntries(TOPOLOGIA_CAMARAS_BIONAVE.map((c) => [c.id, c]));
+  const grafoCustom =
+    naveJogador?.grafoAdjacencia && typeof naveJogador.grafoAdjacencia === 'object'
+      ? naveJogador.grafoAdjacencia
+      : null;
+  const porId = Object.fromEntries(
+    TOPOLOGIA_CAMARAS_BIONAVE.map((c) => [
+      c.id,
+      grafoCustom && Array.isArray(grafoCustom[c.id]) ? { ...c, vizinhos: grafoCustom[c.id] } : c,
+    ])
+  );
   if (!porId[idOrigem] || !porId[idDestino]) {
     return congelarProfundo({
       ok: false,
@@ -178,7 +187,7 @@ export function calcularRotaTaticaSobrevivencia(
   }
 
   const ficha = FICHAS_ESPECIES_TRIPULACAO[especie] ?? FICHAS_ESPECIES_TRIPULACAO.POLVO;
-  const rotaCanonica = calcularRotaCamarasBionave(idOrigem, idDestino).rota;
+  const rotaCanonica = calcularRotaCamarasBionave(idOrigem, idDestino, grafoCustom).rota;
   const ignorarRiscoMutacao = opcoes.ignorarRiscoAmbientalRotaMutacao === true;
   if (!naveJogador || opcoes.forcarRotaCanonicaCega === true || ignorarRiscoMutacao) {
     const tempoCego = arredondar4(
@@ -213,7 +222,7 @@ export function calcularRotaTaticaSobrevivencia(
     while (pilha.length > 0) {
       const caminho = pilha.shift();
       const atual = caminho[caminho.length - 1];
-      if (caminho.length > 6) continue;
+      if (caminho.length > 8) continue;
       const camTopo = porId[atual];
       const vizOrdenados = [...camTopo.vizinhos].sort((a, b) => {
         const ca = porId[a];
@@ -321,11 +330,18 @@ export function calcularRotaTaticaSobrevivencia(
  * Calcula a rota mínima entre duas câmaras da bio-nave aplicando o desempate determinístico da Seção 1.6.A
  * (prioriza passo vertical na mesma coluna antes de passo horizontal/ventral).
  */
-export function calcularRotaCamarasBionave(idOrigem, idDestino) {
+export function calcularRotaCamarasBionave(idOrigem, idDestino, grafoAdjacenciaCustom = null) {
   if (idOrigem === idDestino) {
     return congelarProfundo({ saltos: 0, rota: [idOrigem] });
   }
-  const porId = Object.fromEntries(TOPOLOGIA_CAMARAS_BIONAVE.map((c) => [c.id, c]));
+  const porId = Object.fromEntries(
+    TOPOLOGIA_CAMARAS_BIONAVE.map((c) => [
+      c.id,
+      grafoAdjacenciaCustom && Array.isArray(grafoAdjacenciaCustom[c.id])
+        ? { ...c, vizinhos: grafoAdjacenciaCustom[c.id] }
+        : c,
+    ])
+  );
   if (!porId[idOrigem] || !porId[idDestino]) {
     throw new Error(`[calcularRotaCamarasBionave] Câmara inválida: ${idOrigem} -> ${idDestino}`);
   }
@@ -473,13 +489,38 @@ export function calcularMultiplicadorReparoEfetivo(especie, aguaKg) {
  * Resolve 1 tick de combate corpo-a-corpo numa câmara (Seção 1.6.B):
  * Lotação máx 2 aliados + 2 inimigos; foco 100% no Slot 1 (índice 0); Baiacu inflado reflete 50% do DPS.
  */
-export function resolverCombateCorpoACorpoCamara(aliadosNaSala, inimigosNaSala, dtSeg = 0.25) {
+function incrementarXpMaestriaTripInPlace(trip, disciplina, pontos = 1) {
+  if (!trip || typeof trip !== 'object') return;
+  const xp = {
+    pilotagem: 0,
+    armas: 0,
+    barreira: 0,
+    reparo: 0,
+    combate: 0,
+    ...(trip.xpMaestria ?? {}),
+  };
+  xp[disciplina] = Number(xp[disciplina] ?? 0) + Number(pontos || 1);
+  trip.xpMaestria = xp;
+  const entradas = Object.entries(xp).sort((a, b) => Number(b[1]) - Number(a[1]));
+  const maxXp = Number(entradas[0]?.[1] ?? 0);
+  const nvCalc = maxXp >= 8 ? 2 : maxXp >= 3 ? 1 : 0;
+  trip.nivelMaestria = Math.max(Number(trip.nivelMaestria ?? 0), nvCalc);
+  trip.disciplinaMaestria = entradas[0]?.[0] ?? disciplina;
+}
+
+export function resolverCombateCorpoACorpoCamara(
+  aliadosNaSala,
+  inimigosNaSala,
+  dtSeg = 0.25,
+  limiteAliados = CONSTANTES_TRIPULACAO.LIMITE_ALIADOS_POR_CAMARA
+) {
+  const limAli = Math.max(1, Number(limiteAliados ?? CONSTANTES_TRIPULACAO.LIMITE_ALIADOS_POR_CAMARA));
   if (
-    aliadosNaSala.length > CONSTANTES_TRIPULACAO.LIMITE_ALIADOS_POR_CAMARA ||
+    aliadosNaSala.length > limAli ||
     inimigosNaSala.length > CONSTANTES_TRIPULACAO.LIMITE_INIMIGOS_POR_CAMARA
   ) {
     throw new Error(
-      `[Seção 1.6.B Stacking Limit] Lotação excedida: aliados=${aliadosNaSala.length} (máx 2), inimigos=${inimigosNaSala.length} (máx 2)`
+      `[Seção 1.6.B Stacking Limit] Lotação excedida: aliados=${aliadosNaSala.length} (máx ${limAli}), inimigos=${inimigosNaSala.length} (máx 2)`
     );
   }
   const aliados = structuredClone(aliadosNaSala);
@@ -488,10 +529,15 @@ export function resolverCombateCorpoACorpoCamara(aliadosNaSala, inimigosNaSala, 
   if (aliados.length > 0 && inimigos.length > 0) {
     for (const a of aliados) a.acopladoBulbo = false;
     const dpsAliados = aliados.reduce((acc, a) => {
-      const dps = a.dps ?? FICHAS_ESPECIES_TRIPULACAO[a.especie]?.dpsCorpoACorpo ?? 0;
-      return acc + dps;
+      if (Number(a.atordoadoSeg ?? 0) > 0) return acc;
+      const dpsBase = a.dps ?? FICHAS_ESPECIES_TRIPULACAO[a.especie]?.dpsCorpoACorpo ?? 0;
+      const nvM = Math.min(2, Math.max(0, Number(a.nivelMaestria ?? 0)));
+      return acc + dpsBase * (1 + 0.15 * nvM);
     }, 0);
-    const dpsInimigos = inimigos.reduce((acc, i) => acc + Number(i.dps ?? 8.0), 0);
+    const dpsInimigos = inimigos.reduce((acc, i) => {
+      if (Number(i.atordoadoSeg ?? 0) > 0) return acc;
+      return acc + Number(i.dps ?? 8.0);
+    }, 0);
 
     inimigos[0].hpAtual = Math.max(0.0, arredondar4(inimigos[0].hpAtual - dpsAliados * dtSeg));
     aliados[0].hpAtual = Math.max(0.0, arredondar4(aliados[0].hpAtual - dpsInimigos * dtSeg));
@@ -550,6 +596,27 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
     const camaraInicial = nave.camaras.find((c) => c.id === trip.camaraAtualId);
     if (!camaraInicial) continue;
 
+    // 0. Estase Crio-Abissal (`atordoadoSeg > 0`): congela nado, reparo e estação, mantendo ambiente real da sala!
+    const estavaAtordoado = Number(trip.atordoadoSeg ?? 0) > 0;
+    if (estavaAtordoado) {
+      const novoAtordoadoSeg = Math.max(0.0, arredondar4(Number(trip.atordoadoSeg) - dtSeg));
+      trip.atordoadoSeg = novoAtordoadoSeg;
+      const deltaStun = calcularDeltaHpAmbientalPorSeg(nave, camaraInicial, ficha);
+      trip.hpAtual = Math.max(0.0, Math.min(trip.hpMax, arredondar4(trip.hpAtual + deltaStun * dtSeg)));
+      if (trip.hpAtual <= 0) {
+        if (camaraInicial.baiacuInfladoId === trip.id) camaraInicial.baiacuInfladoId = null;
+        trip.acopladoBulbo = false;
+        continue;
+      }
+      const paradoNaSala =
+        trip.camaraDestinoId === null || trip.camaraDestinoId === undefined || trip.camaraDestinoId === trip.camaraAtualId;
+      const temInvVivoStun = listaInvasoresMutavel.some(
+        (inv) => inv.camaraAtualId === camaraInicial.id && inv.hpAtual > 0
+      );
+      trip.acopladoBulbo = novoAtordoadoSeg === 0 && paradoNaSala && !temInvVivoStun && !trip.inflado;
+      continue;
+    }
+
     // Caso A: Tripulante em trânsito entre câmaras (avança 1 salto topológico por vez com ambiente real de cada sala!)
     if (trip.camaraDestinoId !== null && trip.camaraDestinoId !== undefined && trip.camaraDestinoId !== trip.camaraAtualId) {
       if (trip.inflado) {
@@ -563,7 +630,11 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
         trip.hpAtual = Math.max(0.0, Math.min(trip.hpMax, arredondar4(trip.hpAtual + deltaLegado * dtSeg)));
         if (trip.hpAtual <= 0) continue;
         trip.acopladoBulbo = false;
-        const { saltos } = calcularRotaCamarasBionave(trip.camaraAtualId, trip.camaraDestinoId);
+        const { saltos } = calcularRotaCamarasBionave(
+          trip.camaraAtualId,
+          trip.camaraDestinoId,
+          nave?.grafoAdjacencia ?? null
+        );
         const penLegado =
           camaraInicial.aguaKg <= 0.0 && !ficha.anfibioImuneSeca
             ? CONSTANTES_TRIPULACAO.PENALIDADE_VEL_E_REPARO_SALA_SECA_MULT
@@ -720,19 +791,25 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
       continue;
     }
     if (trip.inflado) continue;
-    const multReparo = calcularMultiplicadorReparoEfetivo(trip.especie, camara.aguaKg);
+    const nvMaestriaRep = Math.min(2, Math.max(0, Number(trip.nivelMaestria ?? 0)));
+    const multReparo = arredondar4(
+      calcularMultiplicadorReparoEfetivo(trip.especie, camara.aguaKg) * (1 + 0.15 * nvMaestriaRep)
+    );
     const maxBarrasSistema = Number(camara.nivelMaxBarras ?? camara.barrasNivelMax ?? camara.nivelMax ?? 0);
 
     if (camara.curtoCircuitoAtivo) {
       const multCurto =
         trip.especie === 'ARRAIA'
-          ? 2.0 * (camara.aguaKg <= 0.0 ? 0.5 : 1.0)
+          ? 2.0 * (camara.aguaKg <= 0.0 ? 0.5 : 1.0) * (1 + 0.15 * nvMaestriaRep)
           : multReparo;
       camara.progressoReparoCurtoSeg = arredondar4(camara.progressoReparoCurtoSeg + dtSeg * multCurto);
       if (camara.progressoReparoCurtoSeg >= CONSTANTES_TRIPULACAO.TEMPO_REPARO_CURTO_BASE_SEG) {
-        camara.curtoCircuitoAtivo = false;
         camara.progressoReparoCurtoSeg = 0.0;
+        camara.curtoCircuitoAtivo = false;
         camara.progressoDanoCurtoSeg = 0.0;
+        if (proximo.meta?.edicaoComercialSteam === true) {
+          incrementarXpMaestriaTripInPlace(trip, 'reparo', 2);
+        }
       }
     } else if (camara.barrasIntegridade < maxBarrasSistema) {
       camara.progressoReparoSistemaSeg = arredondar4(camara.progressoReparoSistemaSeg + dtSeg * multReparo);
@@ -742,6 +819,9 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
         );
         camara.barrasIntegridade += 1;
         camara.integridade = camara.barrasIntegridade;
+        if (proximo.meta?.edicaoComercialSteam === true) {
+          incrementarXpMaestriaTripInPlace(trip, 'reparo', 2);
+        }
       }
     } else if (camara.rombosCasco > 0 || camara.brechaAtiva) {
       if ((camara.rombosCasco ?? 0) <= 0 && camara.brechaAtiva) {
@@ -754,6 +834,9 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
         );
         camara.rombosCasco = Math.max(0, (camara.rombosCasco ?? 1) - 1);
         camara.brechaAtiva = camara.rombosCasco > 0;
+        if (proximo.meta?.edicaoComercialSteam === true) {
+          incrementarXpMaestriaTripInPlace(trip, 'reparo', 2);
+        }
         if (camara.rombosCasco === 0) {
           for (const b of nave.tripulacao) {
             if (b.especie === 'BAIACU' && b.camaraAtualId === camara.id && b.inflado) {
@@ -802,9 +885,13 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
       );
 
       if (aliadosSala.length > 0) {
-        const frenteAliada = aliadosSala.slice(0, CONSTANTES_TRIPULACAO.LIMITE_ALIADOS_POR_CAMARA);
+        const limAliCam = Math.max(
+          1,
+          Number(nave?.limitesPorSala?.[cam.id] ?? CONSTANTES_TRIPULACAO.LIMITE_ALIADOS_POR_CAMARA)
+        );
+        const frenteAliada = aliadosSala.slice(0, limAliCam);
         const frenteInimiga = invsSala.slice(0, CONSTANTES_TRIPULACAO.LIMITE_INIMIGOS_POR_CAMARA);
-        const duelo = resolverCombateCorpoACorpoCamara(frenteAliada, frenteInimiga, dtSeg);
+        const duelo = resolverCombateCorpoACorpoCamara(frenteAliada, frenteInimiga, dtSeg, limAliCam);
         duelo.aliados.forEach((aRes, idxA) => {
           frenteAliada[idxA].hpAtual = aRes.hpAtual;
           frenteAliada[idxA].acopladoBulbo = false;
@@ -813,7 +900,13 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
           }
         });
         duelo.inimigos.forEach((iRes, idxI) => {
+          const estavaVivoAntes = frenteInimiga[idxI].hpAtual > 0;
           frenteInimiga[idxI].hpAtual = iRes.hpAtual;
+          if (estavaVivoAntes && iRes.hpAtual <= 0 && proximo.meta?.edicaoComercialSteam === true) {
+            for (const alV of frenteAliada) {
+              if (alV.hpAtual > 0) incrementarXpMaestriaTripInPlace(alV, 'combate', 2);
+            }
+          }
         });
       } else {
         // Câmara sem defensores: invasores sabotam o sistema local ou avançam pelo esfíncter até o próximo sistema íntegro!
@@ -835,6 +928,7 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
           }
         } else {
           // Escolhe a câmara mais próxima com sistema íntegro ou tripulante vivo para marchar/nadar!
+          const grafoInvasor = nave?.grafoAdjacencia ?? null;
           const alvosValidos = nave.camaras.filter(
             (c) =>
               c.id !== cam.id &&
@@ -844,8 +938,8 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
           if (alvosValidos.length > 0) {
             alvosValidos.sort(
               (a, b) =>
-                calcularRotaCamarasBionave(cam.id, a.id).saltos -
-                  calcularRotaCamarasBionave(cam.id, b.id).saltos || a.id - b.id
+                calcularRotaCamarasBionave(cam.id, a.id, grafoInvasor).saltos -
+                  calcularRotaCamarasBionave(cam.id, b.id, grafoInvasor).saltos || a.id - b.id
             );
             for (const inv of invsSala) {
               inv.camaraDestinoId = alvosValidos[0].id;
@@ -871,7 +965,11 @@ export function avancarTickTripulacao(estado, dtSeg = 0.25, opcoesDebug = {}) {
         inv.progressoSalto0a1 = 0.0;
         continue;
       }
-      const { rota } = calcularRotaCamarasBionave(inv.camaraAtualId, inv.camaraDestinoId);
+      const { rota } = calcularRotaCamarasBionave(
+        inv.camaraAtualId,
+        inv.camaraDestinoId,
+        nave?.grafoAdjacencia ?? null
+      );
       const proxInv = rota[1] ?? null;
       if (!proxInv) {
         inv.camaraDestinoId = null;

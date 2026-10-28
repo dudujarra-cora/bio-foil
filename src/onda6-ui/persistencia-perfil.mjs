@@ -106,10 +106,34 @@ export function atualizarPerfilComMetricasRun(perfilAtual, contextoMetricas = {}
       Number(baseEst.orgaosExtraidosTotal ?? 0) + Number(contextoMetricas.incrementarOrgaosExtraidos ?? 0),
   };
 
+  const conquistasMescladas =
+    Array.isArray(perfilAtual.conquistasSteamDesbloqueadas) || Array.isArray(contextoMetricas.conquistasSteamDesbloqueadas)
+      ? [
+          ...new Set([
+            ...(perfilAtual.conquistasSteamDesbloqueadas ?? []),
+            ...(contextoMetricas.conquistasSteamDesbloqueadas ?? []),
+          ].map(String)),
+        ]
+      : undefined;
+  const layoutsBMesclados =
+    Array.isArray(perfilAtual.layoutsTipoBDesbloqueados) || Array.isArray(contextoMetricas.layoutsTipoBDesbloqueados)
+      ? [
+          ...new Set([
+            ...(perfilAtual.layoutsTipoBDesbloqueados ?? []),
+            ...(contextoMetricas.layoutsTipoBDesbloqueados ?? []),
+          ].map(String)),
+        ]
+      : undefined;
+  const configSteamPerfil =
+    contextoMetricas.configuracoesSteam ?? perfilAtual.configuracoesSteam ?? undefined;
+
   return clonarProfundoCongelado({
     ...perfilAtual,
     carcacasDesbloqueadas: novasCarcacas,
     estatisticasGlobais,
+    ...(conquistasMescladas !== undefined ? { conquistasSteamDesbloqueadas: conquistasMescladas } : {}),
+    ...(layoutsBMesclados !== undefined ? { layoutsTipoBDesbloqueados: layoutsBMesclados } : {}),
+    ...(configSteamPerfil !== undefined ? { configuracoesSteam: configSteamPerfil } : {}),
   });
 }
 
@@ -204,6 +228,15 @@ export function salvarPerfilDisco(perfil, opcoes = {}) {
       barcosCapturadosTotal: Math.max(0, Math.floor(Number(perfil.estatisticasGlobais?.barcosCapturadosTotal ?? 0))),
       orgaosExtraidosTotal: Math.max(0, Math.floor(Number(perfil.estatisticasGlobais?.orgaosExtraidosTotal ?? 0))),
     },
+    ...(Array.isArray(perfil.conquistasSteamDesbloqueadas)
+      ? { conquistasSteamDesbloqueadas: [...new Set(perfil.conquistasSteamDesbloqueadas.map(String))] }
+      : {}),
+    ...(Array.isArray(perfil.layoutsTipoBDesbloqueados)
+      ? { layoutsTipoBDesbloqueados: [...new Set(perfil.layoutsTipoBDesbloqueados.map(String))] }
+      : {}),
+    ...(perfil.configuracoesSteam && typeof perfil.configuracoesSteam === 'object'
+      ? { configuracoesSteam: structuredClone(perfil.configuracoesSteam) }
+      : {}),
   };
   gravarJsonAtomico(caminhoPerfil, perfilNormalizado);
   return clonarProfundoCongelado({
@@ -251,6 +284,15 @@ export function carregarPerfilDisco(opcoes = {}) {
         barcosCapturadosTotal: Math.max(0, Math.floor(Number(bruto?.estatisticasGlobais?.barcosCapturadosTotal ?? 0))),
         orgaosExtraidosTotal: Math.max(0, Math.floor(Number(bruto?.estatisticasGlobais?.orgaosExtraidosTotal ?? 0))),
       },
+      ...(Array.isArray(bruto?.conquistasSteamDesbloqueadas)
+        ? { conquistasSteamDesbloqueadas: [...new Set(bruto.conquistasSteamDesbloqueadas.map(String))] }
+        : {}),
+      ...(Array.isArray(bruto?.layoutsTipoBDesbloqueados)
+        ? { layoutsTipoBDesbloqueados: [...new Set(bruto.layoutsTipoBDesbloqueados.map(String))] }
+        : {}),
+      ...(bruto?.configuracoesSteam && typeof bruto.configuracoesSteam === 'object'
+        ? { configuracoesSteam: structuredClone(bruto.configuracoesSteam) }
+        : {}),
     };
     return clonarProfundoCongelado({
       ok: true,

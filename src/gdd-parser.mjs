@@ -25,6 +25,7 @@ export const CADEIA_CANONICA_TESTES = Object.freeze([
   '08-onda6-ui-juncao.test.mjs',
   '09-mutacoes-reais.test.mjs',
   '10-portao-audio-cpp20-steam.test.mjs',
+  '11-onda7-steam-comercial.test.mjs',
 ]);
 
 export const CADEIA_CANONICA_SRC = Object.freeze([
@@ -69,10 +70,23 @@ export const CADEIA_CANONICA_ONDAS_SRC = Object.freeze([
   'onda6-ui/tick-combate-tempo-real.mjs',
   'onda6-ui/tradutor-input-dom.mjs',
   'onda6-ui/vitrine-spreads.mjs',
+  'onda7-steam/catalogo-armas-orgaos-ae.mjs',
+  'onda7-steam/dificuldades-conquistas-opcoes.mjs',
+  'onda7-steam/eventos-ae-setores-1a4.mjs',
+  'onda7-steam/eventos-ae-setores-5a8.mjs',
+  'onda7-steam/i18n-dicionario-ui.mjs',
+  'onda7-steam/motor-audio-ogg-foley.mjs',
+  'onda7-steam/particulas-juice-60fps.mjs',
+  'onda7-steam/renderizador-modais-steam.mjs',
+  'onda7-steam/runtime-local-steam-cliente.mjs',
+  'onda7-steam/steamworks-desktop-host.mjs',
+  'onda7-steam/topologias-naves-ab.mjs',
+  'onda7-steam/tutorial-interativo.mjs',
 ]);
 
 export const CADEIA_CANONICA_SCRIPTS = Object.freeze([
   'auditar-frente.sh',
+  'gerar-assets-audio-ogg.mjs',
   'hooks/pre-commit',
   'hooks/pre-push',
   'jogar-biofoil.mjs',
@@ -94,9 +108,11 @@ export const CADEIA_CANONICA_RAIZ_OUTROS = Object.freeze([
 
 /** Diretórios da raiz (dot-diretórios ignorados). */
 export const CADEIA_CANONICA_DIRS_RAIZ = Object.freeze([
+  'assets',
   'padrao',
   'scripts',
   'src',
+  'steam-desktop',
   'tests',
 ]);
 

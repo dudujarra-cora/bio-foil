@@ -11,7 +11,11 @@
  */
 import fs from 'node:fs';
 import http from 'node:http';
-import { clonarProfundoCongelado } from '../gdd-parser.mjs';
+import {
+  CADEIA_CANONICA_ONDAS_SRC,
+  CADEIA_CANONICA_SRC,
+  clonarProfundoCongelado,
+} from '../gdd-parser.mjs';
 import { criarEstadoInicialPartida } from '../onda1-fisica/estado-inicial.mjs';
 import { criarAlvoSetor1Canonico } from '../onda3-inimigos/ia-barco-monstro.mjs';
 import { construirPlanoGrafoWebAudio } from './cues-audio.mjs';
@@ -21,6 +25,10 @@ import {
   exportarPacoteAssets60Fps,
 } from './assets-hibit.mjs';
 import {
+  salvarPerfilDisco,
+  salvarRunSaveDisco,
+} from './persistencia-perfil.mjs';
+import {
   despacharComandoUi,
   obterMapaHitboxesNativo,
   avancarTickPartidaEmTempoReal,
@@ -29,6 +37,7 @@ import { traduzirInputDomParaComandoUi } from './tradutor-input-dom.mjs';
 import {
   executarAcaoCampanhaCompleta,
   avancarTickCampanhaCompleta,
+  sincronizarProgressoTutorialSteamNoEstado,
 } from './campanha-completa.mjs';
 import {
   projetarViewModelWireframe,
@@ -42,6 +51,21 @@ const COMANDOS_MOTOR_ROTEADOS_CAMPANHA = Object.freeze([
   'ESCOLHER_OPCAO_EVENTO',
   'COMPRAR_OU_VENDER_LOJA',
   'SALTO_FUGA',
+]);
+
+const MODULOS_RASTER_ONDA7_ORDENADOS = Object.freeze([
+  'topologias-naves-ab.mjs',
+  'tutorial-interativo.mjs',
+  'dificuldades-conquistas-opcoes.mjs',
+  'i18n-dicionario-ui.mjs',
+  'particulas-juice-60fps.mjs',
+  'renderizador-modais-steam.mjs',
+]);
+
+const MODULOS_ESM_NAVEGADOR_ONDA7 = Object.freeze([
+  ...MODULOS_RASTER_ONDA7_ORDENADOS,
+  'motor-audio-ogg-foley.mjs',
+  'runtime-local-steam-cliente.mjs',
 ]);
 
 const MODULOS_RASTER_PUROS_ORDENADOS = Object.freeze([
@@ -79,10 +103,112 @@ const MAPA_FONTES_ESM_PUROS = (() => {
   return Object.freeze(mapa);
 })();
 
+const MAPA_FONTES_ESM_ONDA7 = (() => {
+  const mapa = {};
+  for (const nomeArquivo of MODULOS_ESM_NAVEGADOR_ONDA7) {
+    mapa[nomeArquivo] = fs.readFileSync(new URL(`../onda7-steam/${nomeArquivo}`, import.meta.url), 'utf8');
+  }
+  return Object.freeze(mapa);
+})();
+
+const SET_MODULOS_SRC_SIMULACAO_BROWSER = new Set(
+  [...CADEIA_CANONICA_SRC, ...CADEIA_CANONICA_ONDAS_SRC].filter(
+    (m) => m !== 'onda6-ui/cliente-web.mjs' && m !== 'onda7-steam/steamworks-desktop-host.mjs'
+  )
+);
+
+const CACHE_MODULOS_SRC_BROWSER = new Map();
+
+function gerarFonteEsmSimulacaoNavegador(caminhoRelSrc) {
+  if (!SET_MODULOS_SRC_SIMULACAO_BROWSER.has(caminhoRelSrc)) {
+    return null;
+  }
+  if (CACHE_MODULOS_SRC_BROWSER.has(caminhoRelSrc)) {
+    return CACHE_MODULOS_SRC_BROWSER.get(caminhoRelSrc);
+  }
+  let codigo = '';
+  if (caminhoRelSrc === 'gdd-parser.mjs') {
+    codigo = [
+      'export function normalizarTexto(texto) {',
+      '  let t = String(texto);',
+      '  for (let i = 0; i < 4; i += 1) {',
+      '    t = t.replace(/\\\\(?:text|mathbf|textbf|mathrm)\\{([^{}]*)\\}/g, "$1");',
+      '  }',
+      '  return t.replace(/\\\\rightarrow\\b|\\\\to\\b/g, "->").replace(/\\\\leftrightarrow\\b/g, "<->").replace(/\\\\times\\b/g, "x").replace(/\\\\le\\b/g, "<=").replace(/\\\\ge\\b/g, ">=").replace(/\\\\%/g, "%").replace(/\\\\;/g, " ").replace(/\\$/g, "").replace(/\\*\\*/g, "").replace(/`/g, "").replace(/[ \\t]+/g, " ");',
+      '}',
+      'export function clonarProfundoCongelado(obj) {',
+      '  const copia = structuredClone(obj);',
+      '  const congelar = (alvo) => {',
+      '    if (alvo && typeof alvo === "object" && !ArrayBuffer.isView(alvo)) {',
+      '      Object.freeze(alvo);',
+      '      for (const chave of Object.keys(alvo)) congelar(alvo[chave]);',
+      '    }',
+      '    return alvo;',
+      '  };',
+      '  return congelar(copia);',
+      '}',
+      '',
+    ].join('\n');
+  } else if (caminhoRelSrc === 'onda6-ui/persistencia-perfil.mjs') {
+    const fonteBruta = fs.readFileSync(new URL('./persistencia-perfil.mjs', import.meta.url), 'utf8');
+    const shimFsBrowser = [
+      'const __vfsMemBiofoil = new Map();',
+      'const process = { env: {}, pid: 1 };',
+      'const os = { homedir: () => "/biofoil-browser", tmpdir: () => "/biofoil-browser/tmp" };',
+      'const path = {',
+      '  resolve: (...p) => "/" + p.filter(Boolean).join("/").replace(/\\/+/g, "/").replace(/^\\//, ""),',
+      '  join: (...p) => p.filter(Boolean).join("/").replace(/\\/+/g, "/"),',
+      '  dirname: (p) => String(p).split("/").slice(0, -1).join("/") || "/",',
+      '};',
+      'const fs = {',
+      '  mkdirSync: () => {},',
+      '  existsSync: (c) => __vfsMemBiofoil.has(String(c)),',
+      '  readFileSync: (c) => { if (!__vfsMemBiofoil.has(String(c))) throw new Error("ENOENT"); return __vfsMemBiofoil.get(String(c)); },',
+      '  writeFileSync: (c, txt) => { __vfsMemBiofoil.set(String(c), String(txt)); },',
+      '  renameSync: (de, para) => { if (__vfsMemBiofoil.has(String(de))) { __vfsMemBiofoil.set(String(para), __vfsMemBiofoil.get(String(de))); __vfsMemBiofoil.delete(String(de)); } },',
+      '  unlinkSync: (c) => { __vfsMemBiofoil.delete(String(c)); },',
+      '};',
+    ].join('\n');
+    codigo = fonteBruta.replace(
+      /import fs from 'node:fs';\s*import os from 'node:os';\s*import path from 'node:path';/,
+      shimFsBrowser
+    );
+  } else if (caminhoRelSrc === 'onda6-ui/assets-hibit.mjs') {
+    const fonteBruta = fs.readFileSync(new URL('./assets-hibit.mjs', import.meta.url), 'utf8');
+    codigo = fonteBruta.replace(
+      /import zlib from 'node:zlib';/,
+      'const zlib = { deflateSync: () => new Uint8Array(0), inflateSync: () => new Uint8Array(0) };'
+    );
+  } else if (caminhoRelSrc === 'onda6-ui/audio-maritimo.mjs') {
+    const fonteBruta = fs.readFileSync(new URL('./audio-maritimo.mjs', import.meta.url), 'utf8');
+    const fonteSintetizador = JSON.stringify(MAPA_FONTES_ESM_PUROS['sintetizador-webaudio-cliente.mjs']);
+    codigo = fonteBruta
+      .replace(/import fs from 'node:fs';\s*/, '')
+      .replace(
+        /fs\s*\.readFileSync\(new URL\('\.\/sintetizador-webaudio-cliente\.mjs',\s*import\.meta\.url\),\s*'utf8'\)/,
+        fonteSintetizador
+      );
+  } else {
+    codigo = fs.readFileSync(new URL(`../${caminhoRelSrc}`, import.meta.url), 'utf8');
+  }
+  CACHE_MODULOS_SRC_BROWSER.set(caminhoRelSrc, codigo);
+  return codigo;
+}
+
 const CODIGO_BUNDLE_CLIENTE_JS = (() => {
-  const blocoRaster = MODULOS_RASTER_PUROS_ORDENADOS.map((nome) =>
-    limparSintaxeEsmParaEscopoBundle(MAPA_FONTES_ESM_PUROS[nome])
+  const codigoPrimitivas = limparSintaxeEsmParaEscopoBundle(MAPA_FONTES_ESM_PUROS['primitivas-raster-rgba.mjs']);
+  const blocoOnda7 = MODULOS_RASTER_ONDA7_ORDENADOS.map((nome) =>
+    limparSintaxeEsmParaEscopoBundle(MAPA_FONTES_ESM_ONDA7[nome])
   ).join('\n\n');
+  const blocoRasterRestante = MODULOS_RASTER_PUROS_ORDENADOS.filter((n) => n !== 'primitivas-raster-rgba.mjs')
+    .map((nome) => limparSintaxeEsmParaEscopoBundle(MAPA_FONTES_ESM_PUROS[nome]))
+    .join('\n\n');
+  const codigoAudioSteamOnda7 = limparSintaxeEsmParaEscopoBundle(
+    MAPA_FONTES_ESM_ONDA7['motor-audio-ogg-foley.mjs']
+  );
+  const codigoRuntimeSteamOnda7 = limparSintaxeEsmParaEscopoBundle(
+    MAPA_FONTES_ESM_ONDA7['runtime-local-steam-cliente.mjs']
+  );
   const blocoRuntime = MODULOS_RUNTIME_POS_BOOTSTRAP.map((nome) =>
     limparSintaxeEsmParaEscopoBundle(MAPA_FONTES_ESM_PUROS[nome])
   ).join('\n\n');
@@ -90,10 +216,18 @@ const CODIGO_BUNDLE_CLIENTE_JS = (() => {
   return `(() => {
   'use strict';
   const __BIOFOIL_BUNDLE_IIFE = true;
-${blocoRaster}
+${codigoPrimitivas}
+
+${blocoOnda7}
+
+${blocoRasterRestante}
 
   const bootEl = typeof document !== 'undefined' ? document.getElementById('biofoil-bootstrap') : null;
   let estadoCliente = JSON.parse(bootEl ? bootEl.textContent || '{}' : '{}');
+
+${codigoAudioSteamOnda7}
+
+${codigoRuntimeSteamOnda7}
 
 ${blocoRuntime}
 
@@ -210,15 +344,233 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
     pausaTaticaAtiva: false,
     slotArmaSelecionado: 0,
     tripulanteSelecionadoId: estadoAtual.naveJogador?.tripulacao?.[0]?.id ?? 'trip-polvo-1',
+    tripulantesSelecionadosIds: [estadoAtual.naveJogador?.tripulacao?.[0]?.id ?? 'trip-polvo-1'],
     modoOrdemAbordagem: false,
     salaAlvoAbordagemId: 1,
     ultimaSalaBeamClicadaId: null,
   };
   let seqAudioServidor = 0;
 
+  function processarOperacaoMotorEmMemoria(urlOperacao, body) {
+    const estadoAnterior = estadoAtual;
+    let ultimoResultadoComando = null;
+    let idHitboxHover = null;
+    let acaoLocalUi = null;
+    const usaCampanha = Boolean(modoCampanhaAtivo || estadoAtual.meta?.modoCampanhaCompleta);
+
+    if (urlOperacao === '/api/tick') {
+      if (
+        body.dtSeg !== undefined &&
+        (typeof body.dtSeg !== 'number' || !Number.isFinite(body.dtSeg) || body.dtSeg <= 0)
+      ) {
+        return { statusHttp: 400, payload: { erro: 'DT_SEG_INVALIDO' } };
+      }
+      const dtSeg = Math.max(0.05, Math.min(5.0, body.dtSeg ?? 0.25));
+      const pausaAtiva =
+        body.pausaTaticaAtiva !== undefined ? Boolean(body.pausaTaticaAtiva) : contextoUiServidor.pausaTaticaAtiva;
+      contextoUiServidor = { ...contextoUiServidor, pausaTaticaAtiva: pausaAtiva };
+      if (pausaAtiva !== true) {
+        estadoAtual = usaCampanha
+          ? avancarTickCampanhaCompleta(estadoAtual, dtSeg, opcoesPersistencia)
+          : avancarTickPartidaEmTempoReal(estadoAtual, dtSeg);
+      }
+    } else if (body.eventoInput && typeof body.eventoInput === 'object') {
+      const ctxEntrada = {
+        ...contextoUiServidor,
+        ...(body.contextoUi && typeof body.contextoUi === 'object' ? body.contextoUi : {}),
+      };
+      const vmAntes = projetarViewModelWireframe(estadoAtual);
+      const traducao = traduzirInputDomParaComandoUi(body.eventoInput, estadoAtual, vmAntes, ctxEntrada);
+      idHitboxHover = traducao.hitboxAtingida ?? null;
+      acaoLocalUi = traducao.acaoLocalUi ?? null;
+      const slotCand =
+        traducao.slotArmaSelecionado !== undefined
+          ? traducao.slotArmaSelecionado
+          : Number(ctxEntrada.slotArmaSelecionado ?? 0);
+      const tripCand = String(
+        traducao.tripulanteSelecionadoId !== undefined
+          ? traducao.tripulanteSelecionadoId
+          : (ctxEntrada.tripulanteSelecionadoId ?? 'trip-polvo-1')
+      ).slice(0, 64);
+      const salaAbCand = Number(
+        traducao.salaAlvoAbordagemId !== undefined
+          ? traducao.salaAlvoAbordagemId
+          : (ctxEntrada.salaAlvoAbordagemId ?? 1)
+      );
+      const ultBeamCand =
+        traducao.ultimaSalaBeamClicadaId !== undefined
+          ? traducao.ultimaSalaBeamClicadaId
+          : (ctxEntrada.ultimaSalaBeamClicadaId ?? null);
+
+      const listaTripCand = Array.isArray(traducao.tripulantesSelecionadosIds)
+        ? traducao.tripulantesSelecionadosIds.map((id) => String(id).slice(0, 64))
+        : Array.isArray(ctxEntrada.tripulantesSelecionadosIds)
+          ? ctxEntrada.tripulantesSelecionadosIds.map((id) => String(id).slice(0, 64))
+          : [tripCand];
+
+      contextoUiServidor = {
+        pausaTaticaAtiva:
+          traducao.pausaTaticaAtiva !== undefined ? traducao.pausaTaticaAtiva : Boolean(ctxEntrada.pausaTaticaAtiva),
+        slotArmaSelecionado: Number.isInteger(slotCand) && slotCand >= 0 && slotCand <= 3 ? slotCand : 0,
+        tripulanteSelecionadoId: tripCand,
+        tripulantesSelecionadosIds: listaTripCand,
+        modoOrdemAbordagem:
+          traducao.modoOrdemAbordagem !== undefined
+            ? Boolean(traducao.modoOrdemAbordagem)
+            : Boolean(ctxEntrada.modoOrdemAbordagem),
+        salaAlvoAbordagemId: Number.isInteger(salaAbCand) && salaAbCand >= 1 && salaAbCand <= 8 ? salaAbCand : 1,
+        ultimaSalaBeamClicadaId: Number.isInteger(ultBeamCand) ? ultBeamCand : null,
+      };
+
+      if (traducao.acaoLocalUi === 'ACAO_CAMPANHA' && traducao.acaoCampanhaUi) {
+        const resCamp = executarAcaoCampanhaCompleta(estadoAtual, traducao.acaoCampanhaUi, opcoesPersistencia);
+        if (resCamp.estado) {
+          estadoAtual = resCamp.estado;
+        }
+        if (
+          traducao.acaoCampanhaUi.tipoAcao === 'INICIAR_NOVA_RUN' ||
+          traducao.acaoCampanhaUi.tipoAcao === 'CONTINUAR_RUN_SALVA'
+        ) {
+          contextoUiServidor = {
+            ...contextoUiServidor,
+            pausaTaticaAtiva: false,
+            slotArmaSelecionado: 0,
+            tripulanteSelecionadoId: estadoAtual.naveJogador?.tripulacao?.[0]?.id ?? 'trip-polvo-1',
+            tripulantesSelecionadosIds: [estadoAtual.naveJogador?.tripulacao?.[0]?.id ?? 'trip-polvo-1'],
+            modoOrdemAbordagem: false,
+            ultimaSalaBeamClicadaId: null,
+          };
+        }
+        const tipoEfetivoUi = resCamp.acaoExecutada ?? traducao.acaoCampanhaUi.tipoAcao;
+        ultimoResultadoComando = {
+          aceito: Boolean(resCamp.ok),
+          marcadorRejeicao: resCamp.ok ? null : (resCamp.codigoErro ?? 'ACAO_CAMPANHA_REJEITADA'),
+          cueEmitido: resCamp.cueEmitido ?? null,
+          comandoExecutado: { tipo: tipoEfetivoUi },
+          acaoCampanhaExecutada: { ...traducao.acaoCampanhaUi, tipoAcao: tipoEfetivoUi },
+          estado: estadoAtual,
+        };
+      } else if (
+        usaCampanha &&
+        traducao.comandoMotor &&
+        COMANDOS_MOTOR_ROTEADOS_CAMPANHA.includes(traducao.comandoMotor.tipo)
+      ) {
+        const resCampCmd = executarAcaoCampanhaCompleta(
+          estadoAtual,
+          { comandoMotor: traducao.comandoMotor },
+          opcoesPersistencia
+        );
+        if (resCampCmd.estado) {
+          estadoAtual = resCampCmd.estado;
+        }
+        ultimoResultadoComando = {
+          aceito: Boolean(resCampCmd.ok),
+          marcadorRejeicao: resCampCmd.ok ? null : (resCampCmd.codigoErro ?? 'COMANDO_CAMPANHA_REJEITADO'),
+          cueEmitido: resCampCmd.cueEmitido ?? traducao.resultadoMotor?.cueEmitido ?? null,
+          comandoExecutado: traducao.comandoMotor,
+          estado: estadoAtual,
+        };
+      } else {
+        ultimoResultadoComando = traducao.resultadoMotor;
+        if (ultimoResultadoComando?.estado) {
+          estadoAtual = ultimoResultadoComando.estado;
+        }
+        if (
+          body.eventoInput?.tipoEvento !== 'MOUSEMOVE' &&
+          estadoAtual?.meta?.edicaoComercialSteam &&
+          estadoAtual?.meta?.tutorialSteam?.ativo &&
+          (!ultimoResultadoComando || ultimoResultadoComando.aceito !== false)
+        ) {
+          const chaveTutEv = traducao.comandoMotor?.tipo ?? acaoLocalUi ?? null;
+          if (chaveTutEv && chaveTutEv !== 'ATUALIZAR_GHOST_PREVIEW') {
+            estadoAtual = sincronizarProgressoTutorialSteamNoEstado(estadoAtual, chaveTutEv, opcoesPersistencia);
+          }
+        }
+      }
+    } else if (body.acaoCampanha && typeof body.acaoCampanha === 'object') {
+      const resCampDir = executarAcaoCampanhaCompleta(estadoAtual, body.acaoCampanha, opcoesPersistencia);
+      if (resCampDir.estado) {
+        estadoAtual = resCampDir.estado;
+      }
+      const tipoCampDir =
+        body.acaoCampanha.comandoMotor?.tipo ?? body.acaoCampanha.tipoAcao ?? body.acaoCampanha.tipo ?? null;
+      const acaoEfetivaCamp = resCampDir.acaoExecutada
+        ? { ...body.acaoCampanha, tipoAcao: resCampDir.acaoExecutada }
+        : body.acaoCampanha;
+      ultimoResultadoComando = {
+        aceito: Boolean(resCampDir.ok),
+        marcadorRejeicao: resCampDir.ok ? null : (resCampDir.codigoErro ?? 'ACAO_CAMPANHA_REJEITADA'),
+        cueEmitido: resCampDir.cueEmitido ?? null,
+        comandoExecutado: tipoCampDir ? { tipo: tipoCampDir } : null,
+        acaoCampanhaExecutada: acaoEfetivaCamp,
+        estado: estadoAtual,
+      };
+    } else if (body.comando && typeof body.comando === 'object') {
+      if (usaCampanha && COMANDOS_MOTOR_ROTEADOS_CAMPANHA.includes(body.comando.tipo)) {
+        const resCampBody = executarAcaoCampanhaCompleta(
+          estadoAtual,
+          { comandoMotor: body.comando },
+          opcoesPersistencia
+        );
+        if (resCampBody.estado) {
+          estadoAtual = resCampBody.estado;
+        }
+        ultimoResultadoComando = {
+          aceito: Boolean(resCampBody.ok),
+          marcadorRejeicao: resCampBody.ok ? null : (resCampBody.codigoErro ?? 'COMANDO_CAMPANHA_REJEITADO'),
+          cueEmitido: resCampBody.cueEmitido ?? null,
+          comandoExecutado: body.comando,
+          estado: estadoAtual,
+        };
+      } else {
+        ultimoResultadoComando = despacharComandoUi(estadoAtual, body.comando);
+        estadoAtual = ultimoResultadoComando.estado;
+        if (
+          ultimoResultadoComando.aceito !== false &&
+          estadoAtual?.meta?.edicaoComercialSteam &&
+          estadoAtual?.meta?.tutorialSteam?.ativo
+        ) {
+          estadoAtual = sincronizarProgressoTutorialSteamNoEstado(estadoAtual, body.comando.tipo, opcoesPersistencia);
+        }
+      }
+    } else {
+      return { statusHttp: 400, payload: { erro: 'COMANDO_AUSENTE' } };
+    }
+
+    const vmNovo = projetarViewModelWireframe(estadoAtual, { idHitboxHover });
+    const frameCanvas = renderizarViewModelNoCanvas2d(vmNovo);
+    const hitboxes = obterMapaHitboxesNativo(vmNovo);
+    const ehMouseMovePuro = body.eventoInput?.tipoEvento === 'MOUSEMOVE';
+    const opcoesPaisagem = ehMouseMovePuro
+      ? { seqAudio: 'hover', pausaTaticaAtiva: Boolean(contextoUiServidor.pausaTaticaAtiva) }
+      : { seqAudio: ++seqAudioServidor, pausaTaticaAtiva: Boolean(contextoUiServidor.pausaTaticaAtiva) };
+    const planoAudio = construirPlanoGrafoWebAudio(estadoAnterior, estadoAtual, ultimoResultadoComando);
+    const paisagemSonora = construirPaisagemSonoraCompleta(
+      estadoAnterior,
+      estadoAtual,
+      ultimoResultadoComando,
+      opcoesPaisagem
+    );
+    return {
+      statusHttp: 200,
+      payload: {
+        aceito: ultimoResultadoComando ? ultimoResultadoComando.aceito : true,
+        marcadorRejeicao: ultimoResultadoComando?.marcadorRejeicao ?? null,
+        acaoLocalUi,
+        hitboxAtingida: idHitboxHover,
+        contextoUi: contextoUiServidor,
+        viewModel: vmNovo,
+        frameCanvas,
+        hitboxes,
+        planoAudio,
+        paisagemSonora,
+      },
+    };
+  }
+
   const cabecalhosSeguranca = {
     'Content-Security-Policy':
-      "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+      "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:*; frame-ancestors 'none'; base-uri 'none'",
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
@@ -248,6 +600,66 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
     const urlBruta = String(req.url ?? '/');
     const urlLimpa = urlBruta.split('?')[0];
 
+    if (urlLimpa.startsWith('/src/') && urlLimpa.endsWith('.mjs')) {
+      if (req.method !== 'GET') {
+        res.writeHead(405, { ...cabecalhosSeguranca, Allow: 'GET', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ erro: 'METODO_NAO_PERMITIDO' }));
+        return;
+      }
+      const caminhoRelSrc = urlLimpa.slice('/src/'.length);
+      const codigoSrcBrowser = gerarFonteEsmSimulacaoNavegador(caminhoRelSrc);
+      if (codigoSrcBrowser !== null) {
+        res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/javascript; charset=utf-8' });
+        res.end(codigoSrcBrowser);
+        return;
+      }
+      res.writeHead(404, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ erro: 'MODULO_ESM_NAO_ENCONTRADO' }));
+      return;
+    }
+
+    if (urlLimpa.startsWith('/onda7-steam/')) {
+      if (req.method !== 'GET') {
+        res.writeHead(405, { ...cabecalhosSeguranca, Allow: 'GET', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ erro: 'METODO_NAO_PERMITIDO' }));
+        return;
+      }
+      const nomeModulo7 = urlLimpa.slice('/onda7-steam/'.length);
+      if (Object.prototype.hasOwnProperty.call(MAPA_FONTES_ESM_ONDA7, nomeModulo7)) {
+        res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/javascript; charset=utf-8' });
+        res.end(MAPA_FONTES_ESM_ONDA7[nomeModulo7]);
+        return;
+      }
+      res.writeHead(404, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ erro: 'MODULO_ESM_NAO_ENCONTRADO' }));
+      return;
+    }
+
+    if (urlLimpa.startsWith('/assets/audio/') && urlLimpa.endsWith('.ogg')) {
+      if (req.method !== 'GET') {
+        res.writeHead(405, { ...cabecalhosSeguranca, Allow: 'GET', 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ erro: 'METODO_NAO_PERMITIDO' }));
+        return;
+      }
+      const nomeOgg = urlLimpa.slice('/assets/audio/'.length);
+      if (/^[a-z0-9_]+\.ogg$/i.test(nomeOgg)) {
+        const urlArquivoOgg = new URL(`../../assets/audio/${nomeOgg}`, import.meta.url);
+        if (fs.existsSync(urlArquivoOgg)) {
+          const bufOgg = fs.readFileSync(urlArquivoOgg);
+          res.writeHead(200, {
+            ...cabecalhosSeguranca,
+            'Content-Type': 'audio/ogg',
+            'Content-Length': String(bufOgg.length),
+          });
+          res.end(bufOgg);
+          return;
+        }
+      }
+      res.writeHead(404, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ erro: 'AUDIO_OGG_NAO_ENCONTRADO' }));
+      return;
+    }
+
     if (urlLimpa.startsWith('/onda6-ui/')) {
       if (req.method !== 'GET') {
         res.writeHead(405, { ...cabecalhosSeguranca, Allow: 'GET', 'Content-Type': 'application/json; charset=utf-8' });
@@ -272,7 +684,8 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
       urlLimpa === '/cena-atual.png' ||
       urlLimpa === '/quadro-animado-f1.png' ||
       urlLimpa === '/api/assets-60fps' ||
-      urlLimpa === '/api/estado'
+      urlLimpa === '/api/estado' ||
+      urlLimpa === '/api/estado-completo'
     ) {
       if (req.method !== 'GET') {
         res.writeHead(405, { ...cabecalhosSeguranca, Allow: 'GET', 'Content-Type': 'application/json; charset=utf-8' });
@@ -351,6 +764,17 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
         res.end(resultadoQuadro.pngBuffer);
         return;
       }
+      if (urlLimpa === '/api/estado-completo') {
+        res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(
+          JSON.stringify({
+            estado: estadoAtual,
+            contextoUi: contextoUiServidor,
+            modoCampanhaCompleta: modoCampanhaAtivo,
+          })
+        );
+        return;
+      }
       const vm = projetarViewModelWireframe(estadoAtual);
       const frameCanvas = renderizarViewModelNoCanvas2d(vm);
       const hitboxes = obterMapaHitboxesNativo(vm);
@@ -373,7 +797,12 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
       return;
     }
 
-    if (urlLimpa === '/api/comando' || urlLimpa === '/api/tick') {
+    if (
+      urlLimpa === '/api/comando' ||
+      urlLimpa === '/api/tick' ||
+      urlLimpa === '/api/sincronizar' ||
+      urlLimpa === '/api/steam-ipc'
+    ) {
       if (req.method !== 'POST') {
         res.writeHead(405, { ...cabecalhosSeguranca, Allow: 'POST', 'Content-Type': 'application/json; charset=utf-8' });
         res.end(JSON.stringify({ erro: 'METODO_NAO_PERMITIDO' }));
@@ -387,6 +816,7 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
         return;
       }
 
+      const limiteBytesRota = urlLimpa === '/api/sincronizar' ? Math.max(maxPayloadBytes, 524288) : maxPayloadBytes;
       let bytesRecebidos = 0;
       let abortadoPorTamanho = false;
       const pedacos = [];
@@ -394,7 +824,7 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
       req.on('data', (chunk) => {
         if (abortadoPorTamanho) return;
         bytesRecebidos += chunk.length;
-        if (bytesRecebidos > maxPayloadBytes) {
+        if (bytesRecebidos > limiteBytesRota) {
           abortadoPorTamanho = true;
           res.writeHead(413, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
           res.end(JSON.stringify({ erro: 'PAYLOAD_MUITO_GRANDE' }));
@@ -434,217 +864,89 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
           return;
         }
 
-        const estadoAnterior = estadoAtual;
-        let ultimoResultadoComando = null;
-        let idHitboxHover = null;
-        let acaoLocalUi = null;
-        const usaCampanha = Boolean(modoCampanhaAtivo || estadoAtual.meta?.modoCampanhaCompleta);
-
-        try {
-          if (urlLimpa === '/api/tick') {
-            if (
-              body.dtSeg !== undefined &&
-              (typeof body.dtSeg !== 'number' || !Number.isFinite(body.dtSeg) || body.dtSeg <= 0)
-            ) {
-              res.writeHead(400, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
-              res.end(JSON.stringify({ erro: 'DT_SEG_INVALIDO' }));
-              return;
-            }
-            const dtSeg = Math.max(0.05, Math.min(5.0, body.dtSeg ?? 0.25));
-            const pausaAtiva =
-              body.pausaTaticaAtiva !== undefined ? Boolean(body.pausaTaticaAtiva) : contextoUiServidor.pausaTaticaAtiva;
-            contextoUiServidor = { ...contextoUiServidor, pausaTaticaAtiva: pausaAtiva };
-            if (pausaAtiva !== true) {
-              estadoAtual = usaCampanha
-                ? avancarTickCampanhaCompleta(estadoAtual, dtSeg, opcoesPersistencia)
-                : avancarTickPartidaEmTempoReal(estadoAtual, dtSeg);
-            }
-          } else if (body.eventoInput && typeof body.eventoInput === 'object') {
-            const ctxEntrada = {
-              ...contextoUiServidor,
-              ...(body.contextoUi && typeof body.contextoUi === 'object' ? body.contextoUi : {}),
-            };
-            const vmAntes = projetarViewModelWireframe(estadoAtual);
-            const traducao = traduzirInputDomParaComandoUi(
-              body.eventoInput,
-              estadoAtual,
-              vmAntes,
-              ctxEntrada
-            );
-            idHitboxHover = traducao.hitboxAtingida ?? null;
-            acaoLocalUi = traducao.acaoLocalUi ?? null;
-            const slotCand =
-              traducao.slotArmaSelecionado !== undefined
-                ? traducao.slotArmaSelecionado
-                : Number(ctxEntrada.slotArmaSelecionado ?? 0);
-            const tripCand = String(
-              traducao.tripulanteSelecionadoId !== undefined
-                ? traducao.tripulanteSelecionadoId
-                : (ctxEntrada.tripulanteSelecionadoId ?? 'trip-polvo-1')
-            ).slice(0, 64);
-            const salaAbCand = Number(
-              traducao.salaAlvoAbordagemId !== undefined
-                ? traducao.salaAlvoAbordagemId
-                : (ctxEntrada.salaAlvoAbordagemId ?? 1)
-            );
-            const ultBeamCand =
-              traducao.ultimaSalaBeamClicadaId !== undefined
-                ? traducao.ultimaSalaBeamClicadaId
-                : (ctxEntrada.ultimaSalaBeamClicadaId ?? null);
-
-            contextoUiServidor = {
-              pausaTaticaAtiva:
-                traducao.pausaTaticaAtiva !== undefined
-                  ? traducao.pausaTaticaAtiva
-                  : Boolean(ctxEntrada.pausaTaticaAtiva),
-              slotArmaSelecionado:
-                Number.isInteger(slotCand) && slotCand >= 0 && slotCand <= 3 ? slotCand : 0,
-              tripulanteSelecionadoId: tripCand,
-              modoOrdemAbordagem:
-                traducao.modoOrdemAbordagem !== undefined
-                  ? Boolean(traducao.modoOrdemAbordagem)
-                  : Boolean(ctxEntrada.modoOrdemAbordagem),
-              salaAlvoAbordagemId:
-                Number.isInteger(salaAbCand) && salaAbCand >= 1 && salaAbCand <= 8 ? salaAbCand : 1,
-              ultimaSalaBeamClicadaId: Number.isInteger(ultBeamCand) ? ultBeamCand : null,
-            };
-
-            if (traducao.acaoLocalUi === 'ACAO_CAMPANHA' && traducao.acaoCampanhaUi) {
-              const resCamp = executarAcaoCampanhaCompleta(
-                estadoAtual,
-                traducao.acaoCampanhaUi,
-                opcoesPersistencia
-              );
-              if (resCamp.estado) {
-                estadoAtual = resCamp.estado;
-              }
-              if (
-                traducao.acaoCampanhaUi.tipoAcao === 'INICIAR_NOVA_RUN' ||
-                traducao.acaoCampanhaUi.tipoAcao === 'CONTINUAR_RUN_SALVA'
-              ) {
-                contextoUiServidor = {
-                  ...contextoUiServidor,
-                  pausaTaticaAtiva: false,
-                  slotArmaSelecionado: 0,
-                  tripulanteSelecionadoId: estadoAtual.naveJogador?.tripulacao?.[0]?.id ?? 'trip-polvo-1',
-                  modoOrdemAbordagem: false,
-                  ultimaSalaBeamClicadaId: null,
-                };
-              }
-              const tipoEfetivoUi = resCamp.acaoExecutada ?? traducao.acaoCampanhaUi.tipoAcao;
-              ultimoResultadoComando = {
-                aceito: Boolean(resCamp.ok),
-                marcadorRejeicao: resCamp.ok ? null : (resCamp.codigoErro ?? 'ACAO_CAMPANHA_REJEITADA'),
-                cueEmitido: resCamp.cueEmitido ?? null,
-                comandoExecutado: { tipo: tipoEfetivoUi },
-                acaoCampanhaExecutada: { ...traducao.acaoCampanhaUi, tipoAcao: tipoEfetivoUi },
-                estado: estadoAtual,
-              };
-            } else if (
-              usaCampanha &&
-              traducao.comandoMotor &&
-              COMANDOS_MOTOR_ROTEADOS_CAMPANHA.includes(traducao.comandoMotor.tipo)
-            ) {
-              const resCampCmd = executarAcaoCampanhaCompleta(
-                estadoAtual,
-                { comandoMotor: traducao.comandoMotor },
-                opcoesPersistencia
-              );
-              if (resCampCmd.estado) {
-                estadoAtual = resCampCmd.estado;
-              }
-              ultimoResultadoComando = {
-                aceito: Boolean(resCampCmd.ok),
-                marcadorRejeicao: resCampCmd.ok ? null : (resCampCmd.codigoErro ?? 'COMANDO_CAMPANHA_REJEITADO'),
-                cueEmitido: resCampCmd.cueEmitido ?? traducao.resultadoMotor?.cueEmitido ?? null,
-                comandoExecutado: traducao.comandoMotor,
-                estado: estadoAtual,
-              };
-            } else {
-              ultimoResultadoComando = traducao.resultadoMotor;
-              if (ultimoResultadoComando?.estado) {
-                estadoAtual = ultimoResultadoComando.estado;
-              }
-            }
-          } else if (body.acaoCampanha && typeof body.acaoCampanha === 'object') {
-            const resCampDir = executarAcaoCampanhaCompleta(estadoAtual, body.acaoCampanha, opcoesPersistencia);
-            if (resCampDir.estado) {
-              estadoAtual = resCampDir.estado;
-            }
-            const tipoCampDir =
-              body.acaoCampanha.comandoMotor?.tipo ?? body.acaoCampanha.tipoAcao ?? body.acaoCampanha.tipo ?? null;
-            const acaoEfetivaCamp = resCampDir.acaoExecutada
-              ? { ...body.acaoCampanha, tipoAcao: resCampDir.acaoExecutada }
-              : body.acaoCampanha;
-            ultimoResultadoComando = {
-              aceito: Boolean(resCampDir.ok),
-              marcadorRejeicao: resCampDir.ok ? null : (resCampDir.codigoErro ?? 'ACAO_CAMPANHA_REJEITADA'),
-              cueEmitido: resCampDir.cueEmitido ?? null,
-              comandoExecutado: tipoCampDir ? { tipo: tipoCampDir } : null,
-              acaoCampanhaExecutada: acaoEfetivaCamp,
-              estado: estadoAtual,
-            };
-          } else if (body.comando && typeof body.comando === 'object') {
-            if (usaCampanha && COMANDOS_MOTOR_ROTEADOS_CAMPANHA.includes(body.comando.tipo)) {
-              const resCampBody = executarAcaoCampanhaCompleta(
-                estadoAtual,
-                { comandoMotor: body.comando },
-                opcoesPersistencia
-              );
-              if (resCampBody.estado) {
-                estadoAtual = resCampBody.estado;
-              }
-              ultimoResultadoComando = {
-                aceito: Boolean(resCampBody.ok),
-                marcadorRejeicao: resCampBody.ok ? null : (resCampBody.codigoErro ?? 'COMANDO_CAMPANHA_REJEITADO'),
-                cueEmitido: resCampBody.cueEmitido ?? null,
-                comandoExecutado: body.comando,
-                estado: estadoAtual,
-              };
-            } else {
-              ultimoResultadoComando = despacharComandoUi(estadoAtual, body.comando);
-              estadoAtual = ultimoResultadoComando.estado;
-            }
-          } else {
+        if (urlLimpa === '/api/steam-ipc') {
+          const paramsIpc = new URLSearchParams(urlBruta.includes('?') ? urlBruta.slice(urlBruta.indexOf('?') + 1) : '');
+          const portaIpc = Number(paramsIpc.get('port') ?? body.portaIpc ?? 0);
+          if (!Number.isInteger(portaIpc) || portaIpc < 1 || portaIpc > 65535) {
             res.writeHead(400, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
-            res.end(JSON.stringify({ erro: 'COMANDO_AUSENTE' }));
+            res.end(JSON.stringify({ ok: false, erro: 'PORTA_IPC_INVALIDA' }));
             return;
           }
-        } catch (err) {
-          res.writeHead(400, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({ erro: 'COMANDO_INVALIDO', detalhe: String(err.message) }));
+          const payloadIpc = Buffer.from(JSON.stringify(body), 'utf8');
+          const reqIpc = http.request(
+            {
+              hostname: '127.0.0.1',
+              port: portaIpc,
+              path: '/steam-ipc',
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Content-Length': String(payloadIpc.length),
+              },
+              timeout: 1500,
+            },
+            (respIpc) => {
+              const pedacosIpc = [];
+              respIpc.on('data', (c) => pedacosIpc.push(c));
+              respIpc.on('end', () => {
+                const txtIpc = Buffer.concat(pedacosIpc).toString('utf8') || '{"ok":true}';
+                res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+                res.end(txtIpc);
+              });
+            }
+          );
+          reqIpc.on('error', () => {
+            res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ ok: false, erro: 'IPC_LOOPBACK_INDISPONIVEL' }));
+          });
+          reqIpc.on('timeout', () => {
+            reqIpc.destroy();
+          });
+          reqIpc.end(payloadIpc);
           return;
         }
 
-        const vmNovo = projetarViewModelWireframe(estadoAtual, { idHitboxHover });
-        const frameCanvas = renderizarViewModelNoCanvas2d(vmNovo);
-        const hitboxes = obterMapaHitboxesNativo(vmNovo);
-        const ehMouseMovePuro = body.eventoInput?.tipoEvento === 'MOUSEMOVE';
-        const opcoesPaisagem = ehMouseMovePuro
-          ? { seqAudio: 'hover', pausaTaticaAtiva: Boolean(contextoUiServidor.pausaTaticaAtiva) }
-          : { seqAudio: ++seqAudioServidor, pausaTaticaAtiva: Boolean(contextoUiServidor.pausaTaticaAtiva) };
-        const planoAudio = construirPlanoGrafoWebAudio(estadoAnterior, estadoAtual, ultimoResultadoComando);
-        const paisagemSonora = construirPaisagemSonoraCompleta(
-          estadoAnterior,
-          estadoAtual,
-          ultimoResultadoComando,
-          opcoesPaisagem
-        );
-        res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(
-          JSON.stringify({
-            aceito: ultimoResultadoComando ? ultimoResultadoComando.aceito : true,
-            marcadorRejeicao: ultimoResultadoComando?.marcadorRejeicao ?? null,
-            acaoLocalUi,
-            hitboxAtingida: idHitboxHover,
-            contextoUi: contextoUiServidor,
-            viewModel: vmNovo,
-            frameCanvas,
-            hitboxes,
-            planoAudio,
-            paisagemSonora,
-          })
-        );
+        if (urlLimpa === '/api/sincronizar') {
+          if (!body.estado || typeof body.estado !== 'object' || !body.estado.naveJogador || !body.estado.meta) {
+            res.writeHead(400, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ erro: 'ESTADO_SINCRONIZACAO_INVALIDO' }));
+            return;
+          }
+          estadoAtual = clonarProfundoCongelado(body.estado);
+          if (body.contextoUi && typeof body.contextoUi === 'object') {
+            contextoUiServidor = { ...contextoUiServidor, ...body.contextoUi };
+          }
+          if (opcoesPersistencia.persistirEmDisco === true) {
+            if (estadoAtual.perfilJogador) {
+              salvarPerfilDisco(estadoAtual.perfilJogador, opcoesPersistencia);
+            }
+            const faseSinc = estadoAtual.meta?.faseJogo;
+            if (faseSinc && faseSinc !== 'INICIO') {
+              salvarRunSaveDisco(estadoAtual, opcoesPersistencia);
+            }
+          }
+          res.writeHead(200, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(
+            JSON.stringify({
+              ok: true,
+              sincronizado: true,
+              faseJogo: estadoAtual.meta?.faseJogo ?? 'COMBATE',
+            })
+          );
+          return;
+        }
+
+        try {
+          const resultadoMem = processarOperacaoMotorEmMemoria(urlLimpa, body);
+          res.writeHead(resultadoMem.statusHttp, {
+            ...cabecalhosSeguranca,
+            'Content-Type': 'application/json; charset=utf-8',
+          });
+          res.end(JSON.stringify(resultadoMem.payload));
+        } catch (err) {
+          res.writeHead(400, { ...cabecalhosSeguranca, 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ erro: 'COMANDO_INVALIDO', detalhe: String(err.message) }));
+        }
       });
       return;
     }
@@ -664,6 +966,15 @@ export async function iniciarServidorClienteWebBiofoil(opcoes = {}) {
   return {
     url: `http://${host}:${portaAlocada}`,
     port: portaAlocada,
-    fechar: () => new Promise((resolve) => servidor.close(() => resolve())),
+    obterEstadoAtualDireto: () => estadoAtual,
+    executarComandoDireto: (eventoInput, contextoUi) =>
+      processarOperacaoMotorEmMemoria('/api/comando', { eventoInput, contextoUi }).payload,
+    avancarTickDireto: (dtSeg = 0.25, pausaTaticaAtiva = false) =>
+      processarOperacaoMotorEmMemoria('/api/tick', { dtSeg, pausaTaticaAtiva }).payload,
+    fechar: () =>
+      new Promise((resolve) => {
+        servidor.closeAllConnections?.();
+        servidor.close(() => resolve());
+      }),
   };
 }

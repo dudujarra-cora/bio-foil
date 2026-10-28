@@ -212,7 +212,49 @@ export function calcularRetangulosSalasAlvo960(salasAlvo = [], opcoes = {}) {
 
   if (ehMonstroAlvo) {
     const dyMonstroTd = ehTouchdown ? -108 : 0;
+    const dyMonstroMultiTd = ehTouchdown ? -60 : 0;
     const modoVitrine = Boolean(opcoes.modoVitrineBestiario);
+    const idArqMon = String(opcoes.arquetipoAlvoId ?? '').toUpperCase();
+    if (!modoVitrine && lista.length === 5 && idArqMon.includes('ENGUIA')) {
+      const caixasEnguia = [
+        { x: 626, y: 214 + dyMonstroMultiTd, w: 68, h: 36 },
+        { x: 700, y: 254 + dyMonstroMultiTd, w: 68, h: 36 },
+        { x: 626, y: 296 + dyMonstroMultiTd, w: 68, h: 36 },
+        { x: 700, y: 338 + dyMonstroMultiTd, w: 68, h: 36 },
+        { x: 632, y: 382 + dyMonstroMultiTd, w: 74, h: 38 },
+      ];
+      return lista.map((sala, idx) => {
+        const cx = caixasEnguia[idx] ?? { x: 632, y: 214 + dyMonstroMultiTd + idx * 42, w: 68, h: 36 };
+        return { sala, x: cx.x + desalinhamentoPx, y: cx.y, largura: cx.w, altura: cx.h };
+      });
+    }
+    if (!modoVitrine && lista.length === 5) {
+      const caixasCaranguejo = [
+        { x: 624, y: 222 + dyMonstroMultiTd, w: 72, h: 42 },
+        { x: 702, y: 222 + dyMonstroMultiTd, w: 72, h: 42 },
+        { x: 624, y: 276 + dyMonstroMultiTd, w: 72, h: 42 },
+        { x: 702, y: 276 + dyMonstroMultiTd, w: 72, h: 42 },
+        { x: 658, y: 332 + dyMonstroMultiTd, w: 80, h: 44 },
+      ];
+      return lista.map((sala, idx) => {
+        const cx = caixasCaranguejo[idx] ?? { x: 626, y: 222 + dyMonstroMultiTd + idx * 46, w: 72, h: 40 };
+        return { sala, x: cx.x + desalinhamentoPx, y: cx.y, largura: cx.w, altura: cx.h };
+      });
+    }
+    if (!modoVitrine && lista.length >= 6) {
+      const caixasHidra = [
+        { x: 624, y: 216 + dyMonstroMultiTd, w: 72, h: 40 },
+        { x: 702, y: 216 + dyMonstroMultiTd, w: 72, h: 40 },
+        { x: 624, y: 268 + dyMonstroMultiTd, w: 72, h: 40 },
+        { x: 702, y: 268 + dyMonstroMultiTd, w: 72, h: 40 },
+        { x: 624, y: 320 + dyMonstroMultiTd, w: 72, h: 40 },
+        { x: 702, y: 320 + dyMonstroMultiTd, w: 72, h: 42 },
+      ];
+      return lista.map((sala, idx) => {
+        const cx = caixasHidra[idx] ?? { x: 624 + (idx % 2) * 78, y: 216 + dyMonstroMultiTd + Math.floor(idx / 2) * 52, w: 72, h: 40 };
+        return { sala, x: cx.x + desalinhamentoPx, y: cx.y, largura: cx.w, altura: cx.h };
+      });
+    }
     const caixasOrgaos = modoVitrine
       ? [
           { x: 713, y: 222 + dyMonstroTd, w: 82, h: 42 },
